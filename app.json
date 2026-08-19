@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "LAYP",
+    "slug": "layp-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#F3F4F0",
+      "resizeMode": "contain"
+    },
+    "android": {
+      "splash": {
+        "backgroundColor": "#F3F4F0"
+      },
+      "package": "com.layp.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "permissions": [
+        "NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
+      ]
+    },
+    "plugins": [
+      "expo-notifications",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "LAYP uses biometrics as part of unlocking your budget."
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
