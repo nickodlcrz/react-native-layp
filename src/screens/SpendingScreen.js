@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
@@ -48,6 +48,23 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
   // money currently lent out or borrowed -- not just income minus spending.
   const remaining = accounts.reduce((s, account) => s + computeAccountBalance(account.id, ctx), 0);
   const editing = editingId ? expenses.find((e) => e.id === editingId) : null;
+
+  const analytics = useMemo(() => {
+    const current = new Date(now.getFullYear(), now.getMonth(), 1);
+    const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const isIn = (date, month) => {
+      const d = new Date(date + "T00:00:00");
+      return d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear();
+    };
+    const currentExpenses = expenses.filter((expense) => isIn(expense.date, current));
+    const previousTotal = expenses.filter((expense) => isIn(expense.date, previous)).reduce((sum, expense) => sum + Number(expense.amount), 0);
+    const bySplit = currentExpenses.reduce((result, expense) => {
+      result[expense.splitId] = (result[expense.splitId] || 0) + Number(expense.amount);
+      return result;
+    }, {});
+    const categories = splits.map((split) => ({ ...split, amount: bySplit[split.id] || 0 })).filter((split) => split.amount > 0).sort((a, b) => b.amount - a.amount);
+    return { categories, previousTotal };
+  }, [expenses, splits, now]);
 
   // Income & outcome ledger: every money-in and money-out event, including
   // lending/borrowing movements (computed live, not stored separately), newest first.
@@ -170,6 +187,29 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
           </View>
         )
       )}
+
+      <View style={[styles.analyticsCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+        <Text style={[styles.analyticsTitle, { color: theme.text }]}>This month’s spending</Text>
+        {analytics.categories.length === 0 ? (
+          <Text style={[styles.analyticsHint, { color: theme.textMuted }]}>Add an expense to see your category breakdown.</Text>
+        ) : analytics.categories.map((category) => {
+          const share = monthTotal ? (category.amount / monthTotal) * 100 : 0;
+          return (
+            <View key={category.id} style={styles.categoryRow}>
+              <View style={styles.categoryTopRow}>
+                <Text style={[styles.categoryLabel, { color: theme.text }]}>{category.label}</Text>
+                <Text style={[styles.categoryAmount, { color: theme.textMuted }]}>{peso(category.amount)} · {share.toFixed(0)}%</Text>
+              </View>
+              <View style={[styles.categoryTrack, { backgroundColor: theme.bg }]}><View style={[styles.categoryFill, { width: `${share}%`, backgroundColor: category.color }]} /></View>
+            </View>
+          );
+        })}
+        {analytics.previousTotal > 0 && (
+          <Text style={[styles.analyticsHint, { color: monthTotal <= analytics.previousTotal ? ACCENT.leaf : ACCENT.ember }]}>
+            {monthTotal <= analytics.previousTotal ? "↓" : "↑"} {Math.abs(((monthTotal - analytics.previousTotal) / analytics.previousTotal) * 100).toFixed(1)}% versus last month
+          </Text>
+        )}
+      </View>
     </ScrollView>
   );
 }
@@ -300,4 +340,13 @@ const styles = StyleSheet.create({
   ledgerDate: { fontSize: 9, marginTop: 1, fontFamily: "monospace" },
   ledgerAmount: { fontSize: 12, fontWeight: "700", fontFamily: "monospace" },
   warning: { fontSize: 10, marginBottom: 10 },
+  analyticsCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 16 },
+  analyticsTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
+  analyticsHint: { fontSize: 10, marginTop: 10, lineHeight: 14 },
+  categoryRow: { marginBottom: 10 },
+  categoryTopRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+  categoryLabel: { fontSize: 11, fontWeight: "600" },
+  categoryAmount: { fontSize: 10, fontFamily: "monospace" },
+  categoryTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
+  categoryFill: { height: 6, borderRadius: 3 },
 });

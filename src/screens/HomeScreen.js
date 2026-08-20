@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
-import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck } from "lucide-react-native";
+import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, todayISO, daysUntil, fmtDay, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
 import AnimatedNumber from "../components/AnimatedNumber";
@@ -37,6 +37,7 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
   const savingsTotalNow = computeSavingsTotal(savingsLog);
   const owedToMe = loans.filter((l) => l.type === "lent" && !l.settled).reduce((s, l) => s + loanTotalDue(l), 0);
   const iOwe = loans.filter((l) => l.type === "borrowed" && !l.settled).reduce((s, l) => s + loanTotalDue(l), 0);
+  const netWorth = totalMoney + savingsTotalNow + owedToMe - iOwe;
 
   const activeGoals = goals
     .map((g) => ({ ...g, progress: goalProgress(g, savingsLog) }))
@@ -135,6 +136,15 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
         </View>
       )}
 
+      <View style={[styles.netWorthCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+        <View style={[styles.netWorthIcon, { backgroundColor: ACCENT.plum + "22" }]}><Landmark size={15} color={ACCENT.plum} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.netWorthLabel, { color: theme.textMuted }]}>NET WORTH</Text>
+          <AnimatedNumber value={netWorth} formatter={peso} style={[styles.netWorthValue, { color: theme.text }]} />
+          <Text style={[styles.netWorthSub, { color: theme.textMuted }]}>Cash + savings + money owed to you − money you owe</Text>
+        </View>
+      </View>
+
       {/* Savings + Borrowing side by side */}
       <View style={styles.twoCol}>
         <View style={[styles.miniCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
@@ -203,6 +213,11 @@ const styles = StyleSheet.create({
   goalPreviewAmounts: { fontSize: 10, fontFamily: "monospace", marginTop: 2, marginBottom: 6 },
   goalPreviewTrack: { width: "100%", height: 6, borderRadius: 3 },
   goalPreviewFill: { height: 6, borderRadius: 3 },
+  netWorthCard: { borderWidth: 1, borderRadius: 16, padding: 14, flexDirection: "row", gap: 10, alignItems: "center", marginTop: 12 },
+  netWorthIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  netWorthLabel: { fontSize: 9, fontWeight: "700", letterSpacing: 0.6 },
+  netWorthValue: { fontSize: 20, fontWeight: "800", fontFamily: "monospace", marginTop: 2 },
+  netWorthSub: { fontSize: 9, lineHeight: 13, marginTop: 2 },
   twoCol: { flexDirection: "row", gap: 10, marginTop: 12 },
   miniCard: { flex: 1, borderWidth: 1, borderRadius: 16, padding: 14, gap: 4 },
   miniLabel: { fontSize: 9, fontWeight: "700", marginTop: 2 },
