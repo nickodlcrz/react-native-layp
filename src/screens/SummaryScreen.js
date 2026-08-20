@@ -1,13 +1,15 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { Copy, Check } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, todayISO, fmtDay, fmtDateLong, savingsTotal as computeSavingsTotal, computeAccountBalance } from "../utils";
 
-export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [] }) {
+export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore }) {
   const { theme } = useTheme();
   const [copied, setCopied] = useState(false);
+  const [showRestore, setShowRestore] = useState(false);
+  const [restoreText, setRestoreText] = useState("");
 
   const text = useMemo(() => {
     const lines = [];
@@ -84,6 +86,27 @@ export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog
     setTimeout(() => setCopied(false), 1500);
   }
 
+  async function copyBackup() {
+    await Clipboard.setStringAsync(JSON.stringify(backup));
+    Alert.alert("Backup copied", "Save the copied text somewhere private. It contains your financial data.");
+  }
+
+  function restoreBackup() {
+    try {
+      const data = JSON.parse(restoreText);
+      const requiredArrays = ["todos", "bills", "expenses", "moneyLog", "weeklySummaries", "savingsLog", "goals", "loans", "splits", "accounts", "transfers"];
+      if (data?.version !== 1 || requiredArrays.some((key) => !Array.isArray(data[key])) || typeof data.dark !== "boolean") {
+        throw new Error("invalid backup");
+      }
+      Alert.alert("Replace current data?", "This will overwrite the data currently stored in LAYP.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Restore", style: "destructive", onPress: () => { onRestore(data); setRestoreText(""); setShowRestore(false); } },
+      ]);
+    } catch {
+      Alert.alert("Backup not recognized", "Paste a complete backup created by LAYP.");
+    }
+  }
+
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <Text style={[styles.h1, { color: theme.text }]}>Summary</Text>
@@ -93,6 +116,22 @@ export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog
         {copied ? <Check size={16} color={ACCENT.leaf} /> : <Copy size={16} color={ACCENT.gold} />}
         <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy to clipboard"}</Text>
       </Pressable>
+
+      <View style={styles.backupRow}>
+        <Pressable onPress={copyBackup} style={[styles.backupBtn, { borderColor: theme.line }]}>
+          <Text style={[styles.backupBtnText, { color: theme.text }]}>Copy full backup</Text>
+        </Pressable>
+        <Pressable onPress={() => setShowRestore((show) => !show)} style={[styles.backupBtn, { borderColor: theme.line }]}>
+          <Text style={[styles.backupBtnText, { color: theme.text }]}>{showRestore ? "Cancel restore" : "Restore backup"}</Text>
+        </Pressable>
+      </View>
+      {showRestore && (
+        <View style={[styles.restoreCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <Text style={[styles.restoreHint, { color: theme.textMuted }]}>Paste a backup made by LAYP. Restoring replaces all current app data.</Text>
+          <TextInput value={restoreText} onChangeText={setRestoreText} multiline placeholder="Paste backup JSON" placeholderTextColor={theme.textMuted} style={[styles.restoreInput, { color: theme.text, borderColor: theme.line }]} />
+          <Pressable onPress={restoreBackup} style={[styles.restoreBtn, { backgroundColor: ACCENT.ember }]}><Text style={styles.copyBtnText}>Restore and replace data</Text></Pressable>
+        </View>
+      )}
 
       <View style={[styles.textBox, { backgroundColor: theme.card, borderColor: theme.line }]}>
         <Text style={[styles.mono, { color: theme.text }]}>{text}</Text>
@@ -108,4 +147,11 @@ const styles = StyleSheet.create({
   copyBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
   textBox: { borderWidth: 1, borderRadius: 16, padding: 12 },
   mono: { fontSize: 10, fontFamily: "monospace", lineHeight: 15 },
+  backupRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  backupBtn: { flex: 1, borderWidth: 1, borderRadius: 12, alignItems: "center", paddingVertical: 10 },
+  backupBtnText: { fontSize: 11, fontWeight: "700" },
+  restoreCard: { borderWidth: 1, borderRadius: 16, padding: 12, marginBottom: 12 },
+  restoreHint: { fontSize: 10, lineHeight: 14, marginBottom: 8 },
+  restoreInput: { minHeight: 90, borderWidth: 1, borderRadius: 10, padding: 8, fontSize: 10, textAlignVertical: "top", marginBottom: 8 },
+  restoreBtn: { borderRadius: 10, alignItems: "center", paddingVertical: 10 },
 });

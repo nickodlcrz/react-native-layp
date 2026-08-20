@@ -23,7 +23,9 @@
         "NOTIFICATIONS",
         "SCHEDULE_EXACT_ALARM",
         "USE_BIOMETRIC",
-        "USE_FINGERPRINT"
+        "USE_FINGERPRINT",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
       ]
     },
     "plugins": [
@@ -35,6 +37,11 @@
         }
       ],
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "59aac9d9-8e07-431c-8dc9-64806c422a4d"
+      }
+    }
   }
 }

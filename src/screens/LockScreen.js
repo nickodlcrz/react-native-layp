@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator } from "react-native";
-import { Fingerprint, Delete, AlertTriangle } from "lucide-react-native";
-import { LIGHT, ACCENT } from "../theme";
-import { LOGO_URI } from "../assets/logo";
+import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator, useColorScheme } from "react-native";
+import { Fingerprint, Delete, AlertTriangle, Sun, Moon } from "lucide-react-native";
+import { LIGHT, DARK, ACCENT } from "../theme";
+import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "../assets/logo";
 import { hasPinSetup, setPin, verifyPin, isBiometricAvailable, authenticateBiometric, PIN_LENGTH } from "../security";
+import { getThemePreference, setThemePreference } from "../themePreference";
 
 const KEYPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"];
 
 export default function LockScreen({ onUnlock }) {
-  const theme = LIGHT; // fixed, legible theme -- renders before the app's own dark-mode state loads
+  const systemScheme = useColorScheme();
+  const [dark, setDark] = useState(systemScheme === "dark");
+  const theme = dark ? DARK : LIGHT;
 
   const [checking, setChecking] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -24,6 +27,8 @@ export default function LockScreen({ onUnlock }) {
     (async () => {
       const setup = await hasPinSetup();
       const bio = await isBiometricAvailable();
+      const storedDark = await getThemePreference();
+      if (storedDark !== null) setDark(storedDark);
       setBioAvailable(bio);
       setNeedsSetup(!setup);
       setChecking(false);
@@ -34,6 +39,14 @@ export default function LockScreen({ onUnlock }) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function toggleDark() {
+    setDark((d) => {
+      const next = !d;
+      setThemePreference(next);
+      return next;
+    });
+  }
 
   async function tryBiometric() {
     const ok = await authenticateBiometric();
@@ -113,8 +126,11 @@ export default function LockScreen({ onUnlock }) {
 
   return (
     <View style={[styles.safe, { backgroundColor: theme.bg }]}>
+      <Pressable onPress={toggleDark} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        {dark ? <Sun size={14} color={ACCENT.gold} /> : <Moon size={14} color={theme.text} />}
+      </Pressable>
       <View style={styles.top}>
-        <Image source={{ uri: LOGO_URI }} style={styles.logo} />
+        <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
         <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
         <Text style={[styles.subtitle, { color: theme.textMuted }]}>{subtitle}</Text>
 
@@ -167,6 +183,7 @@ export default function LockScreen({ onUnlock }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, justifyContent: "space-between" },
+  themeBtn: { position: "absolute", top: 16, right: 16, width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", borderWidth: 1, zIndex: 10 },
   top: { alignItems: "center", paddingTop: 80, paddingHorizontal: 32 },
   logo: { width: 52, height: 52, borderRadius: 14, marginBottom: 14 },
   title: { fontSize: 18, fontWeight: "800", marginBottom: 4 },

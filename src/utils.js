@@ -2,6 +2,7 @@ export const peso = (n) =>
   "\u20B1" + (Number(n) || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 });
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
+export const isPositiveAmount = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
 
 // IMPORTANT: never use Date.toISOString() for calendar dates. It converts to
 // UTC, which silently shifts the date backward for any timezone ahead of UTC
@@ -117,6 +118,42 @@ export function loanNetAdjustment(loan) {
 // day-to-day income and spending.
 export function savingsTotal(savingsLog) {
   return savingsLog.reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
+}
+
+// Savings unearmarked toward any specific goal -- what's actually free to
+// assign when creating a new goal or topping one up.
+export function unallocatedSavings(savingsLog) {
+  return savingsLog
+    .filter((x) => !x.goalId)
+    .reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
+}
+
+// --- Savings goals ---
+
+export function goalCurrentAmount(goalId, savingsLog) {
+  return savingsLog
+    .filter((x) => x.goalId === goalId)
+    .reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
+}
+
+// Approximate months between today and a target date (min 0), used for the
+// "recommended per month" figure -- doesn't need calendar-exact precision,
+// just a reasonable planning estimate.
+export function monthsUntil(dateStr) {
+  if (!dateStr) return 0;
+  const days = daysUntil(dateStr);
+  return Math.max(0, days / 30.44);
+}
+
+export function goalProgress(goal, savingsLog) {
+  const current = goalCurrentAmount(goal.id, savingsLog);
+  const target = Number(goal.targetAmount) || 0;
+  const remaining = Math.max(0, target - current);
+  const percent = target > 0 ? Math.min(100, (current / target) * 100) : 0;
+  const monthsLeft = monthsUntil(goal.targetDate);
+  // Goal met, or no target date set -- nothing meaningful to recommend.
+  const recommendedMonthly = remaining <= 0 ? 0 : monthsLeft < 1 ? remaining : remaining / monthsLeft;
+  return { current, target, remaining, percent, monthsLeft, recommendedMonthly };
 }
 
 // Single source of truth for "how much is actually in this account right

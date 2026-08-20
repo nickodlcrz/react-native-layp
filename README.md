@@ -58,11 +58,9 @@ installable `.apk` (not a Play Store bundle).
   category -- a free-text tag for your own use.
 - Recently added expenses sort to the top (uses a real creation
   timestamp now, not the random ID that was never meant for ordering).
-- **Weekly rollup**: once a day's spending log is more than 7 days old,
-  it's folded into a single "Week of ..." total and the individual
-  entries are deleted -- not just hidden, actually removed. The weekly
-  total still correctly counts toward your overall and per-split budget
-  math even after the detail is gone.
+- **Expense history is retained.** New spending entries stay available in
+  the ledger instead of being automatically deleted after a week. Existing
+  weekly summaries from older app versions remain visible as legacy records.
 - **Income & outcome history**: a combined, collapsible ledger of every
   peso that came in and went out, newest first.
 
@@ -161,6 +159,8 @@ user-managed, same pattern as budget splits:
   one live number.
 - The Summary export now includes a full accounts breakdown and your most
   recent transfers.
+- The Summary tab can also copy a complete JSON backup and restore a backup
+  after confirmation. Backups contain financial data, so save them privately.
 
 ## Known simplification, worth knowing about
 

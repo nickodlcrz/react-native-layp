@@ -1,19 +1,21 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import Slider from "@react-native-community/slider";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, normalizeSplits, removeSplitAndRedistribute, computeAccountBalance, savingsTotal as computeSavingsTotal, addAccount as pushAccount, removeAccount as dropAccount } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, normalizeSplits, removeSplitAndRedistribute, computeAccountBalance, savingsTotal as computeSavingsTotal, unallocatedSavings, goalProgress, addAccount as pushAccount, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 
-export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, savingsLog, setSavingsLog, loans, accounts, setAccounts, transfers, setTransfers }) {
+export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, savingsLog, setSavingsLog, loans, accounts, setAccounts, transfers, setTransfers, goals, setGoals }) {
   const { theme } = useTheme();
   const [showBillForm, setShowBillForm] = useState(false);
   const [editingBillId, setEditingBillId] = useState(null);
   const [showSavingsForm, setShowSavingsForm] = useState(false);
   const [savingsMode, setSavingsMode] = useState("deposit");
+  const [showGoalForm, setShowGoalForm] = useState(false);
+  const [editingGoalId, setEditingGoalId] = useState(null);
   const [billStatusView, setBillStatusView] = useState("unpaid");
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
@@ -23,7 +25,7 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
   function applyPreset(key) { setSplits(DEFAULT_SPLITS[key].map((s) => ({ ...s }))); }
   function addMoney() {
     const amt = Number(addAmount);
-    if (!amt) return;
+    if (!isPositiveAmount(amt)) return;
     setMoneyLog((prev) => [...prev, { id: uid(), amount: amt, account: addAccount, note: "Money added", date: todayISO(), createdAt: Date.now() }]);
     setAddAmount("");
     setShowAddMoney(false);
@@ -50,6 +52,11 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
   }
   function togglePaid(bill) {
     if (!bill.paid) {
+      const available = computeAccountBalance(bill.account, ctx);
+      if (Number(bill.amount) > available) {
+        Alert.alert("Not enough money", `This bill needs ${peso(bill.amount)}, but the selected account has ${peso(available)} available.`);
+        return;
+      }
       setExpenses((prev) => [...prev, { id: uid(), name: bill.name, amount: bill.amount, splitId: bill.splitId, account: bill.account, date: todayISO(), source: "bill", billId: bill.id, createdAt: Date.now() }]);
       setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, paid: true, paidAt: todayISO() } : b)));
     } else {
@@ -64,12 +71,27 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
   }
   function startEditBill(b) { setEditingBillId(b.id); setShowBillForm(true); }
 
+  function removeAccount(id) {
+    const referenced = [
+      ...moneyLog, ...expenses, ...bills, ...savingsLog, ...loans,
+      ...transfers.filter((t) => t.fromAccount === id || t.toAccount === id),
+    ].some((entry) => entry.account === id || entry.fromAccount === id || entry.toAccount === id)
+      || weeklySummaries.some((week) => Number(week.byAccount?.[id]) > 0);
+    if (referenced) {
+      Alert.alert("Account still has history", "This account can't be deleted because transactions are linked to it. Move or remove those records first so no financial history is hidden.");
+      return;
+    }
+    setAccounts((prev) => prev.length > 1 ? prev.filter((a) => a.id !== id) : prev);
+  }
+
   const unpaidBills = bills.filter((b) => !b.paid).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const paidBills = bills.filter((b) => b.paid).sort((a, b) => (b.paidAt || "").localeCompare(a.paidAt || ""));
   const unpaidTotal = unpaidBills.reduce((s, b) => s + b.amount, 0);
   const editingBill = editingBillId ? bills.find((b) => b.id === editingBillId) : null;
 
   const totalSavings = computeSavingsTotal(savingsLog);
+  const unallocated = unallocatedSavings(savingsLog);
+  const editingGoal = editingGoalId ? goals.find((g) => g.id === editingGoalId) : null;
   const totalPercent = splits.reduce((s, x) => s + x.percent, 0);
 
   const totalIncome = moneyLog.reduce((s, m) => s + Number(m.amount), 0);
@@ -170,7 +192,7 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
             />
             <Text style={[styles.accountEditBalance, { color: theme.textMuted }]}>{peso(computeAccountBalance(a.id, ctx))}</Text>
             {accounts.length > 1 && (
-              <Pressable onPress={() => setAccounts((prev) => dropAccount(prev, a.id))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Pressable onPress={() => removeAccount(a.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Trash2 size={13} color={theme.textMuted} />
               </Pressable>
             )}
@@ -244,6 +266,7 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
           totalSavings={totalSavings}
           ctx={ctx}
           accounts={accounts}
+          goals={goals}
           onSave={(entry) => { setSavingsLog((prev) => [...prev, { id: uid(), ...entry }]); setShowSavingsForm(false); }}
         />
       )}
@@ -264,6 +287,67 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
             </View>
           );
         })}
+
+      <View style={styles.headerRow}>
+        <Text style={[styles.h2, { color: theme.text }]}>Savings goals</Text>
+        <Pressable onPress={() => { setEditingGoalId(null); setShowGoalForm((s) => !s); }} style={[styles.roundBtn, { backgroundColor: ACCENT.sky }]}>
+          {showGoalForm ? <X size={14} color="#fff" /> : <Plus size={14} color="#fff" />}
+        </Pressable>
+      </View>
+      <Text style={[styles.savingsHint, { color: theme.textMuted }]}>Earmark part of your savings toward something specific. Unallocated savings: {peso(unallocated)}.</Text>
+
+      {showGoalForm && (
+        <GoalForm
+          initial={editingGoal}
+          onSave={(data) => {
+            if (editingGoalId) {
+              setGoals((prev) => prev.map((g) => (g.id === editingGoalId ? { ...g, ...data } : g)));
+            } else {
+              setGoals((prev) => [...prev, { id: uid(), ...data, createdAt: Date.now() }]);
+            }
+            setShowGoalForm(false);
+            setEditingGoalId(null);
+          }}
+          onCancel={() => { setShowGoalForm(false); setEditingGoalId(null); }}
+        />
+      )}
+
+      {goals.length === 0 ? (
+        <EmptyState text="No savings goals yet." />
+      ) : (
+        <View style={{ gap: 8, marginBottom: 16 }}>
+          {goals.map((g) => {
+            const prog = goalProgress(g, savingsLog);
+            const met = prog.percent >= 100;
+            return (
+              <View key={g.id} style={[styles.goalCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                <View style={styles.goalHeaderRow}>
+                  <Text style={[styles.goalName, { color: theme.text }]}>{g.name}</Text>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <Pressable onPress={() => { setEditingGoalId(g.id); setShowGoalForm(true); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Pencil size={13} color={theme.textMuted} /></Pressable>
+                    <Pressable onPress={() => setGoals((prev) => prev.filter((x) => x.id !== g.id))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
+                  </View>
+                </View>
+                <Text style={[styles.goalAmounts, { color: theme.textMuted }]}>{peso(prog.current)} / {peso(prog.target)}</Text>
+                <View style={[styles.track, { backgroundColor: theme.bg, marginTop: 4 }]}>
+                  <View style={[styles.trackFill, { width: `${prog.percent}%`, backgroundColor: met ? ACCENT.leaf : ACCENT.sky }]} />
+                </View>
+                <View style={styles.goalFooterRow}>
+                  <Text style={[styles.goalFooterText, { color: theme.textMuted }]}>{prog.percent.toFixed(1)}%</Text>
+                  {g.targetDate && (
+                    <Text style={[styles.goalFooterText, { color: theme.textMuted }]}>
+                      {met ? "Goal reached" : `Target: ${fmtDay(g.targetDate)}`}
+                    </Text>
+                  )}
+                </View>
+                {!met && prog.recommendedMonthly > 0 && (
+                  <Text style={[styles.goalRecommend, { color: ACCENT.sky }]}>Recommended: {peso(prog.recommendedMonthly)}/month</Text>
+                )}
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       <View style={[styles.chipRow, { marginTop: savingsLog.length ? 12 : 4 }]}>
         <Chip label={`Unpaid (${unpaidBills.length})`} active={billStatusView === "unpaid"} onPress={() => setBillStatusView("unpaid")} small />
@@ -317,7 +401,7 @@ function BillForm({ initial, onSave, onCancel, splits, accounts }) {
   const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
   const [splitId, setSplitId] = useState(initial?.splitId || splits[0]?.id);
   const [account, setAccount] = useState(initial?.account || accounts[0].id);
-  const canSave = name.trim() && amount;
+  const canSave = name.trim() && isPositiveAmount(amount);
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <TextInput value={name} onChangeText={setName} placeholder="e.g. Parcel COD, rent, load" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
@@ -344,17 +428,18 @@ function BillForm({ initial, onSave, onCancel, splits, accounts }) {
   );
 }
 
-function SavingsTransferForm({ mode, totalSavings, ctx, accounts, onSave }) {
+function SavingsTransferForm({ mode, totalSavings, ctx, accounts, goals = [], onSave }) {
   const { theme } = useTheme();
   const isWithdraw = mode === "withdraw";
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayISO());
   const [note, setNote] = useState("");
   const [account, setAccount] = useState(accounts[0].id);
-  const canSave = !!amount;
+  const [goalId, setGoalId] = useState(null);
   const amountNum = Number(amount) || 0;
   const accountBal = computeAccountBalance(account, ctx);
   const exceedsSource = isWithdraw ? amountNum > totalSavings : amountNum > accountBal;
+  const canSave = isPositiveAmount(amount) && !exceedsSource;
 
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
@@ -364,6 +449,15 @@ function SavingsTransferForm({ mode, totalSavings, ctx, accounts, onSave }) {
       <View style={styles.chipWrap}>
         {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />)}
       </View>
+      {!isWithdraw && goals.length > 0 && (
+        <>
+          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Toward a goal (optional)</Text>
+          <View style={styles.chipWrap}>
+            <Chip label="General" color={theme.textMuted} active={!goalId} onPress={() => setGoalId(null)} small />
+            {goals.map((g) => <Chip key={g.id} label={g.name} color={ACCENT.sky} active={goalId === g.id} onPress={() => setGoalId(g.id)} small />)}
+          </View>
+        </>
+      )}
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
@@ -374,7 +468,7 @@ function SavingsTransferForm({ mode, totalSavings, ctx, accounts, onSave }) {
         <Text style={[styles.previewText2, { color: theme.textMuted }]}>
           {isWithdraw
             ? `Will move ${peso(amountNum)} from savings into ${accounts.find((a) => a.id === account)?.label}`
-            : `Will move ${peso(amountNum)} from ${accounts.find((a) => a.id === account)?.label} into savings`}
+            : `Will move ${peso(amountNum)} from ${accounts.find((a) => a.id === account)?.label} into savings${goalId ? ` (toward ${goals.find((g) => g.id === goalId)?.name})` : ""}`}
         </Text>
       )}
       {exceedsSource && (
@@ -388,11 +482,37 @@ function SavingsTransferForm({ mode, totalSavings, ctx, accounts, onSave }) {
 
       <Pressable
         disabled={!canSave}
-        onPress={() => canSave && onSave({ amount: amountNum, date, note: note.trim(), account, type: isWithdraw ? "withdraw" : "deposit" })}
+        onPress={() => canSave && onSave({ amount: amountNum, date, note: note.trim(), account, goalId: isWithdraw ? null : goalId, type: isWithdraw ? "withdraw" : "deposit" })}
         style={[styles.formBtn, { backgroundColor: isWithdraw ? theme.accentDark : ACCENT.leaf, opacity: canSave ? 1 : 0.5 }]}
       >
         <Text style={[styles.formBtnText, { color: "#fff" }]}>{isWithdraw ? "Withdraw" : "Add to savings"}</Text>
       </Pressable>
+    </View>
+  );
+}
+
+function GoalForm({ initial, onSave, onCancel }) {
+  const { theme } = useTheme();
+  const [name, setName] = useState(initial?.name || "");
+  const [targetAmount, setTargetAmount] = useState(initial?.targetAmount != null ? String(initial.targetAmount) : "");
+  const [targetDate, setTargetDate] = useState(initial?.targetDate || "");
+  const canSave = name.trim() && Number(targetAmount) > 0;
+
+  return (
+    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+      <Text style={[styles.formTitle, { color: theme.text }]}>{initial ? "Edit goal" : "New savings goal"}</Text>
+      <TextInput value={name} onChangeText={setName} placeholder="e.g. New laptop, Emergency fund" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+      <View style={{ marginBottom: 12 }}>
+        <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Target amount (P)</Text>
+        <TextInput value={targetAmount} onChangeText={(v) => setTargetAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+      </View>
+      <View style={{ marginBottom: 12 }}><CalendarPicker value={targetDate} onChange={setTargetDate} label="Target date (optional)" /></View>
+      <View style={styles.formActions}>
+        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
+        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ name: name.trim(), targetAmount: Number(targetAmount), targetDate: targetDate || null })} style={[styles.formBtn, { backgroundColor: ACCENT.sky, opacity: canSave ? 1 : 0.5 }]}>
+          <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Create goal"}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -406,8 +526,8 @@ function TransferForm({ accounts, ctx, onSave }) {
   const [date, setDate] = useState(todayISO());
   const amountNum = Number(amount) || 0;
   const fromBalance = computeAccountBalance(fromAccount, ctx);
-  const canSave = amountNum > 0 && fromAccount && toAccount && fromAccount !== toAccount;
   const exceedsBalance = amountNum > fromBalance;
+  const canSave = isPositiveAmount(amount) && fromAccount && toAccount && fromAccount !== toAccount && !exceedsBalance;
 
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
@@ -479,6 +599,13 @@ const styles = StyleSheet.create({
   splitStat: { fontSize: 9, fontFamily: "monospace" },
   track: { width: "100%", height: 6, borderRadius: 3 },
   trackFill: { height: 6, borderRadius: 3 },
+  goalCard: { borderWidth: 1, borderRadius: 16, padding: 14 },
+  goalHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  goalName: { fontSize: 13, fontWeight: "700" },
+  goalAmounts: { fontSize: 11, fontFamily: "monospace" },
+  goalFooterRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
+  goalFooterText: { fontSize: 9, fontFamily: "monospace" },
+  goalRecommend: { fontSize: 10, fontWeight: "700", marginTop: 6 },
   autoBalanceRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
   smallLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase" },
   savingsHint: { fontSize: 10, lineHeight: 14, marginBottom: 8 },

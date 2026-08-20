@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, computeAccountBalance } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, computeAccountBalance, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
@@ -148,11 +148,10 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
   const [interestPercent, setInterestPercent] = useState(initial?.interestPercent != null ? String(initial.interestPercent) : "0");
   const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
   const [account, setAccount] = useState(initial?.account || accounts[0]?.id);
-  const canSave = person.trim() && principal;
-
   const accountBalance = computeAccountBalance(account, ctx);
   const principalNum = Number(principal) || 0;
   const exceedsBalance = type === "lent" && !initial && principalNum > accountBalance;
+  const canSave = person.trim() && isPositiveAmount(principal) && !exceedsBalance;
 
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>

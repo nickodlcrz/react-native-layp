@@ -2,24 +2,22 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { ListTodo, Wallet, Receipt, FileText, Bell, X, Sun, Moon, HandCoins, Lock } from "lucide-react-native";
+import { ListTodo, Wallet, Receipt, FileText, Bell, X, Sun, Moon, HandCoins, Lock, Home } from "lucide-react-native";
 
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS } from "./src/theme";
 import { loadState, saveState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, cancelTodoNotifications } from "./src/notifications";
-import { todayISO, daysUntil, fmtDateLong, uid, toLocalISO } from "./src/utils";
-import { LOGO_URI } from "./src/assets/logo";
+import { todayISO, daysUntil, fmtDateLong, uid } from "./src/utils";
+import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
+import { setThemePreference } from "./src/themePreference";
 import LockScreen from "./src/screens/LockScreen";
 
+import HomeScreen from "./src/screens/HomeScreen";
 import TodoScreen from "./src/screens/TodoScreen";
 import BudgetScreen from "./src/screens/BudgetScreen";
 import SpendingScreen from "./src/screens/SpendingScreen";
 import BorrowScreen from "./src/screens/BorrowScreen";
 import SummaryScreen from "./src/screens/SummaryScreen";
-
-// A week is rolled up and its raw expense entries deleted once it's fully
-// more than this many days in the past.
-const ROLLUP_AFTER_DAYS = 7;
 
 export default function App() {
   const [unlocked, setUnlocked] = useState(false);
@@ -47,7 +45,7 @@ export default function App() {
 function AppShell({ onLock }) {
   const systemScheme = useColorScheme();
   const [dark, setDark] = useState(systemScheme === "dark");
-  const [tab, setTab] = useState("todo");
+  const [tab, setTab] = useState("home");
   const [ready, setReady] = useState(false);
   const [todos, setTodos] = useState([]);
   const [bills, setBills] = useState([]);
@@ -55,6 +53,7 @@ function AppShell({ onLock }) {
   const [moneyLog, setMoneyLog] = useState([]); // all money received/added -- the "income" side of the ledger
   const [weeklySummaries, setWeeklySummaries] = useState([]); // rolled-up, deleted weeks
   const [savingsLog, setSavingsLog] = useState([]);
+  const [goals, setGoals] = useState([]); // savings goals: name, target amount, target date
   const [loans, setLoans] = useState([]); // lent / borrowed tracker
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
   const [transfers, setTransfers] = useState([]); // money moved between accounts -- never counts as income/expense
@@ -76,6 +75,7 @@ function AppShell({ onLock }) {
         setExpenses(s.expenses || []);
         setWeeklySummaries(s.weeklySummaries || []);
         setSavingsLog(s.savingsLog || []);
+        setGoals(s.goals || []);
         setLoans(s.loans || []);
         setSplits(s.splits || DEFAULT_SPLITS["50-30-20"].map((sp) => ({ ...sp })));
         setAccounts(s.accounts || DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
@@ -96,51 +96,12 @@ function AppShell({ onLock }) {
   useEffect(() => {
     if (!ready) return;
     if (firstLoad.current) { firstLoad.current = false; return; }
-    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, dark });
-  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, dark, ready]);
+    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark });
+    setThemePreference(dark);
+  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready]);
 
-  // Weekly rollup: any expense more than ROLLUP_AFTER_DAYS old gets folded into
-  // a per-week summary (total, plus per-split and per-account breakdowns so
-  // budget math stays correct), then the raw entries are deleted -- as
-  // requested, this is a real deletion, not just a hidden/collapsed view.
-  useEffect(() => {
-    if (!ready) return;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - ROLLUP_AFTER_DAYS);
-    const cutoffStr = toLocalISO(cutoff);
-
-    const toRoll = expenses.filter((e) => e.date < cutoffStr);
-    if (toRoll.length === 0) return;
-
-    const weeks = {};
-    toRoll.forEach((e) => {
-      const d = new Date(e.date + "T00:00:00");
-      const weekStart = new Date(d);
-      weekStart.setDate(d.getDate() - d.getDay()); // Sunday-start week bucket
-      const key = toLocalISO(weekStart);
-      if (!weeks[key]) weeks[key] = { entries: [], byAccount: {}, bySplit: {} };
-      weeks[key].entries.push(e);
-      weeks[key].byAccount[e.account || "ecash"] = (weeks[key].byAccount[e.account || "ecash"] || 0) + Number(e.amount);
-      weeks[key].bySplit[e.splitId] = (weeks[key].bySplit[e.splitId] || 0) + Number(e.amount);
-    });
-
-    const newSummaries = Object.entries(weeks).map(([weekStart, w]) => {
-      const endDate = new Date(weekStart + "T00:00:00");
-      endDate.setDate(endDate.getDate() + 6);
-      return {
-        id: uid(),
-        startDate: weekStart,
-        endDate: toLocalISO(endDate),
-        total: w.entries.reduce((s, e) => s + Number(e.amount), 0),
-        count: w.entries.length,
-        byAccount: w.byAccount,
-        bySplit: w.bySplit,
-      };
-    });
-
-    setWeeklySummaries((prev) => [...prev, ...newSummaries]);
-    setExpenses((prev) => prev.filter((e) => e.date >= cutoffStr));
-  }, [ready, expenses]);
+  // New expenses are retained indefinitely. Existing weekly summaries are
+  // kept only as legacy records created by earlier app versions.
 
   // Daily cleanup: cancel any repeating "daily"/"weekly"/etc reminders whose
   // due date has passed, since expo-notifications has no "repeat until X".
@@ -210,7 +171,7 @@ function AppShell({ onLock }) {
         <StatusBar style={dark ? "light" : "dark"} />
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Image source={{ uri: LOGO_URI }} style={styles.logo} />
+            <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
             <View>
               <Text style={[styles.headerTitle, { color: theme.text }]}>LAYP</Text>
               <Text style={[styles.headerDate, { color: theme.textMuted }]}>{todayLabel}</Text>
@@ -238,6 +199,13 @@ function AppShell({ onLock }) {
         )}
 
         <View style={styles.content}>
+          {tab === "home" && (
+            <HomeScreen
+              accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
+              loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
+              goals={goals}
+            />
+          )}
           {tab === "todo" && <TodoScreen todos={todos} setTodos={setTodos} />}
           {tab === "budget" && (
             <BudgetScreen
@@ -250,6 +218,7 @@ function AppShell({ onLock }) {
               loans={loans}
               accounts={accounts} setAccounts={setAccounts}
               transfers={transfers} setTransfers={setTransfers}
+              goals={goals} setGoals={setGoals}
             />
           )}
           {tab === "spending" && (
@@ -278,11 +247,20 @@ function AppShell({ onLock }) {
               todos={todos} splits={splits} bills={bills} expenses={expenses}
               moneyLog={moneyLog} weeklySummaries={weeklySummaries} savingsLog={savingsLog} loans={loans}
               accounts={accounts} transfers={transfers}
+              backup={{ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark }}
+              onRestore={(data) => {
+                setTodos(data.todos); setBills(data.bills); setExpenses(data.expenses);
+                setMoneyLog(data.moneyLog); setWeeklySummaries(data.weeklySummaries);
+                setSavingsLog(data.savingsLog); setGoals(data.goals); setLoans(data.loans);
+                setSplits(data.splits); setAccounts(data.accounts); setTransfers(data.transfers);
+                setDark(data.dark);
+              }}
             />
           )}
         </View>
 
         <View style={[styles.tabBar, { borderTopColor: theme.line, backgroundColor: theme.card }]}>
+          <NavBtn icon={Home} label="Home" active={tab === "home"} onPress={() => setTab("home")} theme={theme} />
           <NavBtn icon={ListTodo} label="Todo" active={tab === "todo"} onPress={() => setTab("todo")} theme={theme} />
           <NavBtn icon={Wallet} label="Budget" active={tab === "budget"} onPress={() => setTab("budget")} theme={theme} />
           <NavBtn icon={Receipt} label="Spending" active={tab === "spending"} onPress={() => setTab("spending")} theme={theme} />
@@ -297,7 +275,7 @@ function AppShell({ onLock }) {
 function NavBtn({ icon: Icon, label, active, onPress, theme }) {
   return (
     <Pressable onPress={onPress} style={styles.navBtn}>
-      <Icon size={18} color={active ? theme.text : theme.textMuted} strokeWidth={active ? 2.4 : 2} />
+      <Icon size={17} color={active ? theme.text : theme.textMuted} strokeWidth={active ? 2.4 : 2} />
       <Text style={[styles.navLabel, { color: active ? theme.text : theme.textMuted }]}>{label}</Text>
       {active && <View style={[styles.navDot, { backgroundColor: ACCENT.gold }]} />}
     </Pressable>
@@ -317,7 +295,7 @@ const styles = StyleSheet.create({
   bannerBody: { color: "#ffffffcc", fontSize: 11, marginTop: 2 },
   content: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
   tabBar: { flexDirection: "row", justifyContent: "space-around", paddingTop: 8, paddingBottom: 10, borderTopWidth: 1 },
-  navBtn: { alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 4 },
-  navLabel: { fontSize: 8.5, fontWeight: "600" },
+  navBtn: { alignItems: "center", gap: 2, paddingHorizontal: 3, paddingVertical: 4 },
+  navLabel: { fontSize: 8, fontWeight: "600" },
   navDot: { width: 4, height: 4, borderRadius: 2 },
 });

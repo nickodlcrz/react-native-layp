@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
-import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue } from "../utils";
+import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
@@ -46,7 +46,7 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
   // True remaining cash across both accounts, including the effect of
   // money currently lent out or borrowed -- not just income minus spending.
-  const remaining = ["ecash", "physical"].reduce((s, id) => s + computeAccountBalance(id, ctx), 0);
+  const remaining = accounts.reduce((s, account) => s + computeAccountBalance(account.id, ctx), 0);
   const editing = editingId ? expenses.find((e) => e.id === editingId) : null;
 
   // Income & outcome ledger: every money-in and money-out event, including
@@ -102,7 +102,7 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
       </View>
 
       {showMoneyForm && <MoneyForm accounts={accounts} onSave={saveMoney} />}
-      {showForm && <ExpenseForm initial={editing} splits={splits} accounts={accounts} onSave={saveExpense} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
+      {showForm && <ExpenseForm initial={editing} splits={splits} accounts={accounts} ctx={ctx} onSave={saveExpense} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
 
       <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Today</Text>
       {todayExpenses.length === 0 ? <EmptyState text="Nothing logged today." /> : (
@@ -195,7 +195,7 @@ function ExpenseRow({ e, splits, accounts, onEdit, onRemove, compact }) {
   );
 }
 
-function ExpenseForm({ initial, onSave, onCancel, splits, accounts }) {
+function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
   const { theme } = useTheme();
   const [name, setName] = useState(initial?.name || "");
   const [label, setLabel] = useState(initial?.label || "");
@@ -203,7 +203,11 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts }) {
   const [splitId, setSplitId] = useState(initial?.splitId || splits[0]?.id);
   const [account, setAccount] = useState(initial?.account || accounts[0].id);
   const [date, setDate] = useState(initial?.date || todayISO());
-  const canSave = name.trim() && amount;
+  const amountNum = Number(amount);
+  const currentBalance = computeAccountBalance(account, ctx);
+  const available = currentBalance + (initial?.account === account ? Number(initial.amount) : 0);
+  const exceedsBalance = isPositiveAmount(amount) && amountNum > available;
+  const canSave = name.trim() && isPositiveAmount(amount) && !exceedsBalance;
 
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
@@ -222,6 +226,7 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts }) {
         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
+      {exceedsBalance && <Text style={[styles.warning, { color: ACCENT.ember }]}>This exceeds the available {peso(available)} in this account.</Text>}
       <View style={styles.formActions}>
         {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
         <Pressable disabled={!canSave} onPress={() => canSave && onSave({ name: name.trim(), label: label.trim(), amount: Number(amount), splitId, account, date })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
@@ -238,7 +243,7 @@ function MoneyForm({ accounts, onSave }) {
   const [note, setNote] = useState("");
   const [account, setAccount] = useState(accounts[0].id);
   const [date, setDate] = useState(todayISO());
-  const canSave = !!amount;
+  const canSave = isPositiveAmount(amount);
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <Text style={[styles.formTitle, { color: theme.text }]}>Money received / added</Text>
@@ -294,4 +299,5 @@ const styles = StyleSheet.create({
   ledgerTitle: { fontSize: 12, fontWeight: "600" },
   ledgerDate: { fontSize: 9, marginTop: 1, fontFamily: "monospace" },
   ledgerAmount: { fontSize: 12, fontWeight: "700", fontFamily: "monospace" },
+  warning: { fontSize: 10, marginBottom: 10 },
 });
