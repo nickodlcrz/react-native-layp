@@ -45,6 +45,9 @@ installable `.apk` (not a Play Store bundle).
 ## Feature additions in this version
 
 **Budget**
+- **Bill due-date reminders**: unpaid bills now schedule a 9am reminder on
+  their due date. The reminder is kept in sync when a bill is edited, paid,
+  reopened, or deleted.
 - Separate **E-cash** and **Physical** balances, each tracked
   independently (money added minus money spent from it), shown
   side-by-side under the current-budget hero card.

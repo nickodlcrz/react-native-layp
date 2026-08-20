@@ -1,12 +1,13 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import Slider from "@react-native-community/slider";
-import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle } from "lucide-react-native";
+import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, normalizeSplits, removeSplitAndRedistribute, computeAccountBalance, savingsTotal as computeSavingsTotal, unallocatedSavings, goalProgress, addAccount as pushAccount, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
+import { cancelTodoNotifications, rescheduleBillNotification } from "../notifications";
 
 export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, savingsLog, setSavingsLog, loans, accounts, setAccounts, transfers, setTransfers, goals, setGoals }) {
   const { theme } = useTheme();
@@ -41,30 +42,52 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
   }
   function removeSplit(id) { setSplits((prev) => removeSplitAndRedistribute(prev, id)); }
 
-  function saveBill(data) {
+  useEffect(() => {
+    // Existing bills from before bill reminders was introduced are scheduled
+    // once, then keep their id for future edits/payment/deletion.
+    const missingReminders = bills.filter((b) => !b.paid && !b.notificationId && b.dueDate && new Date(`${b.dueDate}T09:00:00`).getTime() > Date.now());
+    if (!missingReminders.length) return;
+    (async () => {
+      const ids = await Promise.all(missingReminders.map((b) => rescheduleBillNotification(b)));
+      const idByBill = Object.fromEntries(missingReminders.map((b, i) => [b.id, ids[i]]));
+      setBills((prev) => prev.map((b) => idByBill[b.id] ? { ...b, notificationId: idByBill[b.id] } : b));
+    })();
+  }, [bills, setBills]);
+
+  async function saveBill(data) {
     if (editingBillId) {
-      setBills((prev) => prev.map((b) => (b.id === editingBillId ? { ...b, ...data } : b)));
+      const previous = bills.find((b) => b.id === editingBillId);
+      const updated = { ...previous, ...data };
+      const notificationId = await rescheduleBillNotification(updated);
+      setBills((prev) => prev.map((b) => (b.id === editingBillId ? { ...updated, notificationId } : b)));
       setEditingBillId(null);
     } else {
-      setBills((prev) => [...prev, { id: uid(), ...data, paid: false, createdAt: Date.now() }]);
+      const draft = { id: uid(), ...data, paid: false, createdAt: Date.now() };
+      const notificationId = await rescheduleBillNotification(draft);
+      setBills((prev) => [...prev, { ...draft, notificationId }]);
     }
     setShowBillForm(false);
   }
-  function togglePaid(bill) {
+  async function togglePaid(bill) {
     if (!bill.paid) {
       const available = computeAccountBalance(bill.account, ctx);
       if (Number(bill.amount) > available) {
         Alert.alert("Not enough money", `This bill needs ${peso(bill.amount)}, but the selected account has ${peso(available)} available.`);
         return;
       }
+      if (bill.notificationId) await cancelTodoNotifications([bill.notificationId]);
       setExpenses((prev) => [...prev, { id: uid(), name: bill.name, amount: bill.amount, splitId: bill.splitId, account: bill.account, date: todayISO(), source: "bill", billId: bill.id, createdAt: Date.now() }]);
-      setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, paid: true, paidAt: todayISO() } : b)));
+      setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, paid: true, paidAt: todayISO(), notificationId: null } : b)));
     } else {
       setExpenses((prev) => prev.filter((e) => e.billId !== bill.id));
-      setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, paid: false, paidAt: null } : b)));
+      const reopened = { ...bill, paid: false, paidAt: null, notificationId: null };
+      const notificationId = await rescheduleBillNotification(reopened);
+      setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...reopened, notificationId } : b)));
     }
   }
-  function removeBill(id) {
+  async function removeBill(id) {
+    const bill = bills.find((b) => b.id === id);
+    if (bill?.notificationId) await cancelTodoNotifications([bill.notificationId]);
     setExpenses((prev) => prev.filter((e) => e.billId !== id));
     setBills((prev) => prev.filter((b) => b.id !== id));
     if (editingBillId === id) { setEditingBillId(null); setShowBillForm(false); }
@@ -382,6 +405,7 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
                   </Text>
                   {split && <View style={[styles.tag, { backgroundColor: split.color + "22" }]}><Text style={[styles.tagText, { color: split.color }]}>{split.label}</Text></View>}
                   {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
+                  {!b.paid && b.notificationId && <Bell size={11} color={theme.textMuted} />}
                 </View>
               </Pressable>
               {!b.paid && <Pressable onPress={() => startEditBill(b)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Pencil size={14} color={theme.textMuted} /></Pressable>}

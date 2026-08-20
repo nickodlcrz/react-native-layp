@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
-import { Wallet, TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, CalendarClock } from "lucide-react-native";
+import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, todayISO, daysUntil, fmtDay, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
 import AnimatedNumber from "../components/AnimatedNumber";
@@ -29,6 +29,11 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
   const perDay = daysLeftInMonth > 0 ? safeToSpend / daysLeftInMonth : safeToSpend;
 
   const upcomingBills = [...unpaidBills].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
+  const billCoverage = accounts.map((account) => {
+    const reserved = unpaidBills.filter((bill) => bill.account === account.id).reduce((sum, bill) => sum + Number(bill.amount), 0);
+    const balance = computeAccountBalance(account.id, ctx);
+    return { ...account, reserved, balance, remaining: balance - reserved };
+  }).filter((account) => account.reserved > 0);
   const savingsTotalNow = computeSavingsTotal(savingsLog);
   const owedToMe = loans.filter((l) => l.type === "lent" && !l.settled).reduce((s, l) => s + loanTotalDue(l), 0);
   const iOwe = loans.filter((l) => l.type === "borrowed" && !l.settled).reduce((s, l) => s + loanTotalDue(l), 0);
@@ -94,6 +99,23 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
                   </Text>
                 </View>
                 <Text style={[styles.billAmount, { color: theme.text }]}>{peso(b.amount)}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      {billCoverage.length > 0 && (
+        <View style={[styles.coverageCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <Text style={[styles.coverageTitle, { color: theme.text }]}>Bill funding check</Text>
+          <Text style={[styles.coverageHint, { color: theme.textMuted }]}>Money left in each bill account after unpaid bills.</Text>
+          {billCoverage.map((account) => {
+            const short = account.remaining < 0;
+            return (
+              <View key={account.id} style={styles.coverageRow}>
+                {short ? <AlertTriangle size={14} color={ACCENT.ember} /> : <CircleCheck size={14} color={ACCENT.leaf} />}
+                <Text style={[styles.coverageAccount, { color: theme.text }]}>{account.label}</Text>
+                <Text style={[styles.coverageAmount, { color: short ? ACCENT.ember : ACCENT.leaf }]}>{short ? `${peso(Math.abs(account.remaining))} short` : `${peso(account.remaining)} free`}</Text>
               </View>
             );
           })}
@@ -168,6 +190,12 @@ const styles = StyleSheet.create({
   billName: { fontSize: 12, fontWeight: "600" },
   billDue: { fontSize: 10, fontFamily: "monospace", marginTop: 1 },
   billAmount: { fontSize: 12, fontWeight: "700", fontFamily: "monospace" },
+  coverageCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 12 },
+  coverageTitle: { fontSize: 12, fontWeight: "700" },
+  coverageHint: { fontSize: 10, marginTop: 2, marginBottom: 10 },
+  coverageRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 5 },
+  coverageAccount: { flex: 1, fontSize: 11, fontWeight: "600" },
+  coverageAmount: { fontSize: 11, fontWeight: "700", fontFamily: "monospace" },
   goalPreviewCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 12 },
   goalPreviewHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   goalPreviewName: { fontSize: 12, fontWeight: "700" },

@@ -121,3 +121,20 @@ export async function rescheduleLoanNotification(loan) {
   });
   return id;
 }
+
+export async function rescheduleBillNotification(bill) {
+  await cancelTodoNotifications(bill.notificationId ? [bill.notificationId] : []);
+  if (!bill.dueDate || bill.paid) return null;
+
+  const fireDate = new Date(`${bill.dueDate}T09:00:00`);
+  if (fireDate.getTime() <= Date.now()) return null;
+
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Bill due today",
+      body: `${bill.name} needs ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(bill.amount)} today`,
+      sound: true,
+    },
+    trigger: Platform.OS === "android" ? { date: fireDate, channelId: "layp-reminders" } : { date: fireDate },
+  });
+}

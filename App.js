@@ -18,6 +18,7 @@ import BudgetScreen from "./src/screens/BudgetScreen";
 import SpendingScreen from "./src/screens/SpendingScreen";
 import BorrowScreen from "./src/screens/BorrowScreen";
 import SummaryScreen from "./src/screens/SummaryScreen";
+import TabTransition from "./src/components/TabTransition";
 
 export default function App() {
   const [unlocked, setUnlocked] = useState(false);
@@ -198,7 +199,7 @@ function AppShell({ onLock }) {
           </View>
         )}
 
-        <View style={styles.content}>
+        <TabTransition transitionKey={tab} style={styles.content}>
           {tab === "home" && (
             <HomeScreen
               accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
@@ -257,7 +258,7 @@ function AppShell({ onLock }) {
               }}
             />
           )}
-        </View>
+        </TabTransition>
 
         <View style={[styles.tabBar, { borderTopColor: theme.line, backgroundColor: theme.card }]}>
           <NavBtn icon={Home} label="Home" active={tab === "home"} onPress={() => setTab("home")} theme={theme} />
@@ -274,7 +275,7 @@ function AppShell({ onLock }) {
 
 function NavBtn({ icon: Icon, label, active, onPress, theme }) {
   return (
-    <Pressable onPress={onPress} style={styles.navBtn}>
+    <Pressable onPress={onPress} style={[styles.navBtn, active && { backgroundColor: theme.bg }]} accessibilityRole="tab" accessibilityLabel={label} accessibilityHint={`Open ${label}`} accessibilityState={{ selected: active }} android_ripple={{ color: theme.line, borderless: true }}>
       <Icon size={17} color={active ? theme.text : theme.textMuted} strokeWidth={active ? 2.4 : 2} />
       <Text style={[styles.navLabel, { color: active ? theme.text : theme.textMuted }]}>{label}</Text>
       {active && <View style={[styles.navDot, { backgroundColor: ACCENT.gold }]} />}
@@ -295,7 +296,7 @@ const styles = StyleSheet.create({
   bannerBody: { color: "#ffffffcc", fontSize: 11, marginTop: 2 },
   content: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
   tabBar: { flexDirection: "row", justifyContent: "space-around", paddingTop: 8, paddingBottom: 10, borderTopWidth: 1 },
-  navBtn: { alignItems: "center", gap: 2, paddingHorizontal: 3, paddingVertical: 4 },
-  navLabel: { fontSize: 8, fontWeight: "600" },
+  navBtn: { flex: 1, alignItems: "center", gap: 2, paddingHorizontal: 2, paddingVertical: 6, borderRadius: 12 },
+  navLabel: { fontSize: 8.5, fontWeight: "700" },
   navDot: { width: 4, height: 4, borderRadius: 2 },
 });
