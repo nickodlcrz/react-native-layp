@@ -101,6 +101,50 @@ The PIN is hashed (SHA-256) and stored in `expo-secure-store`
 plain text or in the regular AsyncStorage used for the rest of the app's
 data.
 
+## New: Savings goals
+
+In the Budget tab, under Savings:
+
+- Create named goals with a target amount and an optional target date
+  (e.g. "New laptop, ₱20,000, December 2026").
+- Fund a goal by earmarking it when you add to savings -- pick the goal
+  from a chip row, or leave it "General" for unallocated savings. This
+  reuses the existing savings pool rather than tracking goal money
+  separately, so nothing double-counts.
+- Each goal shows a progress bar, percentage complete, and (while not yet
+  met) a **recommended monthly amount** based on how much is left and how
+  much time remains until the target date.
+- The Home dashboard features your nearest active goal with its own
+  progress bar.
+
+## New: Theme-matched logo + dark mode on the lock screen
+
+- The header logo now swaps between a black-mark and white-mark variant
+  depending on light/dark mode, both on a transparent background, so it
+  blends into the header instead of sitting in a boxed square.
+- The **PIN lock screen now supports dark mode too** -- it used to always
+  render in a fixed light theme since it appears before the main app's
+  data (including the dark-mode setting) loads. Fixed by storing the
+  theme preference in its own small, always-readable key
+  (`src/themePreference.js`) separate from the PIN-gated vault data, plus
+  a sun/moon toggle right on the lock screen itself.
+
+## New: Home dashboard
+
+A new first tab, now the default landing screen:
+
+- **Total money**, animated -- counts up/down smoothly whenever it
+  changes, using React Native's built-in `Animated` API (no extra native
+  dependency, no rebuild required), with a per-account breakdown below it.
+- **Monthly overview** -- income, spending, and net savings for the
+  current calendar month.
+- **Safe to spend** -- total money minus unpaid bills, plus a rough
+  per-day amount for the rest of the month. Clearly labeled as an
+  estimate, not financial advice.
+- **Upcoming bills** -- your next 3 unpaid bills.
+- **Savings and borrowing** side by side -- total saved, and what's owed
+  to you vs. what you owe.
+
 ## New: Named accounts + transfers
 
 Accounts are no longer a fixed "E-cash / Physical" pair -- they're fully
@@ -151,3 +195,5 @@ apps, which can silently stop scheduled reminders from firing:
 
 The Todo tab has an in-app banner that opens the right settings screen
 for step 1 directly.
+#   r e a c t - n a t i v e - l a y p  
+ 
