@@ -54,5 +54,9 @@ export const DEFAULT_SPLITS = {
   ],
 };
 
+// Daily Budget Review defaults -- notification on, review at 10 PM, same
+// spirit as the spec's example default.
+export const DEFAULT_DAILY_BUDGET_SETTINGS = { enabled: true, time: "22:00" };
+
 export const ThemeContext = createContext({ theme: LIGHT, dark: false });
 export const useTheme = () => useContext(ThemeContext);

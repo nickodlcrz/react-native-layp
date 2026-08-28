@@ -1,15 +1,26 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
-import Slider from "@react-native-community/slider";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell } from "lucide-react-native";
-import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, normalizeSplits, removeSplitAndRedistribute, computeAccountBalance, savingsTotal as computeSavingsTotal, unallocatedSavings, goalProgress, addAccount as pushAccount, isPositiveAmount } from "../utils";
+import { useTheme, ACCENT, DEFAULT_SPLITS } from "../theme";
+import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, unallocatedSavings, goalProgress, addAccount as pushAccount, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
+import DailyBudgetScreen from "./DailyBudgetScreen";
 import { cancelTodoNotifications, rescheduleBillNotification } from "../notifications";
 
-export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, savingsLog, setSavingsLog, loans, accounts, setAccounts, transfers, setTransfers, goals, setGoals }) {
+function matchPresetName(splits) {
+  for (const [name, preset] of Object.entries(DEFAULT_SPLITS)) {
+    if (splits.length === preset.length && preset.every((p, i) => splits[i]?.label === p.label && splits[i]?.percent === p.percent)) return name;
+  }
+  return "Custom";
+}
+
+export default function BudgetScreen({
+  moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries,
+  savingsLog, setSavingsLog, loans, accounts, setAccounts, transfers, setTransfers, goals, setGoals,
+  dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog,
+}) {
   const { theme } = useTheme();
   const [showBillForm, setShowBillForm] = useState(false);
   const [editingBillId, setEditingBillId] = useState(null);
@@ -20,10 +31,10 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
   const [billStatusView, setBillStatusView] = useState("unpaid");
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
+  const [showDailyBudget, setShowDailyBudget] = useState(false);
   const [addAmount, setAddAmount] = useState("");
   const [addAccount, setAddAccount] = useState(accounts[0]?.id);
 
-  function applyPreset(key) { setSplits(DEFAULT_SPLITS[key].map((s) => ({ ...s }))); }
   function addMoney() {
     const amt = Number(addAmount);
     if (!isPositiveAmount(amt)) return;
@@ -31,16 +42,6 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
     setAddAmount("");
     setShowAddMoney(false);
   }
-  function updateSplitPercent(idx, val) { setSplits((prev) => normalizeSplits(prev, idx, val)); }
-  function updateSplitLabel(idx, label) { setSplits((prev) => prev.map((s, i) => (i === idx ? { ...s, label } : s))); }
-  function addSplit() {
-    setSplits((prev) => {
-      const color = PALETTE[prev.length % PALETTE.length];
-      const next = [...prev, { id: uid(), label: "New split", percent: 0, color }];
-      return normalizeSplits(next, next.length - 1, 10);
-    });
-  }
-  function removeSplit(id) { setSplits((prev) => removeSplitAndRedistribute(prev, id)); }
 
   useEffect(() => {
     // Existing bills from before bill reminders was introduced are scheduled
@@ -115,7 +116,6 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
   const totalSavings = computeSavingsTotal(savingsLog);
   const unallocated = unallocatedSavings(savingsLog);
   const editingGoal = editingGoalId ? goals.find((g) => g.id === editingGoalId) : null;
-  const totalPercent = splits.reduce((s, x) => s + x.percent, 0);
 
   const totalIncome = moneyLog.reduce((s, m) => s + Number(m.amount), 0);
   const rolledTotal = weeklySummaries.reduce((s, w) => s + w.total, 0);
@@ -125,6 +125,22 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
   // money currently lent out (unavailable) and money currently borrowed
   // (available) -- not just plain income minus spending.
   const remaining = accounts.reduce((s, a) => s + computeAccountBalance(a.id, ctx), 0);
+
+  if (showDailyBudget) {
+    return (
+      <DailyBudgetScreen
+        splits={splits} setSplits={setSplits}
+        accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
+        loans={loans} transfers={transfers}
+        savingsLog={savingsLog} setSavingsLog={setSavingsLog}
+        dailyBudgetSettings={dailyBudgetSettings} setDailyBudgetSettings={setDailyBudgetSettings}
+        setDailyBudgetLog={setDailyBudgetLog}
+        onClose={() => setShowDailyBudget(false)}
+      />
+    );
+  }
+
+  const modelName = matchPresetName(splits);
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
@@ -224,48 +240,20 @@ export default function BudgetScreen({ moneyLog, setMoneyLog, splits, setSplits,
         <Text style={[styles.accountHint, { color: theme.textMuted }]}>Add as many named accounts as you use -- GCash, Maya, Wallet, Bank, etc. Tap a name to rename it.</Text>
       </View>
 
-      <View style={styles.chipRow}>
-        <Chip label="50-30-20" onPress={() => applyPreset("50-30-20")} small />
-        <Chip label="70-20-10" onPress={() => applyPreset("70-20-10")} small />
-        <Pressable onPress={addSplit} style={[styles.addSplitBtn, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <Plus size={11} color={theme.text} />
-          <Text style={{ fontSize: 10, fontWeight: "600", color: theme.text }}>Add split</Text>
-        </Pressable>
-      </View>
-
-      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
-        {splits.map((s, i) => {
-          const allocated = totalIncome * s.percent / 100;
-          const spentLive = expenses.filter((e) => e.splitId === s.id).reduce((sum, e) => sum + Number(e.amount), 0);
-          const spentRolled = weeklySummaries.reduce((sum, w) => sum + (w.bySplit?.[s.id] || 0), 0);
-          const spent = spentLive + spentRolled;
-          const splitRemaining = allocated - spent;
-          const pct = allocated > 0 ? Math.min(100, (spent / allocated) * 100) : 0;
-          return (
-            <View key={s.id} style={{ marginBottom: 16 }}>
-              <View style={styles.splitHeaderRow}>
-                <TextInput value={s.label} onChangeText={(v) => updateSplitLabel(i, v)} style={[styles.splitLabelInput, { color: theme.text }]} />
-                <Text style={[styles.splitPercent, { color: s.color }]}>{s.percent}%</Text>
-                {splits.length > 1 && <Pressable onPress={() => removeSplit(s.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Trash2 size={12} color={theme.textMuted} /></Pressable>}
-              </View>
-              <Slider minimumValue={0} maximumValue={100} step={1} value={s.percent} onValueChange={(v) => updateSplitPercent(i, v)} minimumTrackTintColor={s.color} maximumTrackTintColor={theme.bg} />
-              <View style={styles.splitStatsRow}>
-                <Text style={[styles.splitStat, { color: theme.textMuted }]}>{peso(spent)} spent of {peso(allocated)}</Text>
-                <Text style={[styles.splitStat, { color: splitRemaining < 0 ? ACCENT.ember : theme.textMuted }]}>{peso(splitRemaining)} left</Text>
-              </View>
-              <View style={[styles.track, { backgroundColor: theme.bg }]}>
-                <View style={[styles.trackFill, { width: `${pct}%`, backgroundColor: splitRemaining < 0 ? ACCENT.ember : s.color }]} />
-              </View>
-            </View>
-          );
-        })}
-        <View style={styles.autoBalanceRow}>
-          {totalPercent === 100 ? <Check size={11} color={ACCENT.leaf} /> : null}
-          <Text style={{ fontSize: 9, color: totalPercent === 100 ? ACCENT.leaf : theme.textMuted }}>
-            {totalPercent === 100 ? "Splits equal 100% automatically." : "Adjusting one split rebalances the rest."}
-          </Text>
+      <Pressable onPress={() => setShowDailyBudget(true)} style={[styles.dailyBudgetCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={[styles.dailyBudgetIcon, { backgroundColor: ACCENT.gold + "22" }]}>
+            <Bell size={16} color={ACCENT.gold} />
+          </View>
+          <View>
+            <Text style={[styles.dailyBudgetTitle, { color: theme.text }]}>Daily Budget</Text>
+            <Text style={[styles.dailyBudgetSub, { color: theme.textMuted }]}>
+              {modelName}{dailyBudgetSettings.enabled ? ` \u00B7 Review at ${fmtTime12(dailyBudgetSettings.time)}` : " \u00B7 Reminder off"}
+            </Text>
+          </View>
         </View>
-      </View>
+        <Text style={[styles.dailyBudgetChevron, { color: theme.textMuted }]}>{"\u203A"}</Text>
+      </Pressable>
 
       <View style={styles.headerRow}>
         <Text style={[styles.h2, { color: theme.text }]}>Savings</Text>
@@ -585,6 +573,11 @@ function TransferForm({ accounts, ctx, onSave }) {
 }
 
 const styles = StyleSheet.create({
+  dailyBudgetCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
+  dailyBudgetIcon: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  dailyBudgetTitle: { fontSize: 13, fontWeight: "700" },
+  dailyBudgetSub: { fontSize: 10, marginTop: 2 },
+  dailyBudgetChevron: { fontSize: 18, fontWeight: "700" },
   h1: { fontSize: 20, fontWeight: "700", marginBottom: 12 },
   h2: { fontSize: 15, fontWeight: "700" },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },

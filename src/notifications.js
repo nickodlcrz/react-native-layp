@@ -122,6 +122,22 @@ export async function rescheduleLoanNotification(loan) {
   return id;
 }
 
+// Daily Budget Review: one repeating local notification whose content gets
+// refreshed (cancel + reschedule) whenever the app recomputes the day's
+// numbers -- Expo notifications can't compute their own body at fire time,
+// so this is the closest practical approximation to "context-aware" for a
+// purely local, no-backend notification. See dailyBudgetNotificationContent
+// in utils.js for how the title/body are derived.
+export async function rescheduleDailyBudgetNotification(previousId, settings, content) {
+  await cancelTodoNotifications(previousId ? [previousId] : []);
+  if (!settings?.enabled || !settings?.time) return null;
+  const [h, m] = settings.time.split(":").map(Number);
+  return Notifications.scheduleNotificationAsync({
+    content: { title: content.title, body: content.body, sound: true },
+    trigger: Platform.OS === "android" ? { hour: h, minute: m, repeats: true, channelId: "layp-reminders" } : { hour: h, minute: m, repeats: true },
+  });
+}
+
 export async function rescheduleBillNotification(bill) {
   await cancelTodoNotifications(bill.notificationId ? [bill.notificationId] : []);
   if (!bill.dueDate || bill.paid) return null;

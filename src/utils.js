@@ -177,6 +177,121 @@ export function computeAccountBalance(accountId, { moneyLog = [], expenses = [],
   return in_ - out - outRolled + loanAdj + savingsAdj + transferAdj;
 }
 
+// --- Daily Budget Review ---
+//
+// Turns the selected budget model (splits) into a daily guideline +
+// recommendation instead of a strict rule. "Available money" is derived
+// from the user's actual account balances (not monthly income / 30), so it
+// adapts to irregular income, bills, and one-off purchases rather than
+// enforcing a fixed daily allowance. Everything here reads from the app's
+// existing income/expense/savings/account data -- no separate/duplicated
+// balance.
+
+// Classifies a split by what its label suggests, so the review can apply
+// Needs/Wants/Savings-specific behavior to presets AND arbitrary custom
+// models (e.g. an added "Other" category just falls back to a plain spend
+// category with no special cross-category logic).
+export function splitKind(split) {
+  const label = (split.label || "").toLowerCase();
+  if (label.includes("saving")) return "savings";
+  if (label.includes("need")) return "needs";
+  if (label.includes("want")) return "wants";
+  return "spend";
+}
+
+export function computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }) {
+  const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+  const currentBalance = accounts.reduce((s, a) => s + computeAccountBalance(a.id, ctx), 0);
+  const today = todayISO();
+  const todaysExpenses = expenses.filter((e) => e.date === today);
+  const todaysSavings = savingsLog.filter((s) => s.date === today);
+  const spentToday = todaysExpenses.reduce((s, e) => s + Number(e.amount), 0);
+  const savedToday = todaysSavings.reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
+  // "Available money" is the pool this guideline measures against -- the
+  // balance as of the start of today (current balance with today's own
+  // spending/saving added back), so leftover money from previous days still
+  // counts, but today's own actions don't shrink the recommendation they're
+  // being measured against. This is what makes it a same-day picture like
+  // the spec describes (e.g. 500 available, 320 spent, 180 remaining)
+  // rather than a shrinking, circular target.
+  const availableMoney = currentBalance + spentToday + savedToday;
+
+  const categories = splits.map((split) => {
+    const kind = splitKind(split);
+    const recommended = availableMoney * split.percent / 100;
+    if (kind === "savings") {
+      // Savings is never "spent" -- kept on its own ledger with its own
+      // language (saved / remaining to save), never mixed with expenses.
+      return { ...split, kind, isSavings: true, recommended, actual: savedToday, remaining: recommended - savedToday };
+    }
+    const actual = todaysExpenses.filter((e) => e.splitId === split.id).reduce((s, e) => s + Number(e.amount), 0);
+    return { ...split, kind, isSavings: false, recommended, actual, remaining: recommended - actual };
+  });
+
+  const needs = categories.find((c) => c.kind === "needs");
+  const wants = categories.find((c) => c.kind === "wants");
+  const savings = categories.find((c) => c.isSavings);
+
+  // Needs and Wants draw from the same real pool of money. Whatever Needs
+  // is currently under OR over its recommendation should reduce what's
+  // actually safe to spend on Wants -- otherwise the user could spend money
+  // that's really still needed for necessities. This is a recommendation,
+  // not a restriction: the user can still spend beyond it if they choose.
+  let wantsSafeToSpend = null;
+  let wantsReserveNote = null;
+  if (needs && wants) {
+    const reserve = Math.abs(needs.remaining);
+    wantsSafeToSpend = Math.max(0, wants.remaining - reserve);
+    if (reserve > 0.5 && wants.remaining > 0) {
+      wantsReserveNote = needs.remaining >= 0
+        ? `${peso(reserve)} is recommended to remain reserved for Needs.`
+        : `${peso(reserve)} is being reserved because your Needs budget is currently short.`;
+    }
+  }
+
+  return {
+    availableMoney, spentToday, savedToday,
+    remainingToday: availableMoney - spentToday,
+    categories, needs, wants, savings,
+    wantsSafeToSpend, wantsReserveNote,
+    hasIncome: availableMoney > 0 || moneyLog.length > 0,
+    hasSpending: todaysExpenses.length > 0,
+  };
+}
+
+// A short, neutral status line per category -- guidance, never a pass/fail
+// grade ("On track" / "above today's recommendation", not "good"/"failed").
+export function categoryStatusText(cat) {
+  if (cat.isSavings) {
+    if (cat.remaining <= 0) return "Today's savings allocation is fully accounted for.";
+    return `${peso(cat.remaining)} available for today's savings allocation.`;
+  }
+  if (cat.remaining < -0.5) return `${cat.label} is ${peso(Math.abs(cat.remaining))} above today's recommendation.`;
+  if (cat.recommended > 0 && cat.remaining / cat.recommended <= 0.15) return `${cat.label} budget is almost used up for today.`;
+  return `${cat.label} is on track today.`;
+}
+
+// Copy for the end-of-day local notification. Kept separate from the
+// review screen's body text because a local notification's content is
+// fixed at schedule time -- the app re-derives and reschedules this
+// whenever the underlying financial data changes (see notifications.js),
+// so it stays reasonably current without needing a live background task.
+export function dailyBudgetNotificationContent(review) {
+  if (!review.hasIncome) {
+    return { title: "🌙 Daily budget review", body: "No available budget for today's review yet." };
+  }
+  if (review.needs && review.needs.remaining < -0.5) {
+    return { title: "⚠️ Daily budget review", body: "Your Needs budget is almost exhausted." };
+  }
+  if (review.wants && review.wants.remaining < -0.5) {
+    return { title: "⚠️ Budget review", body: "Your Wants spending is above today's recommended amount." };
+  }
+  if (review.savings && review.savings.remaining > 0.5) {
+    return { title: "💰 Savings opportunity", body: `You have ${peso(review.savings.remaining)} available that could be added to savings today.` };
+  }
+  return { title: "🌙 Daily budget review", body: `You have ${peso(Math.max(0, review.remainingToday))} remaining today.` };
+}
+
 // --- Account management, mirroring how budget splits work ---
 
 export function addAccount(accounts, palette) {

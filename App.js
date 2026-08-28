@@ -4,10 +4,10 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { ListTodo, Wallet, Receipt, FileText, Bell, X, Sun, Moon, HandCoins, Lock, Home } from "lucide-react-native";
 
-import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS } from "./src/theme";
+import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS } from "./src/theme";
 import { loadState, saveState } from "./src/storage";
-import { requestNotificationPermission, setupAndroidChannel, cancelTodoNotifications } from "./src/notifications";
-import { todayISO, daysUntil, fmtDateLong, uid } from "./src/utils";
+import { requestNotificationPermission, setupAndroidChannel, cancelTodoNotifications, rescheduleDailyBudgetNotification } from "./src/notifications";
+import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent } from "./src/utils";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
 import LockScreen from "./src/screens/LockScreen";
@@ -59,6 +59,9 @@ function AppShell({ onLock }) {
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
   const [transfers, setTransfers] = useState([]); // money moved between accounts -- never counts as income/expense
   const [splits, setSplits] = useState(DEFAULT_SPLITS["50-30-20"].map((s) => ({ ...s })));
+  const [dailyBudgetSettings, setDailyBudgetSettings] = useState({ ...DEFAULT_DAILY_BUDGET_SETTINGS });
+  const [dailyBudgetLog, setDailyBudgetLog] = useState([]); // record of the user's daily savings decisions (saved/kept/remind) -- informational only, never used to move money on its own
+  const [dailyBudgetNotifId, setDailyBudgetNotifId] = useState(null);
   const [reminderBanner, setReminderBanner] = useState(null);
   const firstLoad = useRef(true);
   const dismissedTodayRef = useRef({});
@@ -81,6 +84,9 @@ function AppShell({ onLock }) {
         setSplits(s.splits || DEFAULT_SPLITS["50-30-20"].map((sp) => ({ ...sp })));
         setAccounts(s.accounts || DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
         setTransfers(s.transfers || []);
+        setDailyBudgetSettings(s.dailyBudgetSettings || { ...DEFAULT_DAILY_BUDGET_SETTINGS });
+        setDailyBudgetLog(s.dailyBudgetLog || []);
+        setDailyBudgetNotifId(s.dailyBudgetNotifId || null);
         if (typeof s.dark === "boolean") setDark(s.dark);
 
         // Migrate old single "income" number (pre-accounts) into the money log.
@@ -97,9 +103,25 @@ function AppShell({ onLock }) {
   useEffect(() => {
     if (!ready) return;
     if (firstLoad.current) { firstLoad.current = false; return; }
-    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark });
+    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId });
     setThemePreference(dark);
-  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready]);
+  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId]);
+
+  // Keeps the end-of-day local notification's copy roughly current. Local
+  // notifications can't recompute their own body at fire time, so instead
+  // the app cancels + reschedules the repeating daily notification any time
+  // the numbers behind it change (new expense, new income, model edited,
+  // reminder settings changed) -- see dailyBudgetNotificationContent.
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      const review = computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers });
+      const content = dailyBudgetNotificationContent(review);
+      const id = await rescheduleDailyBudgetNotification(dailyBudgetNotifId, dailyBudgetSettings, content);
+      if (id !== dailyBudgetNotifId) setDailyBudgetNotifId(id);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, dailyBudgetSettings, splits, moneyLog, expenses, savingsLog, accounts, weeklySummaries, loans, transfers]);
 
   // New expenses are retained indefinitely. Existing weekly summaries are
   // kept only as legacy records created by earlier app versions.
@@ -220,6 +242,8 @@ function AppShell({ onLock }) {
               accounts={accounts} setAccounts={setAccounts}
               transfers={transfers} setTransfers={setTransfers}
               goals={goals} setGoals={setGoals}
+              dailyBudgetSettings={dailyBudgetSettings} setDailyBudgetSettings={setDailyBudgetSettings}
+              setDailyBudgetLog={setDailyBudgetLog}
             />
           )}
           {tab === "spending" && (
@@ -248,13 +272,15 @@ function AppShell({ onLock }) {
               todos={todos} splits={splits} bills={bills} expenses={expenses}
               moneyLog={moneyLog} weeklySummaries={weeklySummaries} savingsLog={savingsLog} loans={loans}
               accounts={accounts} transfers={transfers}
-              backup={{ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark }}
+              backup={{ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog }}
               onRestore={(data) => {
                 setTodos(data.todos); setBills(data.bills); setExpenses(data.expenses);
                 setMoneyLog(data.moneyLog); setWeeklySummaries(data.weeklySummaries);
                 setSavingsLog(data.savingsLog); setGoals(data.goals); setLoans(data.loans);
                 setSplits(data.splits); setAccounts(data.accounts); setTransfers(data.transfers);
                 setDark(data.dark);
+                setDailyBudgetSettings(data.dailyBudgetSettings || { ...DEFAULT_DAILY_BUDGET_SETTINGS });
+                setDailyBudgetLog(data.dailyBudgetLog || []);
               }}
             />
           )}
