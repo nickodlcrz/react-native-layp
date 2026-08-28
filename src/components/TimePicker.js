@@ -1,11 +1,17 @@
-import React, { useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, Pressable, ScrollView, StyleSheet, Modal } from "react-native";
 import { Bell } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { fmtTime12 } from "../utils";
 
-const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
-const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
+const ITEM_HEIGHT = 40;
+const VISIBLE_ROWS = 5; // odd number so one row sits dead center
+const WHEEL_HEIGHT = ITEM_HEIGHT * VISIBLE_ROWS;
+const PAD = ITEM_HEIGHT * Math.floor(VISIBLE_ROWS / 2);
+
+const HOURS = Array.from({ length: 12 }, (_, i) => i + 1); // 1-12
+const MINUTES = Array.from({ length: 60 }, (_, i) => i); // every minute, for finer control
+const AMPM = ["AM", "PM"];
 
 export default function TimePicker({ value, onChange, label }) {
   const { theme } = useTheme();
@@ -23,40 +29,95 @@ export default function TimePicker({ value, onChange, label }) {
   return (
     <View style={{ flex: 1 }}>
       <Text style={[styles.label, { color: theme.textMuted }]}>{label}</Text>
-      <Pressable onPress={() => setOpen((o) => !o)} style={[styles.trigger, { backgroundColor: theme.bg }]}>
+      <Pressable onPress={() => setOpen(true)} style={[styles.trigger, { backgroundColor: theme.bg }]}>
         <Bell size={12} color={theme.textMuted} />
         <Text style={[styles.triggerText, { color: theme.text }]}>{fmtTime12(value)}</Text>
       </Pressable>
-      {open && (
-        <View style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <Text style={[styles.sub, { color: theme.textMuted }]}>Hour</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-            {HOURS.map((hh) => (
-              <Pressable key={hh} onPress={() => set(hh, m, ap)} style={[styles.chip, { backgroundColor: hh === h12 ? ACCENT.gold : theme.bg }]}>
-                <Text style={[styles.chipText, { color: hh === h12 ? "#fff" : theme.text }]}>{hh}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <Text style={[styles.sub, { color: theme.textMuted }]}>Minute</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-            {MINUTES.map((mm) => (
-              <Pressable key={mm} onPress={() => set(h12, mm, ap)} style={[styles.chip, { backgroundColor: mm === m ? ACCENT.gold : theme.bg }]}>
-                <Text style={[styles.chipText, { color: mm === m ? "#fff" : theme.text }]}>{String(mm).padStart(2, "0")}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
-            {["AM", "PM"].map((a) => (
-              <Pressable key={a} onPress={() => set(h12, m, a)} style={[styles.apBtn, { backgroundColor: a === ap ? theme.accentDark : theme.bg }]}>
-                <Text style={[styles.apText, { color: a === ap ? "#fff" : theme.text }]}>{a}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Pressable onPress={() => setOpen(false)} style={styles.doneBtn}>
-            <Text style={styles.doneText}>Done</Text>
+
+      {/* Rendered as a Modal (its own top-level tree) rather than an inline
+          panel -- this keeps the vertical scroll wheels from being nested
+          inside whatever ScrollView the form itself sits in (which either
+          blocks their scroll gesture or squeezes them into a half-width
+          column when Start/End pickers sit side by side). */}
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
+          <Pressable style={[styles.sheet, { backgroundColor: theme.card, borderColor: theme.line }]} onPress={() => {}}>
+            <Text style={[styles.sheetLabel, { color: theme.textMuted }]}>{label}</Text>
+            <View style={styles.wheelRow}>
+              <Wheel data={HOURS} selected={h12} format={(v) => String(v)} onSelect={(hh) => set(hh, m, ap)} />
+              <Text style={[styles.colon, { color: theme.text }]}>:</Text>
+              <Wheel data={MINUTES} selected={m} format={(v) => String(v).padStart(2, "0")} onSelect={(mm) => set(h12, mm, ap)} />
+              <Wheel data={AMPM} selected={ap} format={(v) => v} onSelect={(a) => set(h12, m, a)} />
+            </View>
+            <Pressable onPress={() => setOpen(false)} style={styles.doneBtn}>
+              <Text style={styles.doneText}>Done</Text>
+            </Pressable>
           </Pressable>
-        </View>
-      )}
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+// A single vertically-scrolling, snap-to-row wheel. `selected` can change
+// from outside (e.g. another wheel's onSelect triggering a re-render with a
+// new prop) so the scroll position is kept in sync via a ref + effect rather
+// than only reacting to the user's own scroll gestures.
+function Wheel({ data, selected, format, onSelect }) {
+  const { theme } = useTheme();
+  const listRef = useRef(null);
+  const selectedIndex = data.indexOf(selected);
+  const lastReportedIndex = useRef(selectedIndex);
+
+  useEffect(() => {
+    if (selectedIndex !== lastReportedIndex.current) {
+      listRef.current?.scrollTo({ y: selectedIndex * ITEM_HEIGHT, animated: false });
+      lastReportedIndex.current = selectedIndex;
+    }
+  }, [selectedIndex]);
+
+  function commitIndex(index) {
+    const clamped = Math.max(0, Math.min(data.length - 1, index));
+    lastReportedIndex.current = clamped;
+    onSelect(data[clamped]);
+  }
+
+  function handleMomentumEnd(e) {
+    commitIndex(Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT));
+  }
+
+  return (
+    <View style={styles.wheelWrap}>
+      <View pointerEvents="none" style={[styles.wheelHighlight, { borderColor: theme.line, top: PAD }]} />
+      <ScrollView
+        ref={listRef}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={ITEM_HEIGHT}
+        decelerationRate="fast"
+        nestedScrollEnabled
+        contentContainerStyle={{ paddingVertical: PAD }}
+        onMomentumScrollEnd={handleMomentumEnd}
+        onScrollEndDrag={(e) => {
+          // Covers the case where the drag ends without enough velocity to
+          // trigger a momentum event at all.
+          if (e.nativeEvent.velocity && Math.abs(e.nativeEvent.velocity.y) < 0.05) {
+            commitIndex(Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT));
+          }
+        }}
+        contentOffset={{ x: 0, y: selectedIndex * ITEM_HEIGHT }}
+        style={{ height: WHEEL_HEIGHT }}
+      >
+        {data.map((v, i) => {
+          const isSelected = i === selectedIndex;
+          return (
+            <Pressable key={String(v)} style={styles.wheelItem} onPress={() => { listRef.current?.scrollTo({ y: i * ITEM_HEIGHT, animated: true }); commitIndex(i); }}>
+              <Text style={[styles.wheelItemText, { color: isSelected ? ACCENT.gold : theme.textMuted, fontWeight: isSelected ? "800" : "500", fontSize: isSelected ? 18 : 14 }]}>
+                {format(v)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
@@ -65,12 +126,15 @@ const styles = StyleSheet.create({
   label: { fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 },
   trigger: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   triggerText: { fontSize: 11, fontWeight: "600", fontFamily: "monospace" },
-  panel: { marginTop: 8, borderRadius: 16, borderWidth: 1, padding: 12 },
-  sub: { fontSize: 8, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 },
-  chip: { width: 34, height: 30, borderRadius: 8, alignItems: "center", justifyContent: "center", marginRight: 6 },
-  chipText: { fontSize: 11, fontWeight: "600" },
-  apBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: "center" },
-  apText: { fontSize: 11, fontWeight: "700" },
-  doneBtn: { paddingVertical: 10, borderRadius: 10, alignItems: "center", backgroundColor: "#3E7C59" },
-  doneText: { fontSize: 11, fontWeight: "700", color: "#fff" },
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", alignItems: "center", justifyContent: "center", padding: 24 },
+  sheet: { width: 280, maxWidth: "100%", borderRadius: 20, borderWidth: 1, padding: 16 },
+  sheetLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", textAlign: "center", marginBottom: 10, letterSpacing: 0.5 },
+  wheelRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 14 },
+  colon: { fontSize: 18, fontWeight: "800", marginHorizontal: 2 },
+  wheelWrap: { width: 64, height: WHEEL_HEIGHT, marginHorizontal: 4, overflow: "hidden" },
+  wheelHighlight: { position: "absolute", left: 0, right: 0, height: ITEM_HEIGHT, borderTopWidth: 1, borderBottomWidth: 1 },
+  wheelItem: { height: ITEM_HEIGHT, alignItems: "center", justifyContent: "center" },
+  wheelItemText: { fontFamily: "monospace" },
+  doneBtn: { paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: "#3E7C59" },
+  doneText: { fontSize: 12, fontWeight: "700", color: "#fff" },
 });
