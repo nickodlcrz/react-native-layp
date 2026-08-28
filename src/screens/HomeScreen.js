@@ -1,14 +1,22 @@
 import React from "react";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
-import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark } from "lucide-react-native";
+import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
+import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
-import { peso, todayISO, daysUntil, fmtDay, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
+import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
+import { getActivePeriod, subjectsForPeriod, getCurrentAndNextClass, minutesRemaining } from "../school";
 import AnimatedNumber from "../components/AnimatedNumber";
 import EmptyState from "../components/EmptyState";
 
-export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [] }) {
+export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], periods = [], subjects = [], scheduleEntries = [], onViewSchedule }) {
   const { theme } = useTheme();
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+
+  const activePeriod = getActivePeriod(periods);
+  const activeSubjects = subjectsForPeriod(subjects, activePeriod?.id);
+  const activeSubjectIds = activeSubjects.map((s) => s.id);
+  const activeEntries = scheduleEntries.filter((e) => activeSubjectIds.includes(e.subjectId));
+  const classesToday = activePeriod ? getCurrentAndNextClass(activeSubjects, activeEntries) : { current: null, next: null };
+  const showTodaysClasses = !!activePeriod && activeSubjects.length > 0;
 
   const totalMoney = accounts.reduce((s, a) => s + computeAccountBalance(a.id, ctx), 0);
 
@@ -63,6 +71,32 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
           ))}
         </View>
       </View>
+
+      {/* Today's Classes -- compact by design, full schedule lives in the School tab */}
+      {showTodaysClasses && (
+        <Pressable onPress={onViewSchedule} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <View style={styles.schoolHeader}>
+            <GraduationCap size={14} color={ACCENT.sky} />
+            <Text style={[styles.schoolTitle, { color: theme.text }]}>Today's Classes</Text>
+          </View>
+          {classesToday.current ? (
+            <SchoolLine dotColor={ACCENT.leaf} tag="NOW" block={classesToday.current} theme={theme} sub={`${minutesRemaining(classesToday.current)} minutes remaining`} />
+          ) : classesToday.next && classesToday.nextDaysAhead === 0 ? (
+            <SchoolLine dotColor={ACCENT.gold} tag="NEXT" block={classesToday.next} theme={theme} />
+          ) : (
+            <Text style={[styles.schoolEmpty, { color: theme.textMuted }]}>No classes scheduled today.</Text>
+          )}
+          {classesToday.current && classesToday.next && classesToday.nextDaysAhead === 0 && (
+            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.line }}>
+              <SchoolLine dotColor={ACCENT.gold} tag="NEXT" block={classesToday.next} theme={theme} />
+            </View>
+          )}
+          <View style={styles.schoolFooter}>
+            <Text style={[styles.schoolFooterText, { color: ACCENT.sky }]}>View full schedule</Text>
+            <ChevronRight size={12} color={ACCENT.sky} />
+          </View>
+        </Pressable>
+      )}
 
       {/* Monthly overview */}
       <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>{monthLabel}</Text>
@@ -163,6 +197,20 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
   );
 }
 
+function SchoolLine({ dotColor, tag, block, theme, sub }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+      <View style={[styles.schoolDot, { backgroundColor: dotColor }]} />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.schoolTag, { color: dotColor }]}>{tag} — {block.subject.code}</Text>
+        <Text style={[styles.schoolDesc, { color: theme.text }]}>{block.subject.description}</Text>
+        <Text style={[styles.schoolTime, { color: theme.textMuted }]}>{fmtTime12(block.entry.startTime)} – {fmtTime12(block.entry.endTime)}</Text>
+        {sub && <Text style={[styles.schoolTime, { color: theme.textMuted }]}>{sub}</Text>}
+      </View>
+    </View>
+  );
+}
+
 function MonthRow({ icon: Icon, color, label, value, theme, last }) {
   return (
     <View style={[styles.monthRow, !last && { marginBottom: 10 }]}>
@@ -185,6 +233,16 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3 },
   accountLabel: { flex: 1, fontSize: 11, color: "#ffffffcc", fontWeight: "600" },
   accountValue: { fontSize: 11, color: "#fff", fontWeight: "700", fontFamily: "monospace" },
+  schoolCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
+  schoolHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  schoolTitle: { fontSize: 12, fontWeight: "700" },
+  schoolEmpty: { fontSize: 11 },
+  schoolDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
+  schoolTag: { fontSize: 9, fontWeight: "800", letterSpacing: 0.4 },
+  schoolDesc: { fontSize: 12, fontWeight: "700", marginTop: 2 },
+  schoolTime: { fontSize: 10, marginTop: 2, fontFamily: "monospace" },
+  schoolFooter: { flexDirection: "row", alignItems: "center", gap: 2, marginTop: 10, paddingTop: 8, borderTopWidth: 0 },
+  schoolFooterText: { fontSize: 10, fontWeight: "700" },
   sectionLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 },
   card: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
   monthRow: { flexDirection: "row", alignItems: "center", gap: 10 },

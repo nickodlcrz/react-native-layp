@@ -58,5 +58,23 @@ export const DEFAULT_SPLITS = {
 // spirit as the spec's example default.
 export const DEFAULT_DAILY_BUDGET_SETTINGS = { enabled: true, time: "22:00" };
 
+// School feature -- applied to newly created subjects unless the user
+// overrides them per-subject in the Add/Edit Subject form.
+export const DEFAULT_SCHOOL_DEFAULTS = {
+  classReminderEnabled: true,
+  advanceReminderEnabled: true,
+  advanceReminderMinutes: 10,
+};
+export const ADVANCE_REMINDER_OPTIONS = [5, 10, 15, 30, 60];
+export const EVENT_TYPES = [
+  { id: "assignment", label: "Assignment" },
+  { id: "quiz", label: "Quiz" },
+  { id: "exam", label: "Exam" },
+  { id: "lab", label: "Laboratory" },
+  { id: "project", label: "Project" },
+  { id: "presentation", label: "Presentation" },
+  { id: "other", label: "Other" },
+];
+
 export const ThemeContext = createContext({ theme: LIGHT, dark: false });
 export const useTheme = () => useContext(ThemeContext);

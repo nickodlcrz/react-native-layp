@@ -12,7 +12,7 @@ import CalendarPicker from "../components/CalendarPicker";
 import NotifyPicker from "../components/NotifyPicker";
 import { rescheduleTodoNotifications, cancelTodoNotifications } from "../notifications";
 
-export default function TodoScreen({ todos, setTodos }) {
+export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject }) {
   const { theme } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -22,6 +22,20 @@ export default function TodoScreen({ todos, setTodos }) {
   const [weekAnchor, setWeekAnchor] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [pendingSubjectId, setPendingSubjectId] = useState(null);
+
+  // Coming from Subject Detail's "+ Add task" -- open the form pre-linked to
+  // that subject, then let the parent clear the request so it doesn't
+  // re-trigger on every re-render.
+  React.useEffect(() => {
+    if (prefillSubjectId) {
+      setEditingId(null);
+      setPendingSubjectId(prefillSubjectId);
+      setShowForm(true);
+      onConsumePrefillSubject?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillSubjectId]);
 
   const weekDates = useMemo(() => getWeekDates(weekAnchor), [weekAnchor]);
 
@@ -57,6 +71,7 @@ export default function TodoScreen({ todos, setTodos }) {
       setTodos((prev) => [...prev, { ...draft, notificationIds }]);
     }
     setShowForm(false);
+    setPendingSubjectId(null);
   }
 
   async function toggle(id) {
@@ -155,7 +170,13 @@ export default function TodoScreen({ todos, setTodos }) {
       )}
 
       {showForm && (
-        <TodoForm initial={editingTodo} onSave={saveTodo} onCancel={() => { setShowForm(false); setEditingId(null); }} />
+        <TodoForm
+          initial={editingTodo}
+          presetSubjectId={editingTodo ? null : pendingSubjectId}
+          subjects={subjects}
+          onSave={saveTodo}
+          onCancel={() => { setShowForm(false); setEditingId(null); setPendingSubjectId(null); }}
+        />
       )}
 
       {filtered.length === 0 ? (
@@ -165,6 +186,7 @@ export default function TodoScreen({ todos, setTodos }) {
           <TodoRow
             key={t.id}
             t={t}
+            subject={t.subjectId ? subjects.find((s) => s.id === t.subjectId) : null}
             isExpanded={expandedId === t.id}
             onToggle={toggle}
             onEdit={startEdit}
@@ -182,7 +204,7 @@ export default function TodoScreen({ todos, setTodos }) {
 // one row doesn't force every other row to re-render -- matters more on
 // lower-RAM devices (e.g. Redmi 10, 4GB variant) where re-render churn is
 // more visible as scroll jank.
-const TodoRow = React.memo(function TodoRow({ t, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
+const TodoRow = React.memo(function TodoRow({ t, subject, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
   const { theme } = useTheme();
   const cat = CATEGORIES.find((c) => c.id === t.category);
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
@@ -216,6 +238,9 @@ const TodoRow = React.memo(function TodoRow({ t, isExpanded, onToggle, onEdit, o
             <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
               <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
             </View>
+            {subject && (
+              <Text style={[styles.metaText, { color: theme.textMuted }]} numberOfLines={1}>{subject.code} · {subject.description}</Text>
+            )}
             {t.dueDate ? (
               <Text style={[styles.metaText, { color: flagged || dleft < 0 ? ACCENT.ember : theme.textMuted }]}>
                 {dleft === 0 ? "Due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}
@@ -251,10 +276,11 @@ const TodoRow = React.memo(function TodoRow({ t, isExpanded, onToggle, onEdit, o
   );
 });
 
-function TodoForm({ initial, onSave, onCancel }) {
+function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = null }) {
   const { theme } = useTheme();
   const [title, setTitle] = useState(initial?.title || "");
   const [category, setCategory] = useState(initial?.category || "school");
+  const [subjectId, setSubjectId] = useState(initial?.subjectId || presetSubjectId || null);
   const [hasDueDate, setHasDueDate] = useState(initial ? !!initial.dueDate : true);
   const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
   const [reminderEnabled, setReminderEnabled] = useState(initial?.reminderEnabled !== false);
@@ -285,8 +311,20 @@ function TodoForm({ initial, onSave, onCancel }) {
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <TextInput value={title} onChangeText={setTitle} placeholder="What do you need to do?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
       <View style={styles.chipWrap}>
-        {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={category === c.id} onPress={() => setCategory(c.id)} small />)}
+        {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={category === c.id} onPress={() => { setCategory(c.id); if (c.id !== "school") setSubjectId(null); }} small />)}
       </View>
+
+      {category === "school" && subjects.length > 0 && (
+        <View style={{ marginBottom: 12 }}>
+          <Text style={[styles.label, { color: theme.textMuted }]}>Subject (optional)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <Chip label="None" active={!subjectId} onPress={() => setSubjectId(null)} small />
+            {subjects.map((s) => (
+              <Chip key={s.id} label={s.code} active={subjectId === s.id} onPress={() => setSubjectId(s.id)} small />
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       <View style={[styles.toggleRow, { borderColor: theme.line }]}>
         <View style={{ flex: 1 }}>
@@ -334,7 +372,7 @@ function TodoForm({ initial, onSave, onCancel }) {
             <Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text>
           </Pressable>
         )}
-        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ title: title.trim(), category, dueDate: hasDueDate ? dueDate : null, reminderEnabled, notify, subtasks })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
+        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ title: title.trim(), category, subjectId: category === "school" ? subjectId : null, dueDate: hasDueDate ? dueDate : null, reminderEnabled, notify, subtasks })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add task"}</Text>
         </Pressable>
       </View>

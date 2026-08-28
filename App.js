@@ -1,13 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { ListTodo, Wallet, Receipt, FileText, Bell, X, Sun, Moon, HandCoins, Lock, Home } from "lucide-react-native";
+import { ListTodo, Wallet, Receipt, FileText, Bell, X, Sun, Moon, HandCoins, Lock, Home, GraduationCap } from "lucide-react-native";
 
-import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS } from "./src/theme";
+import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import { loadState, saveState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, cancelTodoNotifications, rescheduleDailyBudgetNotification } from "./src/notifications";
 import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent } from "./src/utils";
+import { newAcademicPeriod, getActivePeriod, subjectsForPeriod } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
 import LockScreen from "./src/screens/LockScreen";
@@ -17,6 +18,7 @@ import TodoScreen from "./src/screens/TodoScreen";
 import BudgetScreen from "./src/screens/BudgetScreen";
 import SpendingScreen from "./src/screens/SpendingScreen";
 import BorrowScreen from "./src/screens/BorrowScreen";
+import SchoolScreen from "./src/screens/SchoolScreen";
 import SummaryScreen from "./src/screens/SummaryScreen";
 import TabTransition from "./src/components/TabTransition";
 
@@ -63,6 +65,20 @@ function AppShell({ onLock }) {
   const [dailyBudgetLog, setDailyBudgetLog] = useState([]); // record of the user's daily savings decisions (saved/kept/remind) -- informational only, never used to move money on its own
   const [dailyBudgetNotifId, setDailyBudgetNotifId] = useState(null);
   const [reminderBanner, setReminderBanner] = useState(null);
+  // School: academic periods, the classes within them, and their weekly
+  // meeting times. Seeded with one default active period so the School tab
+  // is usable immediately on a brand-new install, before loadState resolves.
+  const [academicPeriods, setAcademicPeriods] = useState(() => [newAcademicPeriod("Current Schedule")]);
+  const [subjects, setSubjects] = useState([]);
+  const [scheduleEntries, setScheduleEntries] = useState([]);
+  const [schoolDefaults, setSchoolDefaults] = useState({ ...DEFAULT_SCHOOL_DEFAULTS });
+  const [prefillSubjectId, setPrefillSubjectId] = useState(null);
+  // Only the active period's subjects are offered when linking a task to a
+  // class -- a task shouldn't be pinned to a subject from an archived term.
+  const activeSubjects = useMemo(
+    () => subjectsForPeriod(subjects, getActivePeriod(academicPeriods)?.id),
+    [subjects, academicPeriods]
+  );
   const firstLoad = useRef(true);
   const dismissedTodayRef = useRef({});
 
@@ -87,6 +103,14 @@ function AppShell({ onLock }) {
         setDailyBudgetSettings(s.dailyBudgetSettings || { ...DEFAULT_DAILY_BUDGET_SETTINGS });
         setDailyBudgetLog(s.dailyBudgetLog || []);
         setDailyBudgetNotifId(s.dailyBudgetNotifId || null);
+        // A brand new install (or a backup from before the School feature)
+        // gets one default, already-active academic period seeded so the
+        // School tab is usable immediately -- no empty "create a period
+        // first" step required.
+        setAcademicPeriods(s.academicPeriods?.length ? s.academicPeriods : [newAcademicPeriod("Current Schedule")]);
+        setSubjects(s.subjects || []);
+        setScheduleEntries(s.scheduleEntries || []);
+        setSchoolDefaults(s.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
         if (typeof s.dark === "boolean") setDark(s.dark);
 
         // Migrate old single "income" number (pre-accounts) into the money log.
@@ -103,9 +127,9 @@ function AppShell({ onLock }) {
   useEffect(() => {
     if (!ready) return;
     if (firstLoad.current) { firstLoad.current = false; return; }
-    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId });
+    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults });
     setThemePreference(dark);
-  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId]);
+  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults]);
 
   // Keeps the end-of-day local notification's copy roughly current. Local
   // notifications can't recompute their own body at fire time, so instead
@@ -227,9 +251,28 @@ function AppShell({ onLock }) {
               accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
               loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
               goals={goals}
+              periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries}
+              onViewSchedule={() => setTab("school")}
             />
           )}
-          {tab === "todo" && <TodoScreen todos={todos} setTodos={setTodos} />}
+          {tab === "todo" && (
+            <TodoScreen
+              todos={todos} setTodos={setTodos}
+              subjects={activeSubjects}
+              prefillSubjectId={prefillSubjectId}
+              onConsumePrefillSubject={() => setPrefillSubjectId(null)}
+            />
+          )}
+          {tab === "school" && (
+            <SchoolScreen
+              periods={academicPeriods} setPeriods={setAcademicPeriods}
+              subjects={subjects} setSubjects={setSubjects}
+              entries={scheduleEntries} setEntries={setScheduleEntries}
+              schoolDefaults={schoolDefaults} setSchoolDefaults={setSchoolDefaults}
+              todos={todos} setTodos={setTodos}
+              onGoToTodoForSubject={(subjectId) => { setPrefillSubjectId(subjectId); setTab("todo"); }}
+            />
+          )}
           {tab === "budget" && (
             <BudgetScreen
               moneyLog={moneyLog} setMoneyLog={setMoneyLog}
@@ -272,7 +315,7 @@ function AppShell({ onLock }) {
               todos={todos} splits={splits} bills={bills} expenses={expenses}
               moneyLog={moneyLog} weeklySummaries={weeklySummaries} savingsLog={savingsLog} loans={loans}
               accounts={accounts} transfers={transfers}
-              backup={{ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog }}
+              backup={{ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults }}
               onRestore={(data) => {
                 setTodos(data.todos); setBills(data.bills); setExpenses(data.expenses);
                 setMoneyLog(data.moneyLog); setWeeklySummaries(data.weeklySummaries);
@@ -281,6 +324,10 @@ function AppShell({ onLock }) {
                 setDark(data.dark);
                 setDailyBudgetSettings(data.dailyBudgetSettings || { ...DEFAULT_DAILY_BUDGET_SETTINGS });
                 setDailyBudgetLog(data.dailyBudgetLog || []);
+                setAcademicPeriods(data.academicPeriods?.length ? data.academicPeriods : [newAcademicPeriod("Current Schedule")]);
+                setSubjects(data.subjects || []);
+                setScheduleEntries(data.scheduleEntries || []);
+                setSchoolDefaults(data.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
               }}
             />
           )}
@@ -289,6 +336,7 @@ function AppShell({ onLock }) {
         <View style={[styles.tabBar, { borderTopColor: theme.line, backgroundColor: theme.card }]}>
           <NavBtn icon={Home} label="Home" active={tab === "home"} onPress={() => setTab("home")} theme={theme} />
           <NavBtn icon={ListTodo} label="Todo" active={tab === "todo"} onPress={() => setTab("todo")} theme={theme} />
+          <NavBtn icon={GraduationCap} label="School" active={tab === "school"} onPress={() => setTab("school")} theme={theme} />
           <NavBtn icon={Wallet} label="Budget" active={tab === "budget"} onPress={() => setTab("budget")} theme={theme} />
           <NavBtn icon={Receipt} label="Spending" active={tab === "spending"} onPress={() => setTab("spending")} theme={theme} />
           <NavBtn icon={HandCoins} label="Borrow" active={tab === "borrow"} onPress={() => setTab("borrow")} theme={theme} />

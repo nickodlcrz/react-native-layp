@@ -1,6 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { daysUntil, fmtDateLong } from "./utils";
+import { daysUntil, fmtDateLong, fmtTime12 } from "./utils";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -136,6 +136,78 @@ export async function rescheduleDailyBudgetNotification(previousId, settings, co
     content: { title: content.title, body: content.body, sound: true },
     trigger: Platform.OS === "android" ? { hour: h, minute: m, repeats: true, channelId: "layp-reminders" } : { hour: h, minute: m, repeats: true },
   });
+}
+
+// --- School: class + advance reminders ---
+//
+// A subject can meet multiple times a week (possibly across several
+// schedule entries with different day/time blocks). Both the "class
+// starting now" reminder and the optional "class in N minutes" advance
+// reminder are weekly-repeating triggers, one per meeting day, same
+// pattern as a Todo's "weekly" notify type. All ids fired for a subject are
+// kept together on subject.notificationIds so they can be cancelled as a
+// group whenever the subject, its schedule, or its reminder settings
+// change, or when its academic period stops being the active one.
+function classBody(subject, entry) {
+  const time = `${fmtTime12(entry.startTime)} \u2013 ${fmtTime12(entry.endTime)}`;
+  const room = subject.room ? `\nRoom ${subject.room}` : "";
+  return `${subject.code} \u2014 ${subject.description}\n${time}${room}`;
+}
+
+async function scheduleWeekly(weekday, hour, minute, content) {
+  return Notifications.scheduleNotificationAsync({
+    content: { ...content, sound: true },
+    trigger: Platform.OS === "android" ? { weekday, hour, minute, repeats: true, channelId: "layp-reminders" } : { weekday, hour, minute, repeats: true },
+  });
+}
+
+export async function cancelSubjectNotifications(subject) {
+  if (!subject?.notificationIds) return;
+  await cancelTodoNotifications(subject.notificationIds.class);
+  await cancelTodoNotifications(subject.notificationIds.advance);
+}
+
+// Cancels this subject's previous notifications, then schedules fresh ones
+// from its current reminder settings and the full list of schedule entries
+// currently belonging to it. Returns the new { class, advance } id arrays to
+// store back on the subject. Pass an empty `entries` array (or call
+// cancelSubjectNotifications directly) to just stop reminders, e.g. when the
+// subject's period is no longer the active one.
+export async function rescheduleSubjectNotifications(subject, entries) {
+  await cancelSubjectNotifications(subject);
+  const classIds = [];
+  const advanceIds = [];
+
+  for (const entry of entries) {
+    const [h, m] = (entry.startTime || "08:00").split(":").map(Number);
+
+    if (subject.classReminderEnabled !== false) {
+      for (const weekday of entry.days) {
+        classIds.push(await scheduleWeekly(weekday, h, m, { title: "\ud83d\udd14 Class starting now", body: classBody(subject, entry) }));
+      }
+    }
+
+    if (subject.advanceReminderEnabled) {
+      const advanceMin = Number(subject.advanceReminderMinutes) || 10;
+      for (const weekday of entry.days) {
+        // Roll back into the previous weekday if the advance offset crosses
+        // midnight (e.g. a 12:05am class with a 10-minute advance reminder).
+        let total = h * 60 + m - advanceMin;
+        let wd = weekday;
+        if (total < 0) {
+          total += 24 * 60;
+          wd = wd === 1 ? 7 : wd - 1;
+        }
+        const oh = Math.floor(total / 60);
+        const om = total % 60;
+        advanceIds.push(
+          await scheduleWeekly(wd, oh, om, { title: `\ud83d\udd14 Class in ${advanceMin} minutes`, body: classBody(subject, entry) })
+        );
+      }
+    }
+  }
+
+  return { class: classIds, advance: advanceIds };
 }
 
 export async function rescheduleBillNotification(bill) {
