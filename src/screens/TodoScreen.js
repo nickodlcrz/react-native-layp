@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Linking, Platform, Switch } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Linking, Platform, Switch, Alert } from "react-native";
 import {
   CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays,
   ChevronLeft, ChevronRight, AlertTriangle, ChevronDown, ChevronUp, Settings, Bell, BellOff,
 } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
-import { uid, todayISO, daysUntil, fmtDay, getWeekDates } from "../utils";
+import { uid, todayISO, daysUntil, fmtDay, getWeekDates, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
@@ -82,9 +82,11 @@ export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubj
   }
   async function remove(id) {
     const t = todos.find((x) => x.id === id);
-    if (t?.notificationIds) await cancelTodoNotifications(t.notificationIds);
-    setTodos((prev) => prev.filter((x) => x.id !== id));
-    if (editingId === id) { setEditingId(null); setShowForm(false); }
+    confirmDelete(Alert, "Delete this task?", `"${t?.title}" will be removed for good.`, async () => {
+      if (t?.notificationIds) await cancelTodoNotifications(t.notificationIds);
+      setTodos((prev) => prev.filter((x) => x.id !== id));
+      if (editingId === id) { setEditingId(null); setShowForm(false); }
+    });
   }
   function startEdit(t) { setEditingId(t.id); setShowForm(true); }
   function startAdd() { setEditingId(null); setShowForm((s) => !s); }
@@ -109,7 +111,7 @@ export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubj
               </Pressable>
             </View>
           )}
-          <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]}>
+          <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Add task"}>
             {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
           </Pressable>
         </View>
@@ -132,9 +134,9 @@ export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubj
       {statusView === "active" && view === "week" && (
         <View style={[styles.weekCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
           <View style={styles.weekNav}>
-            <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })}><ChevronLeft size={15} color={theme.textMuted} /></Pressable>
+            <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} accessibilityLabel="Previous week"><ChevronLeft size={15} color={theme.textMuted} /></Pressable>
             <Text style={[styles.weekLabel, { color: theme.textMuted }]}>{fmtDay(weekDates[0])} - {fmtDay(weekDates[6])}</Text>
-            <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })}><ChevronRight size={15} color={theme.textMuted} /></Pressable>
+            <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} accessibilityLabel="Next week"><ChevronRight size={15} color={theme.textMuted} /></Pressable>
           </View>
           <View style={styles.weekDays}>
             {weekDates.map((d) => {
@@ -252,15 +254,15 @@ const TodoRow = React.memo(function TodoRow({ t, subject, isExpanded, onToggle, 
               <Bell size={10} color={theme.textMuted} />
             )}
             {subtasks.length > 0 && (
-              <Pressable onPress={() => onExpand(isExpanded ? null : t.id)} style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+              <Pressable onPress={() => onExpand(isExpanded ? null : t.id)} style={{ flexDirection: "row", alignItems: "center", gap: 2 }} accessibilityLabel={isExpanded ? "Collapse subtasks" : "Expand subtasks"}>
                 <Text style={{ fontSize: 9, fontWeight: "600", color: theme.textMuted }}>{subDone}/{subtasks.length}</Text>
                 {isExpanded ? <ChevronUp size={10} color={theme.textMuted} /> : <ChevronDown size={10} color={theme.textMuted} />}
               </Pressable>
             )}
           </View>
         </Pressable>
-        {!t.completed && <Pressable onPress={() => onEdit(t)} style={{ marginRight: 4 }}><Pencil size={14} color={theme.textMuted} /></Pressable>}
-        <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Trash2 size={15} color={theme.textMuted} /></Pressable>
+        {!t.completed && <Pressable onPress={() => onEdit(t)} style={{ marginRight: 4 }} accessibilityLabel="Edit task"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+        <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete task"><Trash2 size={15} color={theme.textMuted} /></Pressable>
       </View>
       {isExpanded && subtasks.length > 0 && (
         <View style={{ marginTop: 8, paddingLeft: 30, gap: 6 }}>
@@ -354,7 +356,7 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
           {subtasks.map((s) => (
             <View key={s.id} style={[styles.subtaskRow, { backgroundColor: theme.bg }]}>
               <Text style={{ fontSize: 11, color: theme.text }}>{s.title}</Text>
-              <Pressable onPress={() => removeSubtask(s.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><X size={11} color={theme.textMuted} /></Pressable>
+              <Pressable onPress={() => removeSubtask(s.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Remove subtask"><X size={11} color={theme.textMuted} /></Pressable>
             </View>
           ))}
         </View>
@@ -368,7 +370,7 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
 
       <View style={styles.formActions}>
         {initial && (
-          <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]}>
+          <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel">
             <Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text>
           </Pressable>
         )}

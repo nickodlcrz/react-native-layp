@@ -29,7 +29,7 @@ export default function TimePicker({ value, onChange, label }) {
   return (
     <View style={{ flex: 1 }}>
       <Text style={[styles.label, { color: theme.textMuted }]}>{label}</Text>
-      <Pressable onPress={() => setOpen(true)} style={[styles.trigger, { backgroundColor: theme.bg }]}>
+      <Pressable onPress={() => setOpen(true)} style={[styles.trigger, { backgroundColor: theme.bg }]} accessibilityLabel={`${label}, ${fmtTime12(value)}`}>
         <Bell size={12} color={theme.textMuted} />
         <Text style={[styles.triggerText, { color: theme.text }]}>{fmtTime12(value)}</Text>
       </Pressable>
@@ -49,7 +49,7 @@ export default function TimePicker({ value, onChange, label }) {
               <Wheel data={MINUTES} selected={m} format={(v) => String(v).padStart(2, "0")} onSelect={(mm) => set(h12, mm, ap)} />
               <Wheel data={AMPM} selected={ap} format={(v) => v} onSelect={(a) => set(h12, m, a)} />
             </View>
-            <Pressable onPress={() => setOpen(false)} style={styles.doneBtn}>
+            <Pressable onPress={() => setOpen(false)} style={[styles.doneBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel="Done">
               <Text style={styles.doneText}>Done</Text>
             </Pressable>
           </Pressable>
@@ -110,7 +110,7 @@ function Wheel({ data, selected, format, onSelect }) {
         {data.map((v, i) => {
           const isSelected = i === selectedIndex;
           return (
-            <Pressable key={String(v)} style={styles.wheelItem} onPress={() => { listRef.current?.scrollTo({ y: i * ITEM_HEIGHT, animated: true }); commitIndex(i); }}>
+            <Pressable key={String(v)} style={styles.wheelItem} onPress={() => { listRef.current?.scrollTo({ y: i * ITEM_HEIGHT, animated: true }); commitIndex(i); }} accessibilityLabel={format(v)}>
               <Text style={[styles.wheelItemText, { color: isSelected ? ACCENT.gold : theme.textMuted, fontWeight: isSelected ? "800" : "500", fontSize: isSelected ? 18 : 14 }]}>
                 {format(v)}
               </Text>
@@ -135,6 +135,6 @@ const styles = StyleSheet.create({
   wheelHighlight: { position: "absolute", left: 0, right: 0, height: ITEM_HEIGHT, borderTopWidth: 1, borderBottomWidth: 1 },
   wheelItem: { height: ITEM_HEIGHT, alignItems: "center", justifyContent: "center" },
   wheelItemText: { fontFamily: "monospace" },
-  doneBtn: { paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: "#3E7C59" },
+  doneBtn: { paddingVertical: 12, borderRadius: 12, alignItems: "center" },
   doneText: { fontSize: 12, fontWeight: "700", color: "#fff" },
 });

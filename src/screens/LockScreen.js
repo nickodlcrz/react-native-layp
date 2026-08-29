@@ -3,10 +3,17 @@ import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator, useColorSc
 import { Fingerprint, Delete, AlertTriangle, Sun, Moon } from "lucide-react-native";
 import { LIGHT, DARK, ACCENT } from "../theme";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "../assets/logo";
-import { hasPinSetup, setPin, verifyPin, isBiometricAvailable, authenticateBiometric, PIN_LENGTH } from "../security";
+import { hasPinSetup, setPin, verifyPin, isBiometricAvailable, authenticateBiometric, getLockoutRemaining, PIN_LENGTH } from "../security";
 import { getThemePreference, setThemePreference } from "../themePreference";
 
 const KEYPAD = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"];
+
+function fmtLockout(ms) {
+  const totalSec = Math.ceil(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.ceil(totalSec / 60);
+  return `${min}m`;
+}
 
 export default function LockScreen({ onUnlock }) {
   const systemScheme = useColorScheme();
@@ -22,23 +29,43 @@ export default function LockScreen({ onUnlock }) {
   const [busy, setBusy] = useState(false);
   const [bioAvailable, setBioAvailable] = useState(false);
   const [shake, setShake] = useState(false);
+  const [lockedOutMs, setLockedOutMs] = useState(0);
 
   useEffect(() => {
     (async () => {
       const setup = await hasPinSetup();
       const bio = await isBiometricAvailable();
       const storedDark = await getThemePreference();
+      const remaining = await getLockoutRemaining();
       if (storedDark !== null) setDark(storedDark);
       setBioAvailable(bio);
       setNeedsSetup(!setup);
+      setLockedOutMs(remaining);
+      if (remaining > 0) setError(`Too many attempts. Try again in ${fmtLockout(remaining)}.`);
       setChecking(false);
-      if (setup && bio) {
+      if (setup && bio && remaining <= 0) {
         // Offer fingerprint immediately on a normal unlock screen.
         tryBiometric();
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Ticks the lockout countdown down once a second so the "try again in
+  // Xs" message stays accurate and the keypad re-enables itself the moment
+  // the lockout expires, without the person needing to back out and re-enter.
+  useEffect(() => {
+    if (lockedOutMs <= 0) return;
+    const id = setInterval(() => {
+      setLockedOutMs((ms) => {
+        const next = Math.max(0, ms - 1000);
+        if (next <= 0) setError("");
+        else setError(`Too many attempts. Try again in ${fmtLockout(next)}.`);
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [lockedOutMs]);
 
   function toggleDark() {
     setDark((d) => {
@@ -54,7 +81,7 @@ export default function LockScreen({ onUnlock }) {
   }
 
   function handleDigit(d) {
-    if (d === "" || busy) return;
+    if (d === "" || busy || lockedOutMs > 0) return;
     if (d === "back") {
       setPinInput((p) => p.slice(0, -1));
       setError("");
@@ -93,12 +120,19 @@ export default function LockScreen({ onUnlock }) {
 
   async function handleUnlockDigitsComplete(entered) {
     setBusy(true);
-    const ok = await verifyPin(entered);
+    const result = await verifyPin(entered);
     setBusy(false);
-    if (ok) {
+    if (result.ok) {
       onUnlock();
+    } else if (result.lockedOutMs > 0) {
+      setLockedOutMs(result.lockedOutMs);
+      setError(`Too many attempts. Try again in ${fmtLockout(result.lockedOutMs)}.`);
+      triggerShake();
+      setPinInput("");
     } else {
-      setError("Incorrect PIN.");
+      setError(result.attemptsRemaining <= 2
+        ? `Incorrect PIN. ${result.attemptsRemaining} attempt${result.attemptsRemaining === 1 ? "" : "s"} left before a short lockout.`
+        : "Incorrect PIN.");
       triggerShake();
       setPinInput("");
     }
@@ -126,7 +160,7 @@ export default function LockScreen({ onUnlock }) {
 
   return (
     <View style={[styles.safe, { backgroundColor: theme.bg }]}>
-      <Pressable onPress={toggleDark} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <Pressable onPress={toggleDark} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={dark ? "Switch to light mode" : "Switch to dark mode"}>
         {dark ? <Sun size={14} color={ACCENT.gold} /> : <Moon size={14} color={theme.text} />}
       </Pressable>
       <View style={styles.top}>
@@ -136,14 +170,14 @@ export default function LockScreen({ onUnlock }) {
 
         <View style={[styles.dotsRow, shake && styles.shake]}>
           {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-            <View key={i} style={[styles.dot, { borderColor: theme.accentDark, backgroundColor: i < pin.length ? theme.accentDark : "transparent" }]} />
+            <View key={i} style={[styles.dot, { borderColor: theme.text, backgroundColor: i < pin.length ? theme.text : "transparent" }]} />
           ))}
         </View>
 
         {error ? (
           <View style={styles.errorRow}>
             <AlertTriangle size={12} color={ACCENT.ember} />
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={[styles.errorText, { color: ACCENT.ember }]}>{error}</Text>
           </View>
         ) : busy ? (
           <ActivityIndicator color={theme.textMuted} style={{ marginTop: 8 }} />
@@ -152,11 +186,11 @@ export default function LockScreen({ onUnlock }) {
         )}
       </View>
 
-      <View style={styles.keypad}>
+      <View style={[styles.keypad, lockedOutMs > 0 && { opacity: 0.4 }]}>
         {KEYPAD.map((k, i) => {
           if (k === "") {
             return !needsSetup && bioAvailable ? (
-              <Pressable key={i} onPress={tryBiometric} style={styles.key} disabled={busy}>
+              <Pressable key={i} onPress={tryBiometric} style={styles.key} disabled={busy || lockedOutMs > 0} accessibilityLabel="Use fingerprint">
                 <Fingerprint size={22} color={ACCENT.gold} />
               </Pressable>
             ) : (
@@ -165,13 +199,13 @@ export default function LockScreen({ onUnlock }) {
           }
           if (k === "back") {
             return (
-              <Pressable key={i} onPress={() => handleDigit("back")} style={styles.key} disabled={busy}>
+              <Pressable key={i} onPress={() => handleDigit("back")} style={styles.key} disabled={busy || lockedOutMs > 0} accessibilityLabel="Backspace">
                 <Delete size={20} color={theme.textMuted} />
               </Pressable>
             );
           }
           return (
-            <Pressable key={i} onPress={() => handleDigit(k)} style={styles.key} disabled={busy}>
+            <Pressable key={i} onPress={() => handleDigit(k)} style={styles.key} disabled={busy || lockedOutMs > 0} accessibilityLabel={`Digit ${k}`}>
               <Text style={[styles.keyText, { color: theme.text }]}>{k}</Text>
             </Pressable>
           );
@@ -192,7 +226,7 @@ const styles = StyleSheet.create({
   shake: { transform: [{ translateX: 0 }] },
   dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
   errorRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14 },
-  errorText: { color: "#D1573F", fontSize: 11 },
+  errorText: { fontSize: 11 },
   keypad: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 24, paddingBottom: 36 },
   key: { width: "33.33%", height: 76, alignItems: "center", justifyContent: "center" },
   keyText: { fontSize: 24, fontWeight: "600" },

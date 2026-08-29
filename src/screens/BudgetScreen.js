@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell } from "lucide-react-native";
-import { useTheme, ACCENT, DEFAULT_SPLITS } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, unallocatedSavings, goalProgress, addAccount as pushAccount, isPositiveAmount } from "../utils";
+import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
+import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, unallocatedSavings, goalProgress, addAccount as pushAccount, isPositiveAmount, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import DailyBudgetScreen from "./DailyBudgetScreen";
+import SpendingScreen from "./SpendingScreen";
+import BorrowScreen from "./BorrowScreen";
 import { cancelTodoNotifications, rescheduleBillNotification } from "../notifications";
 
 function matchPresetName(splits) {
@@ -17,8 +19,8 @@ function matchPresetName(splits) {
 }
 
 export default function BudgetScreen({
-  moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries,
-  savingsLog, setSavingsLog, loans, accounts, setAccounts, transfers, setTransfers, goals, setGoals,
+  moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, setWeeklySummaries,
+  savingsLog, setSavingsLog, loans, setLoans, accounts, setAccounts, transfers, setTransfers, goals, setGoals,
   dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog,
 }) {
   const { theme } = useTheme();
@@ -32,6 +34,7 @@ export default function BudgetScreen({
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [showDailyBudget, setShowDailyBudget] = useState(false);
+  const [subTab, setSubTab] = useState("overview"); // "overview" | "spending" | "borrow"
   const [addAmount, setAddAmount] = useState("");
   const [addAccount, setAddAccount] = useState(accounts[0]?.id);
 
@@ -86,12 +89,14 @@ export default function BudgetScreen({
       setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...reopened, notificationId } : b)));
     }
   }
-  async function removeBill(id) {
+  function removeBill(id) {
     const bill = bills.find((b) => b.id === id);
-    if (bill?.notificationId) await cancelTodoNotifications([bill.notificationId]);
-    setExpenses((prev) => prev.filter((e) => e.billId !== id));
-    setBills((prev) => prev.filter((b) => b.id !== id));
-    if (editingBillId === id) { setEditingBillId(null); setShowBillForm(false); }
+    confirmDelete(Alert, "Delete this bill?", `"${bill?.name}" will be removed for good.`, async () => {
+      if (bill?.notificationId) await cancelTodoNotifications([bill.notificationId]);
+      setExpenses((prev) => prev.filter((e) => e.billId !== id));
+      setBills((prev) => prev.filter((b) => b.id !== id));
+      if (editingBillId === id) { setEditingBillId(null); setShowBillForm(false); }
+    });
   }
   function startEditBill(b) { setEditingBillId(b.id); setShowBillForm(true); }
 
@@ -105,7 +110,10 @@ export default function BudgetScreen({
       Alert.alert("Account still has history", "This account can't be deleted because transactions are linked to it. Move or remove those records first so no financial history is hidden.");
       return;
     }
-    setAccounts((prev) => prev.length > 1 ? prev.filter((a) => a.id !== id) : prev);
+    const account = accounts.find((a) => a.id === id);
+    confirmDelete(Alert, "Delete this account?", `"${account?.label}" will be removed.`, () => {
+      setAccounts((prev) => prev.length > 1 ? prev.filter((a) => a.id !== id) : prev);
+    });
   }
 
   const unpaidBills = bills.filter((b) => !b.paid).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
@@ -143,6 +151,27 @@ export default function BudgetScreen({
   const modelName = matchPresetName(splits);
 
   return (
+    <View style={{ flex: 1 }}>
+      <View style={styles.subNavRow}>
+        <Chip label="Overview" active={subTab === "overview"} onPress={() => setSubTab("overview")} small />
+        <Chip label="Spending" active={subTab === "spending"} onPress={() => setSubTab("spending")} small />
+        <Chip label="Borrow" active={subTab === "borrow"} onPress={() => setSubTab("borrow")} small />
+      </View>
+
+      {subTab === "spending" ? (
+        <SpendingScreen
+          expenses={expenses} setExpenses={setExpenses}
+          moneyLog={moneyLog} setMoneyLog={setMoneyLog}
+          weeklySummaries={weeklySummaries} setWeeklySummaries={setWeeklySummaries}
+          splits={splits} loans={loans} savingsLog={savingsLog} accounts={accounts} transfers={transfers}
+        />
+      ) : subTab === "borrow" ? (
+        <BorrowScreen
+          loans={loans} setLoans={setLoans}
+          moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
+          savingsLog={savingsLog} accounts={accounts} transfers={transfers}
+        />
+      ) : (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <Text style={[styles.h1, { color: theme.text }]}>Pay plan</Text>
 
@@ -165,9 +194,9 @@ export default function BudgetScreen({
         </View>
 
         {!showAddMoney ? (
-          <Pressable onPress={() => setShowAddMoney(true)} style={styles.addMoneyBtn}>
+          <Pressable onPress={() => setShowAddMoney(true)} style={styles.addMoneyBtn} accessibilityLabel="Add money received">
             <Plus size={13} color={theme.accentDark} />
-            <Text style={styles.addMoneyBtnText}>Add money received</Text>
+            <Text style={[styles.addMoneyBtnText, { color: theme.accentDark }]}>Add money received</Text>
           </Pressable>
         ) : (
           <View>
@@ -189,10 +218,10 @@ export default function BudgetScreen({
                 autoFocus
                 onSubmitEditing={addMoney}
               />
-              <Pressable onPress={addMoney} style={styles.addMoneyConfirm} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Pressable onPress={addMoney} style={styles.addMoneyConfirm} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Confirm amount">
                 <Check size={14} color={theme.accentDark} />
               </Pressable>
-              <Pressable onPress={() => { setShowAddMoney(false); setAddAmount(""); }} style={styles.addMoneyCancel} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Pressable onPress={() => { setShowAddMoney(false); setAddAmount(""); }} style={styles.addMoneyCancel} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Cancel">
                 <X size={14} color="#fff" />
               </Pressable>
             </View>
@@ -203,10 +232,10 @@ export default function BudgetScreen({
       <View style={styles.headerRow}>
         <Text style={[styles.h2, { color: theme.text }]}>Accounts</Text>
         <View style={{ flexDirection: "row", gap: 6 }}>
-          <Pressable onPress={() => setShowTransferForm((s) => !s)} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]}>
+          <Pressable onPress={() => setShowTransferForm((s) => !s)} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showTransferForm ? "Close transfer form" : "Transfer between accounts"}>
             {showTransferForm ? <X size={14} color="#fff" /> : <ArrowLeftRight size={14} color="#fff" />}
           </Pressable>
-          <Pressable onPress={() => setAccounts((prev) => pushAccount(prev, PALETTE))} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]}>
+          <Pressable onPress={() => setAccounts((prev) => pushAccount(prev, PALETTE))} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel="Add account">
             <Plus size={14} color="#fff" />
           </Pressable>
         </View>
@@ -231,7 +260,7 @@ export default function BudgetScreen({
             />
             <Text style={[styles.accountEditBalance, { color: theme.textMuted }]}>{peso(computeAccountBalance(a.id, ctx))}</Text>
             {accounts.length > 1 && (
-              <Pressable onPress={() => removeAccount(a.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Pressable onPress={() => removeAccount(a.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={`Delete ${a.label} account`}>
                 <Trash2 size={13} color={theme.textMuted} />
               </Pressable>
             )}
@@ -258,10 +287,10 @@ export default function BudgetScreen({
       <View style={styles.headerRow}>
         <Text style={[styles.h2, { color: theme.text }]}>Savings</Text>
         <View style={{ flexDirection: "row", gap: 6 }}>
-          <Pressable onPress={() => { setSavingsMode("deposit"); setShowSavingsForm((s) => (showSavingsForm && savingsMode === "deposit" ? false : true)); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]}>
+          <Pressable onPress={() => { setSavingsMode("deposit"); setShowSavingsForm((s) => (showSavingsForm && savingsMode === "deposit" ? false : true)); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel="Add to savings">
             {showSavingsForm && savingsMode === "deposit" ? <X size={14} color="#fff" /> : <Plus size={14} color="#fff" />}
           </Pressable>
-          <Pressable onPress={() => { setSavingsMode("withdraw"); setShowSavingsForm((s) => (showSavingsForm && savingsMode === "withdraw" ? false : true)); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]}>
+          <Pressable onPress={() => { setSavingsMode("withdraw"); setShowSavingsForm((s) => (showSavingsForm && savingsMode === "withdraw" ? false : true)); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel="Withdraw from savings">
             {showSavingsForm && savingsMode === "withdraw" ? <X size={14} color="#fff" /> : <ArrowLeftRight size={14} color="#fff" />}
           </Pressable>
         </View>
@@ -293,7 +322,7 @@ export default function BudgetScreen({
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <Text style={[styles.smallRowAmount, { color: isWithdraw ? ACCENT.ember : ACCENT.leaf }]}>{isWithdraw ? "-" : "+"}{peso(s.amount)}</Text>
-                <Pressable onPress={() => setSavingsLog((prev) => prev.filter((x) => x.id !== s.id))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
+                <Pressable onPress={() => confirmDelete(Alert, "Delete this entry?", "This savings entry will be removed for good.", () => setSavingsLog((prev) => prev.filter((x) => x.id !== s.id)))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete savings entry"><Trash2 size={13} color={theme.textMuted} /></Pressable>
               </View>
             </View>
           );
@@ -301,7 +330,7 @@ export default function BudgetScreen({
 
       <View style={styles.headerRow}>
         <Text style={[styles.h2, { color: theme.text }]}>Savings goals</Text>
-        <Pressable onPress={() => { setEditingGoalId(null); setShowGoalForm((s) => !s); }} style={[styles.roundBtn, { backgroundColor: ACCENT.sky }]}>
+        <Pressable onPress={() => { setEditingGoalId(null); setShowGoalForm((s) => !s); }} style={[styles.roundBtn, { backgroundColor: ACCENT.sky }]} accessibilityLabel={showGoalForm ? "Close goal form" : "Add savings goal"}>
           {showGoalForm ? <X size={14} color="#fff" /> : <Plus size={14} color="#fff" />}
         </Pressable>
       </View>
@@ -335,8 +364,8 @@ export default function BudgetScreen({
                 <View style={styles.goalHeaderRow}>
                   <Text style={[styles.goalName, { color: theme.text }]}>{g.name}</Text>
                   <View style={{ flexDirection: "row", gap: 8 }}>
-                    <Pressable onPress={() => { setEditingGoalId(g.id); setShowGoalForm(true); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Pencil size={13} color={theme.textMuted} /></Pressable>
-                    <Pressable onPress={() => setGoals((prev) => prev.filter((x) => x.id !== g.id))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
+                    <Pressable onPress={() => { setEditingGoalId(g.id); setShowGoalForm(true); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit goal"><Pencil size={13} color={theme.textMuted} /></Pressable>
+                    <Pressable onPress={() => confirmDelete(Alert, "Delete this goal?", `"${g.name}" will be removed. Its saved money stays in your general savings.`, () => setGoals((prev) => prev.filter((x) => x.id !== g.id)))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete goal"><Trash2 size={13} color={theme.textMuted} /></Pressable>
                   </View>
                 </View>
                 <Text style={[styles.goalAmounts, { color: theme.textMuted }]}>{peso(prog.current)} / {peso(prog.target)}</Text>
@@ -364,7 +393,7 @@ export default function BudgetScreen({
         <Chip label={`Unpaid (${unpaidBills.length})`} active={billStatusView === "unpaid"} onPress={() => setBillStatusView("unpaid")} small />
         <Chip label={`Paid (${paidBills.length})`} active={billStatusView === "paid"} onPress={() => setBillStatusView("paid")} small />
         <View style={{ flex: 1 }} />
-        <Pressable onPress={() => { setEditingBillId(null); setShowBillForm((s) => !s); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]}>
+        <Pressable onPress={() => { setEditingBillId(null); setShowBillForm((s) => !s); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showBillForm ? "Close bill form" : "Add bill"}>
           {showBillForm ? <X size={14} color="#fff" /> : <Plus size={14} color="#fff" />}
         </Pressable>
       </View>
@@ -384,7 +413,7 @@ export default function BudgetScreen({
           const account = accounts.find((a) => a.id === b.account);
           return (
             <View key={b.id} style={[styles.row, { backgroundColor: theme.card, borderColor: theme.line, opacity: b.paid ? 0.6 : 1 }]}>
-              <Pressable onPress={() => togglePaid(b)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>{b.paid ? <CheckCircle2 size={19} color={ACCENT.leaf} /> : <PiggyBank size={19} color={ACCENT.gold} />}</Pressable>
+              <Pressable onPress={() => togglePaid(b)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={b.paid ? "Mark unpaid" : "Mark paid"}>{b.paid ? <CheckCircle2 size={19} color={ACCENT.leaf} /> : <PiggyBank size={19} color={ACCENT.gold} />}</Pressable>
               <Pressable style={{ flex: 1 }} onPress={() => !b.paid && startEditBill(b)}>
                 <Text style={[styles.rowTitle, { color: theme.text }]}>{b.name}</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -396,13 +425,15 @@ export default function BudgetScreen({
                   {!b.paid && b.notificationId && <Bell size={11} color={theme.textMuted} />}
                 </View>
               </Pressable>
-              {!b.paid && <Pressable onPress={() => startEditBill(b)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Pencil size={14} color={theme.textMuted} /></Pressable>}
-              <Pressable onPress={() => removeBill(b.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Trash2 size={15} color={theme.textMuted} /></Pressable>
+              {!b.paid && <Pressable onPress={() => startEditBill(b)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit bill"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+              <Pressable onPress={() => removeBill(b.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete bill"><Trash2 size={15} color={theme.textMuted} /></Pressable>
             </View>
           );
         })
       )}
     </ScrollView>
+      )}
+    </View>
   );
 }
 
@@ -431,7 +462,7 @@ function BillForm({ initial, onSave, onCancel, splits, accounts }) {
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={dueDate} onChange={setDueDate} label="Needed by" /></View>
       <View style={styles.formActions}>
-        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
+        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
         <Pressable disabled={!canSave} onPress={() => canSave && onSave({ name: name.trim(), amount: Number(amount), dueDate, splitId, account })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add bill"}</Text>
         </Pressable>
@@ -520,7 +551,7 @@ function GoalForm({ initial, onSave, onCancel }) {
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={targetDate} onChange={setTargetDate} label="Target date (optional)" /></View>
       <View style={styles.formActions}>
-        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
+        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
         <Pressable disabled={!canSave} onPress={() => canSave && onSave({ name: name.trim(), targetAmount: Number(targetAmount), targetDate: targetDate || null })} style={[styles.formBtn, { backgroundColor: ACCENT.sky, opacity: canSave ? 1 : 0.5 }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Create goal"}</Text>
         </Pressable>
@@ -573,6 +604,7 @@ function TransferForm({ accounts, ctx, onSave }) {
 }
 
 const styles = StyleSheet.create({
+  subNavRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   dailyBudgetCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
   dailyBudgetIcon: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   dailyBudgetTitle: { fontSize: 13, fontWeight: "700" },
@@ -601,7 +633,7 @@ const styles = StyleSheet.create({
   accountPickChip: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: "center" },
   accountPickText: { fontSize: 10, fontWeight: "700" },
   addMoneyBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#fff", borderRadius: 12, paddingVertical: 10 },
-  addMoneyBtnText: { fontSize: 12, fontWeight: "700", color: "#17203A" },
+  addMoneyBtnText: { fontSize: 12, fontWeight: "700" },
   addMoneyRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   addMoneyInput: { flex: 1, backgroundColor: "#ffffff22", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: "#fff", fontFamily: "monospace", fontSize: 13 },
   addMoneyConfirm: { width: 36, height: 36, borderRadius: 12, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
@@ -629,7 +661,7 @@ const styles = StyleSheet.create({
   formTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
   previewText2: { fontSize: 11, marginBottom: 8 },
   warnRow2: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginBottom: 10 },
-  warnText2: { fontSize: 10, color: "#D1573F", flex: 1, lineHeight: 14 },
+  warnText2: { fontSize: 10, color: ACCENT.ember, flex: 1, lineHeight: 14 },
   miniLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 },
   savingsTotal: { fontSize: 20, fontWeight: "700", fontFamily: "monospace" },
   smallRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 6 },

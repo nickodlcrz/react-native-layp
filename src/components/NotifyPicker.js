@@ -61,6 +61,7 @@ export default function NotifyPicker({ notify, setNotify, allowOnce = true }) {
                     setNotify({ ...notify, weekdays: next });
                   }}
                   style={[styles.dayCircle, { backgroundColor: active ? ACCENT.sky : theme.bg }]}
+                  accessibilityLabel={`${d.label}${active ? ", selected" : ""}`}
                 >
                   <Text style={[styles.dayCircleText, { color: active ? "#fff" : theme.text }]}>{d.label[0]}</Text>
                 </Pressable>
@@ -92,7 +93,7 @@ export default function NotifyPicker({ notify, setNotify, allowOnce = true }) {
             {(notify.times || []).map((t) => (
               <View key={t} style={[styles.timeTag, { backgroundColor: theme.bg }]}>
                 <Text style={[styles.timeTagText, { color: theme.text }]}>{fmtTime12(t)}</Text>
-                <Pressable onPress={() => updateTimesList((notify.times || []).filter((x) => x !== t))}>
+                <Pressable onPress={() => updateTimesList((notify.times || []).filter((x) => x !== t))} accessibilityLabel={`Remove ${t} reminder time`}>
                   <X size={10} color={theme.textMuted} />
                 </Pressable>
               </View>

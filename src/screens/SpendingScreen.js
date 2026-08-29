@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
-import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount } from "../utils";
+import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
@@ -25,8 +25,11 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
     setShowForm(false);
   }
   function remove(id) {
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
-    if (editingId === id) { setEditingId(null); setShowForm(false); }
+    const e = expenses.find((x) => x.id === id);
+    confirmDelete(Alert, "Delete this expense?", `"${e?.name}" (${peso(e?.amount || 0)}) will be removed for good.`, () => {
+      setExpenses((prev) => prev.filter((x) => x.id !== id));
+      if (editingId === id) { setEditingId(null); setShowForm(false); }
+    });
   }
   function startEdit(e) { if (e.source === "bill") return; setEditingId(e.id); setShowForm(true); }
   function saveMoney(entry) { setMoneyLog((prev) => [...prev, { id: uid(), ...entry, createdAt: Date.now() }]); setShowMoneyForm(false); }
@@ -98,10 +101,10 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
       <View style={styles.headerRow}>
         <Text style={[styles.h1, { color: theme.text }]}>Spending</Text>
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <Pressable onPress={() => { setShowMoneyForm((s) => !s); setShowForm(false); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]}>
+          <Pressable onPress={() => { setShowMoneyForm((s) => !s); setShowForm(false); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel={showMoneyForm ? "Close form" : "Add money"}>
             {showMoneyForm ? <X size={16} color="#fff" /> : <ArrowDownCircle size={16} color="#fff" />}
           </Pressable>
-          <Pressable onPress={() => { setEditingId(null); setShowForm((s) => !s); setShowMoneyForm(false); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]}>
+          <Pressable onPress={() => { setEditingId(null); setShowForm((s) => !s); setShowMoneyForm(false); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Log expense"}>
             {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
           </Pressable>
         </View>
@@ -138,7 +141,7 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
               const open = !!historyOpen[d];
               return (
                 <View key={d} style={[styles.historyGroup, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                  <Pressable onPress={() => setHistoryOpen((prev) => ({ ...prev, [d]: !open }))} style={styles.historyHeader}>
+                  <Pressable onPress={() => setHistoryOpen((prev) => ({ ...prev, [d]: !open }))} style={styles.historyHeader} accessibilityLabel={open ? `Collapse ${fmtDateLong(d)}` : `Expand ${fmtDateLong(d)}`}>
                     <Text style={[styles.historyDate, { color: theme.text }]}>{fmtDateLong(d)}</Text>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                       <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(dayTotal)}</Text>
@@ -167,7 +170,7 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
         </View>
       )}
 
-      <Pressable onPress={() => setLedgerOpen((o) => !o)} style={styles.ledgerHeader}>
+      <Pressable onPress={() => setLedgerOpen((o) => !o)} style={styles.ledgerHeader} accessibilityLabel={ledgerOpen ? "Collapse income and outcome history" : "Expand income and outcome history"}>
         <Text style={[styles.h2, { color: theme.text }]}>Income & outcome history</Text>
         {ledgerOpen ? <ChevronUp size={15} color={theme.textMuted} /> : <ChevronDown size={15} color={theme.textMuted} />}
       </Pressable>
@@ -229,8 +232,8 @@ function ExpenseRow({ e, splits, accounts, onEdit, onRemove, compact }) {
         </View>
       </Pressable>
       <Text style={[styles.amount, { color: ACCENT.ember }]}>-{peso(e.amount)}</Text>
-      {e.source !== "bill" && <Pressable onPress={onEdit} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Pencil size={14} color={theme.textMuted} /></Pressable>}
-      <Pressable onPress={onRemove} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Trash2 size={15} color={theme.textMuted} /></Pressable>
+      {e.source !== "bill" && <Pressable onPress={onEdit} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit expense"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+      <Pressable onPress={onRemove} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={15} color={theme.textMuted} /></Pressable>
     </View>
   );
 }
@@ -268,7 +271,7 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
       <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
       {exceedsBalance && <Text style={[styles.warning, { color: ACCENT.ember }]}>This exceeds the available {peso(available)} in this account.</Text>}
       <View style={styles.formActions}>
-        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
+        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
         <Pressable disabled={!canSave} onPress={() => canSave && onSave({ name: name.trim(), label: label.trim(), amount: Number(amount), splitId, account, date })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Log expense"}</Text>
         </Pressable>

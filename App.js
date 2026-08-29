@@ -2,22 +2,21 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { ListTodo, Wallet, Receipt, FileText, Bell, X, Sun, Moon, HandCoins, Lock, Home, GraduationCap } from "lucide-react-native";
+import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap } from "lucide-react-native";
 
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import { loadState, saveState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, cancelTodoNotifications, rescheduleDailyBudgetNotification } from "./src/notifications";
 import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent } from "./src/utils";
-import { newAcademicPeriod, getActivePeriod, subjectsForPeriod } from "./src/school";
+import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
 import LockScreen from "./src/screens/LockScreen";
+import ClassAlarmScreen from "./src/components/ClassAlarmScreen";
 
 import HomeScreen from "./src/screens/HomeScreen";
 import TodoScreen from "./src/screens/TodoScreen";
 import BudgetScreen from "./src/screens/BudgetScreen";
-import SpendingScreen from "./src/screens/SpendingScreen";
-import BorrowScreen from "./src/screens/BorrowScreen";
 import SchoolScreen from "./src/screens/SchoolScreen";
 import SummaryScreen from "./src/screens/SummaryScreen";
 import TabTransition from "./src/components/TabTransition";
@@ -65,6 +64,7 @@ function AppShell({ onLock }) {
   const [dailyBudgetLog, setDailyBudgetLog] = useState([]); // record of the user's daily savings decisions (saved/kept/remind) -- informational only, never used to move money on its own
   const [dailyBudgetNotifId, setDailyBudgetNotifId] = useState(null);
   const [reminderBanner, setReminderBanner] = useState(null);
+  const [classAlarm, setClassAlarm] = useState(null); // { block, kind: "class" | "advance", advanceMinutes } | null
   // School: academic periods, the classes within them, and their weekly
   // meeting times. Seeded with one default active period so the School tab
   // is usable immediately on a brand-new install, before loadState resolves.
@@ -202,6 +202,55 @@ function AppShell({ onLock }) {
     return () => clearInterval(iv);
   }, [todos]);
 
+  // Alarm-style class reminders: a full-screen popup (ClassAlarmScreen)
+  // that takes over while the app is in the foreground, on top of the
+  // ordinary OS notification (see notifications.js) that still fires
+  // either way in case the app is backgrounded. Entirely optional per
+  // subject -- gated on that subject's own ClassReminder / AdvanceReminder
+  // toggles, same switches School already exposes. Only checks the active
+  // period's schedule, same as everywhere else class reminders apply.
+  const firedClassAlarmsRef = useRef({});
+  useEffect(() => {
+    const check = () => {
+      if (classAlarm) return; // one at a time -- don't stack a second popup over the first
+      const activePeriod = getActivePeriod(academicPeriods);
+      if (!activePeriod) return;
+      const periodSubjects = subjectsForPeriod(subjects, activePeriod.id);
+      const subjectIds = periodSubjects.map((s) => s.id);
+      const entries = scheduleEntries.filter((e) => subjectIds.includes(e.subjectId));
+      const todaysBlocks = blocksForWeekday(periodSubjects, entries, todayExpoWeekday());
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const todayKey = todayISO();
+
+      for (const block of todaysBlocks) {
+        const { subject } = block;
+        if (subject.classReminderEnabled && nowMin >= block.startMin && nowMin < block.startMin + 1) {
+          const key = `${todayKey}-${block.entry.id}-class`;
+          if (!firedClassAlarmsRef.current[key]) {
+            firedClassAlarmsRef.current[key] = true;
+            setClassAlarm({ block, kind: "class" });
+            return;
+          }
+        }
+        if (subject.advanceReminderEnabled && subject.advanceReminderMinutes) {
+          const fireAt = block.startMin - subject.advanceReminderMinutes;
+          if (nowMin >= fireAt && nowMin < fireAt + 1) {
+            const key = `${todayKey}-${block.entry.id}-advance`;
+            if (!firedClassAlarmsRef.current[key]) {
+              firedClassAlarmsRef.current[key] = true;
+              setClassAlarm({ block, kind: "advance", advanceMinutes: subject.advanceReminderMinutes });
+              return;
+            }
+          }
+        }
+      }
+    };
+    check();
+    const iv = setInterval(check, 30000);
+    return () => clearInterval(iv);
+  }, [academicPeriods, subjects, scheduleEntries, classAlarm]);
+
   const todayLabel = new Date().toLocaleDateString("en-PH", { weekday: "long", month: "short", day: "numeric" });
 
   if (!ready) {
@@ -216,6 +265,9 @@ function AppShell({ onLock }) {
     <ThemeContext.Provider value={{ theme, dark }}>
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <StatusBar style={dark ? "light" : "dark"} />
+        {classAlarm && (
+          <ClassAlarmScreen alarm={classAlarm} onDismiss={() => setClassAlarm(null)} />
+        )}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
@@ -225,10 +277,13 @@ function AppShell({ onLock }) {
             </View>
           </View>
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pressable onPress={onLock} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Pressable onPress={() => setTab("summary")} style={[styles.themeBtn, tab === "summary" && { backgroundColor: theme.bg }, { backgroundColor: tab === "summary" ? theme.bg : theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Summary">
+              <FileText size={13} color={tab === "summary" ? ACCENT.gold : theme.textMuted} />
+            </Pressable>
+            <Pressable onPress={onLock} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Lock app">
               <Lock size={13} color={theme.textMuted} />
             </Pressable>
-            <Pressable onPress={() => setDark((d) => !d)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]}>
+            <Pressable onPress={() => setDark((d) => !d)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel={dark ? "Switch to light mode" : "Switch to dark mode"}>
               {dark ? <Sun size={14} color={ACCENT.gold} /> : <Moon size={14} color={theme.text} />}
             </Pressable>
           </View>
@@ -250,9 +305,10 @@ function AppShell({ onLock }) {
             <HomeScreen
               accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
               loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
-              goals={goals}
+              goals={goals} todos={todos}
               periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries}
               onViewSchedule={() => setTab("school")}
+              onViewTodos={() => setTab("todo")}
             />
           )}
           {tab === "todo" && (
@@ -279,35 +335,14 @@ function AppShell({ onLock }) {
               splits={splits} setSplits={setSplits}
               bills={bills} setBills={setBills}
               expenses={expenses} setExpenses={setExpenses}
-              weeklySummaries={weeklySummaries}
+              weeklySummaries={weeklySummaries} setWeeklySummaries={setWeeklySummaries}
               savingsLog={savingsLog} setSavingsLog={setSavingsLog}
-              loans={loans}
+              loans={loans} setLoans={setLoans}
               accounts={accounts} setAccounts={setAccounts}
               transfers={transfers} setTransfers={setTransfers}
               goals={goals} setGoals={setGoals}
               dailyBudgetSettings={dailyBudgetSettings} setDailyBudgetSettings={setDailyBudgetSettings}
               setDailyBudgetLog={setDailyBudgetLog}
-            />
-          )}
-          {tab === "spending" && (
-            <SpendingScreen
-              expenses={expenses} setExpenses={setExpenses}
-              moneyLog={moneyLog} setMoneyLog={setMoneyLog}
-              weeklySummaries={weeklySummaries} setWeeklySummaries={setWeeklySummaries}
-              splits={splits}
-              loans={loans}
-              savingsLog={savingsLog}
-              accounts={accounts}
-              transfers={transfers}
-            />
-          )}
-          {tab === "borrow" && (
-            <BorrowScreen
-              loans={loans} setLoans={setLoans}
-              moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
-              savingsLog={savingsLog}
-              accounts={accounts}
-              transfers={transfers}
             />
           )}
           {tab === "summary" && (
@@ -338,9 +373,6 @@ function AppShell({ onLock }) {
           <NavBtn icon={ListTodo} label="Todo" active={tab === "todo"} onPress={() => setTab("todo")} theme={theme} />
           <NavBtn icon={GraduationCap} label="School" active={tab === "school"} onPress={() => setTab("school")} theme={theme} />
           <NavBtn icon={Wallet} label="Budget" active={tab === "budget"} onPress={() => setTab("budget")} theme={theme} />
-          <NavBtn icon={Receipt} label="Spending" active={tab === "spending"} onPress={() => setTab("spending")} theme={theme} />
-          <NavBtn icon={HandCoins} label="Borrow" active={tab === "borrow"} onPress={() => setTab("borrow")} theme={theme} />
-          <NavBtn icon={FileText} label="Summary" active={tab === "summary"} onPress={() => setTab("summary")} theme={theme} />
         </View>
       </SafeAreaView>
     </ThemeContext.Provider>

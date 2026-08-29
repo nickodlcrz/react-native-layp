@@ -292,6 +292,20 @@ export function dailyBudgetNotificationContent(review) {
   return { title: "🌙 Daily budget review", body: `You have ${peso(Math.max(0, review.remainingToday))} remaining today.` };
 }
 
+// --- Shared UI helpers ---
+
+// Every destructive delete across the app should use this exact pattern
+// (title, message, Cancel/Delete-destructive) -- the same one School's
+// subject delete already used, now the standard everywhere instead of only
+// there. Native Alert.alert requires RN's Alert module, passed in by the
+// caller (kept out of utils.js's own imports to keep this a pure module).
+export function confirmDelete(Alert, title, message, onConfirm) {
+  Alert.alert(title, message, [
+    { text: "Cancel", style: "cancel" },
+    { text: "Delete", style: "destructive", onPress: onConfirm },
+  ]);
+}
+
 // --- Account management, mirroring how budget splits work ---
 
 export function addAccount(accounts, palette) {

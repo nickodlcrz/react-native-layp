@@ -63,7 +63,7 @@ export default function DailyBudgetScreen({
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.headerRow}>
-        <Pressable onPress={onClose} style={[styles.roundBtn, { backgroundColor: theme.card, borderColor: theme.line, borderWidth: 1 }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Pressable onPress={onClose} style={[styles.roundBtn, { backgroundColor: theme.card, borderColor: theme.line, borderWidth: 1 }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Back">
           <ArrowLeft size={16} color={theme.text} />
         </Pressable>
         <Text style={[styles.h1, { color: theme.text }]}>Daily Budget</Text>
@@ -100,10 +100,10 @@ export default function DailyBudgetScreen({
   );
 }
 
-function HeroCard({ review, modelName }) {
+function HeroCard({ review, modelName, theme }) {
   return (
-    <View style={[styles.heroCard, { backgroundColor: "#17203A" }]}>
-      <Text style={styles.heroLabel}>{modelName} - Today's Budget</Text>
+    <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
+      <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>{modelName} - Today's Budget</Text>
       <Text style={styles.heroValue}>{peso(review.availableMoney)}</Text>
       <Text style={styles.heroSub}>available money -- {peso(review.spentToday)} spent today</Text>
     </View>
@@ -114,7 +114,7 @@ function ReviewView({ review, theme, modelName, showCustom, setShowCustom, custo
   if (!review.hasIncome) {
     return (
       <>
-        <HeroCard review={review} modelName={modelName} />
+        <HeroCard review={review} modelName={modelName} theme={theme} />
         <EmptyState text="No available budget for today's review." />
       </>
     );
@@ -124,7 +124,7 @@ function ReviewView({ review, theme, modelName, showCustom, setShowCustom, custo
 
   return (
     <>
-      <HeroCard review={review} modelName={modelName} />
+      <HeroCard review={review} modelName={modelName} theme={theme} />
 
       {!review.hasSpending && (
         <Text style={[styles.hintText, { color: theme.textMuted }]}>No spending recorded today.</Text>
@@ -229,7 +229,7 @@ function SettingsView({ theme, splits, totalPercent, applyPreset, addSplit, remo
               <TextInput value={s.label} onChangeText={(v) => updateSplitLabel(i, v)} style={[styles.splitLabelInput, { color: theme.text }]} />
               <Text style={[styles.splitPercent, { color: s.color }]}>{s.percent}%</Text>
               {splits.length > 1 && (
-                <Pressable onPress={() => removeSplit(s.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Pressable onPress={() => removeSplit(s.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={`Remove ${s.label} category`}>
                   <Trash2 size={12} color={theme.textMuted} />
                 </Pressable>
               )}
@@ -255,6 +255,7 @@ function SettingsView({ theme, splits, totalPercent, applyPreset, addSplit, remo
           <Pressable
             onPress={() => setDailyBudgetSettings((s) => ({ ...s, enabled: !s.enabled }))}
             style={[styles.toggleTrack, { backgroundColor: dailyBudgetSettings.enabled ? ACCENT.leaf : theme.bg }]}
+            accessibilityLabel={dailyBudgetSettings.enabled ? "Turn off daily review reminder" : "Turn on daily review reminder"}
           >
             <View style={[styles.toggleDot, dailyBudgetSettings.enabled && styles.toggleDotOn]} />
           </Pressable>
@@ -281,7 +282,7 @@ const styles = StyleSheet.create({
   chipWrap: { flexDirection: "row", flexWrap: "wrap", marginBottom: 4, gap: 6 },
   addSplitBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1.5 },
   heroCard: { borderRadius: 20, padding: 18, marginBottom: 14 },
-  heroLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", color: "#D9A441" },
+  heroLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
   heroValue: { fontSize: 30, fontWeight: "800", fontFamily: "monospace", color: "#fff", marginTop: 4 },
   heroSub: { fontSize: 10, color: "#ffffff99", marginTop: 2 },
   card: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12 },

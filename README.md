@@ -165,15 +165,6 @@ user-managed, same pattern as budget splits:
 - The Summary tab can also copy a complete JSON backup and restore a backup
   after confirmation. Backups contain financial data, so save them privately.
 
-## Known simplification, worth knowing about
-
-The Borrow tab is currently a **standalone tracker** -- lending or
-borrowing money doesn't automatically adjust your E-cash/Physical account
-balances. Wiring that up fully (e.g. lending ₱500 cash should reduce your
-E-cash balance) is a reasonable next step, just scoped out of this pass
-to keep the accounts/rollup logic correct and shippable now rather than
-risk a half-finished cross-integration.
-
 ## Known limitations, worth knowing about
 
 - `expo-notifications`' repeating triggers don't have a native "stop
@@ -198,5 +189,3 @@ apps, which can silently stop scheduled reminders from firing:
 
 The Todo tab has an in-app banner that opens the right settings screen
 for step 1 directly.
-#   r e a c t - n a t i v e - l a y p  
- 

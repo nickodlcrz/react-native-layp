@@ -214,13 +214,14 @@ export default function SchoolScreen({
           <Pressable
             onPress={() => setShowSubjectForm((s) => { const next = !s; if (next) setEditingSubjectId(null); return next; })}
             style={[styles.roundBtn, { backgroundColor: theme.accentDark }]}
+            accessibilityLabel={showSubjectForm ? "Close form" : "Add class"}
           >
             {showSubjectForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
           </Pressable>
         </View>
       </View>
 
-      <Pressable onPress={() => setShowPeriodPanel((s) => !s)} style={[styles.periodPill, { backgroundColor: theme.card, borderColor: theme.line }]}>
+      <Pressable onPress={() => setShowPeriodPanel((s) => !s)} style={[styles.periodPill, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="Change academic period">
         <GraduationCap size={13} color={ACCENT.sky} />
         <Text style={[styles.periodPillText, { color: theme.text }]}>{viewingPeriod?.label || "No schedule yet"}</Text>
         {viewingPeriod?.id === activePeriod?.id && <View style={[styles.activeDot, { backgroundColor: ACCENT.leaf }]} />}
@@ -258,7 +259,7 @@ export default function SchoolScreen({
         )}
       </View>
 
-      <Pressable onPress={() => setShowDefaults((s) => !s)} style={styles.defaultsToggle}>
+      <Pressable onPress={() => setShowDefaults((s) => !s)} style={styles.defaultsToggle} accessibilityLabel={showDefaults ? "Hide default reminders" : "Show default reminders for new classes"}>
         <Text style={[styles.defaultsToggleText, { color: theme.textMuted }]}>{showDefaults ? "Hide" : "Default reminders for new classes"}</Text>
       </Pressable>
       {showDefaults && (
@@ -278,7 +279,7 @@ export default function SchoolScreen({
 
       <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
         {[["day", "Day"], ["week", "Week"], ["list", "List"]].map(([id, label]) => (
-          <Pressable key={id} onPress={() => setView(id)} style={[styles.viewToggleBtn, view === id && { backgroundColor: theme.accentDark }]}>
+          <Pressable key={id} onPress={() => setView(id)} style={[styles.viewToggleBtn, view === id && { backgroundColor: theme.accentDark }]} accessibilityLabel={`${label} view`}>
             <Text style={[styles.viewToggleText, { color: view === id ? "#fff" : theme.textMuted }]}>{label}</Text>
           </Pressable>
         ))}
@@ -329,7 +330,7 @@ function PeriodPanel({ periods, activePeriod, onSelect, onActivate, onSetStatus,
     <View style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.line }]}>
       {periods.map((p) => (
         <View key={p.id} style={[styles.periodRow, { borderColor: theme.line }]}>
-          <Pressable style={{ flex: 1 }} onPress={() => onSelect(p.id)}>
+          <Pressable style={{ flex: 1 }} onPress={() => onSelect(p.id)} accessibilityLabel={`Switch to ${p.label}`}>
             <Text style={[styles.periodLabel, { color: theme.text }]}>{p.label}</Text>
           </Pressable>
           <View style={{ flexDirection: "row", gap: 6 }}>
@@ -338,7 +339,7 @@ function PeriodPanel({ periods, activePeriod, onSelect, onActivate, onSetStatus,
             {p.status !== "active" && <Chip label="Archived" small active={p.status === "archived"} onPress={() => onSetStatus(p.id, "archived")} />}
           </View>
           {p.status !== "active" && (
-            <Pressable onPress={() => onDelete(p.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginLeft: 8 }}>
+            <Pressable onPress={() => onDelete(p.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginLeft: 8 }} accessibilityLabel={`Delete ${p.label}`}>
               <Trash2 size={13} color={theme.textMuted} />
             </Pressable>
           )}
@@ -346,7 +347,7 @@ function PeriodPanel({ periods, activePeriod, onSelect, onActivate, onSetStatus,
       ))}
 
       {!showNew ? (
-        <Pressable onPress={() => setShowNew(true)} style={[styles.newPeriodBtn, { backgroundColor: theme.bg }]}>
+        <Pressable onPress={() => setShowNew(true)} style={[styles.newPeriodBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Add academic period">
           <Text style={{ fontSize: 11, fontWeight: "700", color: theme.text }}>+ New academic period</Text>
         </Pressable>
       ) : (
@@ -368,10 +369,10 @@ function PeriodPanel({ periods, activePeriod, onSelect, onActivate, onSetStatus,
             </View>
           )}
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pressable onPress={() => setShowNew(false)} style={[styles.formBtn, { backgroundColor: theme.bg }]}>
+            <Pressable onPress={() => setShowNew(false)} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel">
               <Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text>
             </Pressable>
-            <Pressable disabled={!label.trim()} onPress={submitNew} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: label.trim() ? 1 : 0.5 }]}>
+            <Pressable disabled={!label.trim()} onPress={submitNew} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: label.trim() ? 1 : 0.5 }]} accessibilityLabel="Save period">
               <Text style={[styles.formBtnText, { color: "#fff" }]}>Create</Text>
             </Pressable>
           </View>
@@ -445,7 +446,7 @@ function SubjectForm({ initialSubject, initialEntry, defaults, onSave, onCancel 
         {WEEKDAYS.map((d) => {
           const active = days.includes(d.id);
           return (
-            <Pressable key={d.id} onPress={() => toggleDay(d.id)} style={[styles.dayCircle, { backgroundColor: active ? ACCENT.sky : theme.bg }]}>
+            <Pressable key={d.id} onPress={() => toggleDay(d.id)} style={[styles.dayCircle, { backgroundColor: active ? ACCENT.sky : theme.bg }]} accessibilityLabel={`${d.label}${active ? ", selected" : ""}`}>
               <Text style={[styles.dayCircleText, { color: active ? "#fff" : theme.text }]}>{d.label[0]}</Text>
             </Pressable>
           );
@@ -584,13 +585,13 @@ function SubjectDetail({ subject, subjectEntries, todos, onBack, onEdit, onDelet
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <View style={styles.headerRow}>
-        <Pressable onPress={onBack} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+        <Pressable onPress={onBack} style={{ flexDirection: "row", alignItems: "center", gap: 4 }} accessibilityLabel="Back to schedule">
           <ChevronLeft size={16} color={theme.textMuted} />
           <Text style={{ fontSize: 11, color: theme.textMuted, fontWeight: "700" }}>Back</Text>
         </Pressable>
         <View style={{ flexDirection: "row", gap: 14 }}>
-          <Pressable onPress={onEdit}><Pencil size={15} color={theme.textMuted} /></Pressable>
-          <Pressable onPress={confirmDelete}><Trash2 size={15} color={theme.textMuted} /></Pressable>
+          <Pressable onPress={onEdit} accessibilityLabel="Edit class"><Pencil size={15} color={theme.textMuted} /></Pressable>
+          <Pressable onPress={confirmDelete} accessibilityLabel="Delete class"><Trash2 size={15} color={theme.textMuted} /></Pressable>
         </View>
       </View>
 
@@ -606,7 +607,7 @@ function SubjectDetail({ subject, subjectEntries, todos, onBack, onEdit, onDelet
               {e.days.map((id) => WEEKDAYS.find((w) => w.id === id)?.label).join(" + ")} · {fmtTime12(e.startTime)}–{fmtTime12(e.endTime)}
             </Text>
             {subjectEntries.length > 1 && (
-              <Pressable onPress={() => onRemoveMeetingTime(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Pressable onPress={() => onRemoveMeetingTime(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Remove meeting time">
                 <X size={12} color={theme.textMuted} />
               </Pressable>
             )}
@@ -627,7 +628,7 @@ function SubjectDetail({ subject, subjectEntries, todos, onBack, onEdit, onDelet
         </View>
 
         {!showAddMeeting ? (
-          <Pressable onPress={() => setShowAddMeeting(true)} style={[styles.addMeetingBtn, { backgroundColor: theme.bg }]}>
+          <Pressable onPress={() => setShowAddMeeting(true)} style={[styles.addMeetingBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Add another meeting time">
             <Text style={{ fontSize: 11, fontWeight: "700", color: theme.text }}>+ Add another meeting time</Text>
           </Pressable>
         ) : (
@@ -648,7 +649,7 @@ function SubjectDetail({ subject, subjectEntries, todos, onBack, onEdit, onDelet
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <Text style={[styles.sectionLabel, { color: theme.textMuted, marginBottom: 0 }]}>ASSIGNMENTS & TASKS</Text>
           {onGoToTodoForSubject && (
-            <Pressable onPress={() => onGoToTodoForSubject(subject.id)}>
+            <Pressable onPress={() => onGoToTodoForSubject(subject.id)} accessibilityLabel="Add task for this class">
               <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT.sky }}>+ Add task</Text>
             </Pressable>
           )}
@@ -692,7 +693,7 @@ function MeetingTimeForm({ onSave, onCancel }) {
         {WEEKDAYS.map((d) => {
           const active = days.includes(d.id);
           return (
-            <Pressable key={d.id} onPress={() => toggleDay(d.id)} style={[styles.dayCircle, { backgroundColor: active ? ACCENT.sky : theme.bg }]}>
+            <Pressable key={d.id} onPress={() => toggleDay(d.id)} style={[styles.dayCircle, { backgroundColor: active ? ACCENT.sky : theme.bg }]} accessibilityLabel={`${d.label}${active ? ", selected" : ""}`}>
               <Text style={[styles.dayCircleText, { color: active ? "#fff" : theme.text }]}>{d.label[0]}</Text>
             </Pressable>
           );
@@ -703,8 +704,8 @@ function MeetingTimeForm({ onSave, onCancel }) {
         <TimePicker value={endTime} onChange={setEndTime} label="End" />
       </View>
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>
-        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ days, startTime, endTime })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
+        <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>
+        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ days, startTime, endTime })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]} accessibilityLabel="Add meeting time">
           <Text style={[styles.formBtnText, { color: "#fff" }]}>Add</Text>
         </Pressable>
       </View>

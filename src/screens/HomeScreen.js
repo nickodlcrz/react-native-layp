@@ -1,13 +1,13 @@
 import React from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
-import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight } from "lucide-react-native";
-import { useTheme, ACCENT } from "../theme";
+import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle } from "lucide-react-native";
+import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
-import { getActivePeriod, subjectsForPeriod, getCurrentAndNextClass, minutesRemaining } from "../school";
+import { getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday, minutesRemaining, minutesSinceMidnight } from "../school";
 import AnimatedNumber from "../components/AnimatedNumber";
 import EmptyState from "../components/EmptyState";
 
-export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], periods = [], subjects = [], scheduleEntries = [], onViewSchedule }) {
+export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], onViewSchedule, onViewTodos }) {
   const { theme } = useTheme();
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
 
@@ -15,8 +15,14 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
   const activeSubjects = subjectsForPeriod(subjects, activePeriod?.id);
   const activeSubjectIds = activeSubjects.map((s) => s.id);
   const activeEntries = scheduleEntries.filter((e) => activeSubjectIds.includes(e.subjectId));
-  const classesToday = activePeriod ? getCurrentAndNextClass(activeSubjects, activeEntries) : { current: null, next: null };
+  const todaysClasses = activePeriod ? blocksForWeekday(activeSubjects, activeEntries, todayExpoWeekday()) : [];
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const showTodaysClasses = !!activePeriod && activeSubjects.length > 0;
+
+  const upcomingTasks = todos
+    .filter((t) => !t.completed)
+    .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"))
+    .slice(0, 5);
 
   const totalMoney = accounts.reduce((s, a) => s + computeAccountBalance(a.id, ctx), 0);
 
@@ -72,23 +78,32 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
         </View>
       </View>
 
-      {/* Today's Classes -- compact by design, full schedule lives in the School tab */}
+      {/* Today's Classes -- every class meeting today, not just current/next */}
       {showTodaysClasses && (
-        <Pressable onPress={onViewSchedule} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+        <Pressable onPress={onViewSchedule} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="View full class schedule">
           <View style={styles.schoolHeader}>
             <GraduationCap size={14} color={ACCENT.sky} />
             <Text style={[styles.schoolTitle, { color: theme.text }]}>Today's Classes</Text>
           </View>
-          {classesToday.current ? (
-            <SchoolLine dotColor={ACCENT.leaf} tag="NOW" block={classesToday.current} theme={theme} sub={`${minutesRemaining(classesToday.current)} minutes remaining`} />
-          ) : classesToday.next && classesToday.nextDaysAhead === 0 ? (
-            <SchoolLine dotColor={ACCENT.gold} tag="NEXT" block={classesToday.next} theme={theme} />
-          ) : (
+          {todaysClasses.length === 0 ? (
             <Text style={[styles.schoolEmpty, { color: theme.textMuted }]}>No classes scheduled today.</Text>
-          )}
-          {classesToday.current && classesToday.next && classesToday.nextDaysAhead === 0 && (
-            <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.line }}>
-              <SchoolLine dotColor={ACCENT.gold} tag="NEXT" block={classesToday.next} theme={theme} />
+          ) : (
+            <View style={{ gap: 10 }}>
+              {todaysClasses.map((block, i) => {
+                const isNow = nowMin >= block.startMin && nowMin < block.endMin;
+                const isDone = nowMin >= block.endMin;
+                return (
+                  <View key={block.entry.id} style={[i > 0 && { paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.line }]}>
+                    <SchoolLine
+                      dotColor={isNow ? ACCENT.leaf : isDone ? theme.textMuted : ACCENT.gold}
+                      tag={isNow ? "NOW" : isDone ? "DONE" : "UPCOMING"}
+                      block={block} theme={theme}
+                      sub={isNow ? `${minutesRemaining(block)} minutes remaining` : null}
+                      faded={isDone}
+                    />
+                  </View>
+                );
+              })}
             </View>
           )}
           <View style={styles.schoolFooter}>
@@ -97,6 +112,38 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
           </View>
         </Pressable>
       )}
+
+      {/* Upcoming tasks -- soonest-due unfinished todos across all categories */}
+      <Pressable onPress={onViewTodos} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="View all tasks">
+        <View style={styles.schoolHeader}>
+          <ListTodo size={14} color={ACCENT.gold} />
+          <Text style={[styles.schoolTitle, { color: theme.text }]}>Upcoming Tasks</Text>
+        </View>
+        {upcomingTasks.length === 0 ? (
+          <Text style={[styles.schoolEmpty, { color: theme.textMuted }]}>Nothing on your list right now.</Text>
+        ) : (
+          <View style={{ gap: 9 }}>
+            {upcomingTasks.map((t, i) => {
+              const cat = CATEGORIES.find((c) => c.id === t.category);
+              const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
+              const overdue = dleft !== null && dleft < 0;
+              return (
+                <View key={t.id} style={[{ flexDirection: "row", alignItems: "center", gap: 8 }, i > 0 && { paddingTop: 9, borderTopWidth: 1, borderTopColor: theme.line }]}>
+                  <Circle size={13} color={cat?.color || theme.textMuted} />
+                  <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={1}>{t.title}</Text>
+                  <Text style={[styles.taskDue, { color: overdue ? ACCENT.ember : theme.textMuted }]}>
+                    {dleft === null ? "" : overdue ? `${Math.abs(dleft)}d overdue` : dleft === 0 ? "Today" : `${dleft}d`}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+        <View style={styles.schoolFooter}>
+          <Text style={[styles.schoolFooterText, { color: ACCENT.gold }]}>View all tasks</Text>
+          <ChevronRight size={12} color={ACCENT.gold} />
+        </View>
+      </Pressable>
 
       {/* Monthly overview */}
       <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>{monthLabel}</Text>
@@ -197,9 +244,9 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
   );
 }
 
-function SchoolLine({ dotColor, tag, block, theme, sub }) {
+function SchoolLine({ dotColor, tag, block, theme, sub, faded }) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, opacity: faded ? 0.5 : 1 }}>
       <View style={[styles.schoolDot, { backgroundColor: dotColor }]} />
       <View style={{ flex: 1 }}>
         <Text style={[styles.schoolTag, { color: dotColor }]}>{tag} — {block.subject.code}</Text>
@@ -281,4 +328,6 @@ const styles = StyleSheet.create({
   miniLabel: { fontSize: 9, fontWeight: "700", marginTop: 2 },
   miniValue: { fontSize: 15, fontWeight: "800", fontFamily: "monospace" },
   miniValueSub: { fontSize: 11, fontWeight: "700", fontFamily: "monospace" },
+  taskTitle: { flex: 1, fontSize: 12, fontWeight: "600" },
+  taskDue: { fontSize: 10, fontFamily: "monospace" },
 });

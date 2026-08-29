@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, computeAccountBalance, isPositiveAmount } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, computeAccountBalance, isPositiveAmount, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
@@ -34,10 +34,12 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
     if (nowSettled && l.notificationId) await cancelTodoNotifications([l.notificationId]);
     setLoans((prev) => prev.map((x) => (x.id === l.id ? { ...x, settled: nowSettled, settledAt: nowSettled ? todayISO() : null } : x)));
   }
-  async function remove(l) {
-    if (l.notificationId) await cancelTodoNotifications([l.notificationId]);
-    setLoans((prev) => prev.filter((x) => x.id !== l.id));
-    if (editingId === l.id) { setEditingId(null); setShowForm(false); }
+  function remove(l) {
+    confirmDelete(Alert, "Delete this entry?", `The ${l.type === "lent" ? "loan to" : "loan from"} ${l.person} (${peso(loanTotalDue(l))}) will be removed for good.`, async () => {
+      if (l.notificationId) await cancelTodoNotifications([l.notificationId]);
+      setLoans((prev) => prev.filter((x) => x.id !== l.id));
+      if (editingId === l.id) { setEditingId(null); setShowForm(false); }
+    });
   }
   function startEdit(l) { setEditingId(l.id); setShowForm(true); }
   function startAdd() { setEditingId(null); setShowForm((s) => !s); }
@@ -58,7 +60,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <View style={styles.headerRow}>
         <Text style={[styles.h1, { color: theme.text }]}>Borrow tracker</Text>
-        <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]}>
+        <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Add loan entry"}>
           {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
         </Pressable>
       </View>
@@ -110,7 +112,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
           const borderColor = overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.line;
           return (
             <View key={l.id} style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
-              <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={l.settled ? "Mark unsettled" : "Mark settled"}>
                 {l.settled ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
               </Pressable>
               <Pressable style={{ flex: 1 }} onPress={() => !l.settled && startEdit(l)}>
@@ -130,8 +132,8 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
                   {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
                 </View>
               </Pressable>
-              {!l.settled && <Pressable onPress={() => startEdit(l)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Pencil size={14} color={theme.textMuted} /></Pressable>}
-              <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><Trash2 size={15} color={theme.textMuted} /></Pressable>
+              {!l.settled && <Pressable onPress={() => startEdit(l)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit entry"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+              <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete entry"><Trash2 size={15} color={theme.textMuted} /></Pressable>
             </View>
           );
         })
@@ -193,7 +195,7 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
       )}
 
       <View style={styles.formActions}>
-        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
+        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
         <Pressable disabled={!canSave} onPress={() => canSave && onSave({ person: person.trim(), note: note.trim(), principal: principalNum, interestPercent: Number(interestPercent) || 0, dueDate, account })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add entry"}</Text>
         </Pressable>
@@ -224,7 +226,7 @@ const styles = StyleSheet.create({
   previewBox: { borderRadius: 12, padding: 10, marginBottom: 10, gap: 2 },
   previewText: { fontSize: 11 },
   warnRow: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginBottom: 10 },
-  warnText: { fontSize: 10, color: "#D1573F", flex: 1, lineHeight: 14 },
+  warnText: { fontSize: 10, color: ACCENT.ember, flex: 1, lineHeight: 14 },
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
