@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
-import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react-native";
+import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Alert } from "react-native";
+import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, computeAccountBalance, isPositiveAmount, confirmDelete } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
@@ -14,6 +14,8 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
   const [statusView, setStatusView] = useState("active");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [payingId, setPayingId] = useState(null); // loan currently showing its inline "record payment" input
+  const [paymentAmount, setPaymentAmount] = useState("");
 
   async function saveLoan(data) {
     if (editingId) {
@@ -33,6 +35,25 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
     const nowSettled = !l.settled;
     if (nowSettled && l.notificationId) await cancelTodoNotifications([l.notificationId]);
     setLoans((prev) => prev.map((x) => (x.id === l.id ? { ...x, settled: nowSettled, settledAt: nowSettled ? todayISO() : null } : x)));
+  }
+
+  // Logs a partial payment against a loan without requiring the whole
+  // thing to be settled at once -- each payment immediately shows up in
+  // the account balance via loanNetAdjustment (see utils.js), same as any
+  // other transaction. If this payment brings the loan fully current, it's
+  // auto-marked settled (and its reminder notification cancelled) so
+  // there's no separate "now go tap settled too" step, but that's just a
+  // convenience: the person can always toggle it back open again.
+  async function recordPayment(l) {
+    const amt = Number(paymentAmount);
+    if (!isPositiveAmount(amt)) return;
+    const payments = [...(l.payments || []), { id: uid(), amount: amt, date: todayISO(), createdAt: Date.now() }];
+    const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+    const nowSettled = totalPaid >= loanTotalDue(l);
+    if (nowSettled && l.notificationId) await cancelTodoNotifications([l.notificationId]);
+    setLoans((prev) => prev.map((x) => (x.id === l.id ? { ...x, payments, settled: nowSettled, settledAt: nowSettled ? todayISO() : x.settledAt } : x)));
+    setPayingId(null);
+    setPaymentAmount("");
   }
   function remove(l) {
     confirmDelete(Alert, "Delete this entry?", `The ${l.type === "lent" ? "loan to" : "loan from"} ${l.person} (${peso(loanTotalDue(l))}) will be removed for good.`, async () => {
@@ -57,88 +78,134 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
-      <View style={styles.headerRow}>
-        <Text style={[styles.h1, { color: theme.text }]}>Borrow tracker</Text>
-        <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Add loan entry"}>
-          {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
-        </Pressable>
-      </View>
-
-      <View style={styles.typeToggle}>
-        <Pressable onPress={() => setTypeView("lent")} style={[styles.typeBtn, { backgroundColor: typeView === "lent" ? ACCENT.leaf : theme.card, borderColor: theme.line }]}>
-          <ArrowDownLeft size={14} color={typeView === "lent" ? "#fff" : theme.textMuted} />
-          <Text style={[styles.typeBtnText, { color: typeView === "lent" ? "#fff" : theme.text }]}>Lent (owed to me)</Text>
-        </Pressable>
-        <Pressable onPress={() => setTypeView("borrowed")} style={[styles.typeBtn, { backgroundColor: typeView === "borrowed" ? ACCENT.ember : theme.card, borderColor: theme.line }]}>
-          <ArrowUpRight size={14} color={typeView === "borrowed" ? "#fff" : theme.textMuted} />
-          <Text style={[styles.typeBtnText, { color: typeView === "borrowed" ? "#fff" : theme.text }]}>I borrowed</Text>
-        </Pressable>
-      </View>
-
-      <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
-        <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>
-          {typeView === "lent" ? "Total owed to you" : "Total you owe"}
-        </Text>
-        <Text style={styles.heroValue}>{peso(activeTotal)}</Text>
-        <Text style={styles.heroSub}>across active, unsettled entries (includes interest)</Text>
-        <View style={styles.heroDivider} />
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          {typeView === "lent" ? <TrendingUp size={13} color={ACCENT.leaf} /> : <TrendingDown size={13} color={ACCENT.ember} />}
-          <Text style={styles.heroFootnote}>
-            {typeView === "lent"
-              ? `Interest earned so far: ${peso(interestEarned)}`
-              : `Interest paid so far: ${peso(interestPaid)}`}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.chipRow}>
-        <Chip label="Active" active={statusView === "active"} onPress={() => setStatusView("active")} small />
-        <Chip label={`Settled (${loans.filter((l) => l.type === typeView && l.settled).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
-      </View>
-
-      {showForm && <LoanForm key={editingId || typeView} initial={editingLoan} type={typeView} ctx={ctx} accounts={accounts} onSave={saveLoan} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
-
-      {filtered.length === 0 ? (
+    <FlatList
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 12 }}
+      data={filtered}
+      keyExtractor={(l) => l.id}
+      ListEmptyComponent={
         <EmptyState text={statusView === "active" ? `No ${typeView === "lent" ? "lent" : "borrowed"} entries yet.` : "Nothing settled yet."} />
-      ) : (
-        filtered.map((l) => {
+      }
+      ListHeaderComponent={
+        <>
+          <View style={styles.headerRow}>
+            <Text style={[styles.h1, { color: theme.text }]}>Borrow tracker</Text>
+            <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Add loan entry"}>
+              {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
+            </Pressable>
+          </View>
+
+          <View style={styles.typeToggle}>
+            <Pressable onPress={() => setTypeView("lent")} style={[styles.typeBtn, { backgroundColor: typeView === "lent" ? ACCENT.leaf : theme.card, borderColor: theme.line }]}>
+              <ArrowDownLeft size={14} color={typeView === "lent" ? "#fff" : theme.textMuted} />
+              <Text style={[styles.typeBtnText, { color: typeView === "lent" ? "#fff" : theme.text }]}>Lent (owed to me)</Text>
+            </Pressable>
+            <Pressable onPress={() => setTypeView("borrowed")} style={[styles.typeBtn, { backgroundColor: typeView === "borrowed" ? ACCENT.ember : theme.card, borderColor: theme.line }]}>
+              <ArrowUpRight size={14} color={typeView === "borrowed" ? "#fff" : theme.textMuted} />
+              <Text style={[styles.typeBtnText, { color: typeView === "borrowed" ? "#fff" : theme.text }]}>I borrowed</Text>
+            </Pressable>
+          </View>
+
+          <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
+            <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>
+              {typeView === "lent" ? "Total owed to you" : "Total you owe"}
+            </Text>
+            <Text style={styles.heroValue}>{peso(activeTotal)}</Text>
+            <Text style={styles.heroSub}>across active, unsettled entries (includes interest)</Text>
+            <View style={styles.heroDivider} />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              {typeView === "lent" ? <TrendingUp size={13} color={ACCENT.leaf} /> : <TrendingDown size={13} color={ACCENT.ember} />}
+              <Text style={styles.heroFootnote}>
+                {typeView === "lent"
+                  ? `Interest earned so far: ${peso(interestEarned)}`
+                  : `Interest paid so far: ${peso(interestPaid)}`}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.chipRow}>
+            <Chip label="Active" active={statusView === "active"} onPress={() => setStatusView("active")} small />
+            <Chip label={`Settled (${loans.filter((l) => l.type === typeView && l.settled).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
+          </View>
+
+          {showForm && <LoanForm key={editingId || typeView} initial={editingLoan} type={typeView} ctx={ctx} accounts={accounts} onSave={saveLoan} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
+        </>
+      }
+      renderItem={({ item: l }) => {
           const dleft = l.dueDate ? daysUntil(l.dueDate) : null;
           const due = loanTotalDue(l);
+          const paid = loanTotalPaid(l);
+          const remaining = Math.max(0, due - paid);
+          const hasPartialPayments = !l.settled && paid > 0;
           const overdue = !l.settled && dleft !== null && dleft < 0;
           const dueSoon = !l.settled && dleft !== null && dleft >= 0 && dleft <= 2;
           const account = accounts.find((a) => a.id === l.account);
           const borderColor = overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.line;
           return (
-            <View key={l.id} style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
-              <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={l.settled ? "Mark unsettled" : "Mark settled"}>
-                {l.settled ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
-              </Pressable>
-              <Pressable style={{ flex: 1 }} onPress={() => !l.settled && startEdit(l)}>
-                <Text style={[styles.rowTitle, { color: theme.text, textDecorationLine: l.settled ? "line-through" : "none" }]}>{l.person}</Text>
-                {l.note ? <Text style={[styles.noteText, { color: theme.textMuted }]}>{l.note}</Text> : null}
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                  <Text style={[styles.metaText, { color: theme.textMuted }]}>Principal {peso(l.principal)}</Text>
-                  {Number(l.interestPercent) > 0 && <Text style={[styles.metaText, { color: ACCENT.gold }]}>+{l.interestPercent}% interest</Text>}
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                  <Text style={[styles.totalDueText, { color: theme.text }]}>Total: {peso(due)}</Text>
-                  {l.dueDate && (
-                    <Text style={[styles.metaText, { color: overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.textMuted }]}>
-                      {l.settled ? `settled ${fmtDay(l.settledAt)}` : dleft === 0 ? "due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `due in ${dleft}d`}
+            <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={l.settled ? "Mark unsettled" : "Mark settled"}>
+                  {l.settled ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
+                </Pressable>
+                <Pressable style={{ flex: 1 }} onPress={() => !l.settled && startEdit(l)}>
+                  <Text style={[styles.rowTitle, { color: theme.text, textDecorationLine: l.settled ? "line-through" : "none" }]}>{l.person}</Text>
+                  {l.note ? <Text style={[styles.noteText, { color: theme.textMuted }]}>{l.note}</Text> : null}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
+                    <Text style={[styles.metaText, { color: theme.textMuted }]}>Principal {peso(l.principal)}</Text>
+                    {Number(l.interestPercent) > 0 && <Text style={[styles.metaText, { color: ACCENT.gold }]}>+{l.interestPercent}% interest</Text>}
+                  </View>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
+                    <Text style={[styles.totalDueText, { color: theme.text }]}>
+                      {hasPartialPayments ? `${peso(remaining)} left of ${peso(due)}` : `Total: ${peso(due)}`}
                     </Text>
+                    {l.dueDate && (
+                      <Text style={[styles.metaText, { color: overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.textMuted }]}>
+                        {l.settled ? `settled ${fmtDay(l.settledAt)}` : dleft === 0 ? "due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `due in ${dleft}d`}
+                      </Text>
+                    )}
+                    {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
+                  </View>
+                  {hasPartialPayments && (
+                    <View style={[styles.progressTrack, { backgroundColor: theme.bg }]}>
+                      <View style={[styles.progressFill, { width: `${Math.min(100, (paid / due) * 100)}%`, backgroundColor: ACCENT.leaf }]} />
+                    </View>
                   )}
-                  {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
+                </Pressable>
+                {!l.settled && (
+                  <Pressable onPress={() => { setPayingId(payingId === l.id ? null : l.id); setPaymentAmount(""); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Record a payment">
+                    <Wallet size={15} color={ACCENT.leaf} />
+                  </Pressable>
+                )}
+                {!l.settled && <Pressable onPress={() => startEdit(l)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit entry"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+                <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete entry"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+              </View>
+
+              {payingId === l.id && (
+                <View style={styles.paymentRow}>
+                  <TextInput
+                    value={paymentAmount}
+                    onChangeText={(v) => setPaymentAmount(v.replace(/[^0-9.]/g, ""))}
+                    placeholder={`up to ${peso(remaining)}`}
+                    placeholderTextColor={theme.textMuted}
+                    keyboardType="decimal-pad"
+                    autoFocus
+                    style={[styles.paymentInput, { backgroundColor: theme.bg, color: theme.text }]}
+                  />
+                  <Pressable onPress={() => recordPayment(l)} disabled={!isPositiveAmount(paymentAmount)} style={[styles.paymentConfirm, { backgroundColor: ACCENT.leaf, opacity: isPositiveAmount(paymentAmount) ? 1 : 0.5 }]} accessibilityLabel="Confirm payment">
+                    <Check size={14} color="#fff" />
+                  </Pressable>
                 </View>
-              </Pressable>
-              {!l.settled && <Pressable onPress={() => startEdit(l)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit entry"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-              <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete entry"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+              )}
+
+              {hasPartialPayments && (l.payments || []).length > 0 && (
+                <Text style={[styles.paymentHistoryText, { color: theme.textMuted }]}>
+                  {l.payments.length} payment{l.payments.length === 1 ? "" : "s"} logged - last {peso(l.payments[l.payments.length - 1].amount)} on {fmtDay(l.payments[l.payments.length - 1].date)}
+                </Text>
+              )}
             </View>
           );
-        })
-      )}
-    </ScrollView>
+        }}
+      />
   );
 }
 
@@ -230,11 +297,17 @@ const styles = StyleSheet.create({
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
-  row: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 16, padding: 12, marginBottom: 8 },
+  row: { borderRadius: 16, padding: 12, marginBottom: 8 },
   rowTitle: { fontSize: 13, fontWeight: "600" },
   noteText: { fontSize: 10, fontStyle: "italic", marginTop: 1 },
   metaText: { fontSize: 10, fontFamily: "monospace" },
   totalDueText: { fontSize: 11, fontWeight: "700" },
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   tagText: { fontSize: 9, fontWeight: "700" },
+  progressTrack: { height: 4, borderRadius: 2, marginTop: 6, overflow: "hidden" },
+  progressFill: { height: 4, borderRadius: 2 },
+  paymentRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
+  paymentInput: { flex: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, fontFamily: "monospace", fontSize: 13 },
+  paymentConfirm: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  paymentHistoryText: { fontSize: 9, marginTop: 6, fontStyle: "italic" },
 });

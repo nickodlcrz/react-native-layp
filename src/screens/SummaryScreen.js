@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Copy, Check } from "lucide-react-native";
+import { Copy, Check, Lock } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, todayISO, fmtDay, fmtDateLong, savingsTotal as computeSavingsTotal, computeAccountBalance } from "../utils";
+import { AUTO_LOCK_OPTIONS } from "../autoLockPreference";
+import Chip from "../components/Chip";
 
-export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore }) {
+export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore, autoLockMinutes, onChangeAutoLockMinutes }) {
   const { theme } = useTheme();
   const [copied, setCopied] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
@@ -112,6 +114,29 @@ export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog
       <Text style={[styles.h1, { color: theme.text }]}>Summary</Text>
       <Text style={[styles.sub, { color: theme.textMuted }]}>A plain-text snapshot of your tasks, budget, spending, and borrow tracker -- copy it anywhere.</Text>
 
+      {onChangeAutoLockMinutes && (
+        <View style={[styles.restoreCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+            <Lock size={13} color={theme.textMuted} />
+            <Text style={[styles.backupBtnText, { color: theme.text }]}>App lock</Text>
+          </View>
+          <Text style={[styles.restoreHint, { color: theme.textMuted }]}>
+            How long LAYP can stay open in the background before it needs your PIN again.
+          </Text>
+          <View style={styles.chipWrap}>
+            {AUTO_LOCK_OPTIONS.map((opt) => (
+              <Chip
+                key={opt.label}
+                label={opt.label}
+                small
+                active={autoLockMinutes === opt.minutes}
+                onPress={() => onChangeAutoLockMinutes(opt.minutes)}
+              />
+            ))}
+          </View>
+        </View>
+      )}
+
       <Pressable onPress={copy} style={[styles.copyBtn, { backgroundColor: theme.accentDark }]}>
         {copied ? <Check size={16} color={ACCENT.leaf} /> : <Copy size={16} color={ACCENT.gold} />}
         <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy to clipboard"}</Text>
@@ -154,4 +179,5 @@ const styles = StyleSheet.create({
   restoreHint: { fontSize: 10, lineHeight: 14, marginBottom: 8 },
   restoreInput: { minHeight: 90, borderWidth: 1, borderRadius: 10, padding: 8, fontSize: 10, textAlignVertical: "top", marginBottom: 8 },
   restoreBtn: { borderRadius: 10, alignItems: "center", paddingVertical: 10 },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
 });

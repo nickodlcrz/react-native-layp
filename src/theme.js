@@ -5,8 +5,17 @@ export const LIGHT = {
   line: "#E4E5DF", accentDark: "#17203A",
 };
 export const DARK = {
-  bg: "#0F1117", card: "#1A1D26", text: "#F0F1F4", textMuted: "#8B93A6",
-  line: "#2A2E3A", accentDark: "#090A0E",
+  // A true near-black rather than the previous dark navy-gray -- closer to
+  // what most people mean by "dark mode" (OLED-friendly, less of a washed-
+  // out charcoal look), with just enough lift on `card` to keep cards and
+  // sheets readable as distinct surfaces against the background.
+  bg: "#09090B", card: "#151518", text: "#EDEDF0", textMuted: "#94949E",
+  // accentDark is used everywhere as a "solid accent surface" -- hero
+  // cards, FAB-style round buttons, and active/selected toggle
+  // backgrounds, always paired with white icons/text on top. A rich,
+  // desaturated indigo keeps that "solid dark surface" language while
+  // still popping clearly against the near-black bg/card above.
+  line: "#242428", accentDark: "#2E3E72",
 };
 export const ACCENT = {
   gold: "#D9A441", leaf: "#3E7C59", ember: "#D1573F",
@@ -38,6 +47,14 @@ export const CATEGORIES = [
   { id: "school", label: "School", color: ACCENT.sky },
   { id: "errands", label: "Errands", color: ACCENT.leaf },
   { id: "shopping", label: "Shopping", color: ACCENT.gold },
+  { id: "other", label: "Other", color: ACCENT.plum },
+];
+
+export const INCOME_CATEGORIES = [
+  { id: "allowance", label: "Allowance", color: ACCENT.leaf },
+  { id: "salary", label: "Salary", color: ACCENT.sky },
+  { id: "gift", label: "Gift", color: ACCENT.gold },
+  { id: "refund", label: "Refund", color: ACCENT.teal },
   { id: "other", label: "Other", color: ACCENT.plum },
 ];
 

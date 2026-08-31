@@ -19,9 +19,23 @@ export async function requestNotificationPermission() {
 
 export async function setupAndroidChannel() {
   if (Platform.OS === "android") {
+    // General reminders (tasks, bills, loans, daily budget review): a
+    // brief double-buzz, enough to notice without being alarming.
     await Notifications.setNotificationChannelAsync("layp-reminders", {
       name: "LAYP reminders",
       importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      enableVibrate: true,
+    });
+    // Class start/advance reminders: a longer, more insistent repeating
+    // buzz pattern -- these are meant to actually get noticed like an
+    // alarm, matching the vibration used by the in-app alarm popup
+    // (ClassAlarmScreen) for when the app happens to be in the foreground.
+    await Notifications.setNotificationChannelAsync("layp-class-alarm", {
+      name: "LAYP class alarms",
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 700, 400, 700, 400, 700, 400],
+      enableVibrate: true,
     });
   }
 }
@@ -157,7 +171,7 @@ function classBody(subject, entry) {
 async function scheduleWeekly(weekday, hour, minute, content) {
   return Notifications.scheduleNotificationAsync({
     content: { ...content, sound: true },
-    trigger: Platform.OS === "android" ? { weekday, hour, minute, repeats: true, channelId: "layp-reminders" } : { weekday, hour, minute, repeats: true },
+    trigger: Platform.OS === "android" ? { weekday, hour, minute, repeats: true, channelId: "layp-class-alarm" } : { weekday, hour, minute, repeats: true },
   });
 }
 

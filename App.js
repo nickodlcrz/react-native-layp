@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
-import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState } from "react-native";
+import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, BackHandler } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap } from "lucide-react-native";
@@ -7,12 +7,13 @@ import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationC
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import { loadState, saveState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, cancelTodoNotifications, rescheduleDailyBudgetNotification } from "./src/notifications";
-import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent } from "./src/utils";
+import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
 import LockScreen from "./src/screens/LockScreen";
 import ClassAlarmScreen from "./src/components/ClassAlarmScreen";
+import { getAutoLockMinutes, setAutoLockMinutes, AUTO_LOCK_OPTIONS, DEFAULT_AUTO_LOCK_MINUTES } from "./src/autoLockPreference";
 
 import HomeScreen from "./src/screens/HomeScreen";
 import TodoScreen from "./src/screens/TodoScreen";
@@ -20,23 +21,50 @@ import BudgetScreen from "./src/screens/BudgetScreen";
 import SchoolScreen from "./src/screens/SchoolScreen";
 import SummaryScreen from "./src/screens/SummaryScreen";
 import TabTransition from "./src/components/TabTransition";
+import SwipeNavigator from "./src/components/SwipeNavigator";
+import ErrorBoundary from "./src/components/ErrorBoundary";
 
 export default function App() {
   const [unlocked, setUnlocked] = useState(false);
+  const [autoLockMinutes, setAutoLockMinutesState] = useState(DEFAULT_AUTO_LOCK_MINUTES);
+  const backgroundedAtRef = useRef(null);
 
-  // Auto-lock: any time the app leaves the foreground (backgrounded, screen
-  // off, app-switcher), immediately drop back to the PIN screen.
+  useEffect(() => {
+    getAutoLockMinutes().then(setAutoLockMinutesState);
+  }, []);
+
+  async function updateAutoLockMinutes(minutes) {
+    setAutoLockMinutesState(minutes);
+    await setAutoLockMinutes(minutes);
+  }
+
+  // Auto-lock: instead of always locking the instant the app leaves the
+  // foreground, this now respects the person's chosen grace period --
+  // stepping away for a quick notification check shouldn't force a fresh
+  // PIN entry if they're back in a few seconds, but leaving the app alone
+  // for a while still should. "Immediately" (0) and "Never" (null) are
+  // both honored as explicit choices, not just edge cases of the timer.
   useEffect(() => {
     const sub = AppState.addEventListener("change", (nextState) => {
-      if (nextState !== "active") setUnlocked(false);
+      if (nextState !== "active") {
+        backgroundedAtRef.current = Date.now();
+        if (autoLockMinutes === 0) setUnlocked(false);
+        return;
+      }
+      // Coming back to active.
+      if (backgroundedAtRef.current && autoLockMinutes !== null) {
+        const elapsedMs = Date.now() - backgroundedAtRef.current;
+        if (elapsedMs >= autoLockMinutes * 60 * 1000) setUnlocked(false);
+      }
+      backgroundedAtRef.current = null;
     });
     return () => sub.remove();
-  }, []);
+  }, [autoLockMinutes]);
 
   return (
     <SafeAreaProvider>
       {unlocked ? (
-        <AppShell onLock={() => setUnlocked(false)} />
+        <AppShell onLock={() => setUnlocked(false)} autoLockMinutes={autoLockMinutes} onChangeAutoLockMinutes={updateAutoLockMinutes} />
       ) : (
         <LockScreen onUnlock={() => setUnlocked(true)} />
       )}
@@ -44,10 +72,24 @@ export default function App() {
   );
 }
 
-function AppShell({ onLock }) {
+function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
   const systemScheme = useColorScheme();
   const [dark, setDark] = useState(systemScheme === "dark");
-  const [tab, setTab] = useState("home");
+  const [tab, setTabRaw] = useState("home");
+  const [tabDirection, setTabDirection] = useState(0);
+  const TAB_ORDER = ["home", "todo", "school", "budget"];
+  function setTab(next) {
+    setTabDirection(Math.sign(TAB_ORDER.indexOf(next) - TAB_ORDER.indexOf(tab)));
+    setTabRaw(next);
+  }
+  function swipeToTab(delta) {
+    const idx = TAB_ORDER.indexOf(tab);
+    const nextIdx = idx + delta;
+    if (nextIdx < 0 || nextIdx >= TAB_ORDER.length) return; // no wraparound at the ends
+    setTab(TAB_ORDER[nextIdx]);
+  }
+  const [budgetSubTab, setBudgetSubTab] = useState("overview");
+  const [showDailyBudget, setShowDailyBudget] = useState(false);
   const [ready, setReady] = useState(false);
   const [todos, setTodos] = useState([]);
   const [bills, setBills] = useState([]);
@@ -65,6 +107,24 @@ function AppShell({ onLock }) {
   const [dailyBudgetNotifId, setDailyBudgetNotifId] = useState(null);
   const [reminderBanner, setReminderBanner] = useState(null);
   const [classAlarm, setClassAlarm] = useState(null); // { block, kind: "class" | "advance", advanceMinutes } | null
+  const [cancelledClasses, setCancelledClasses] = useState([]); // [{ date, entryId }] -- classes marked suspended/cancelled for a specific day, from the alarm popup
+
+  // Hardware back button: close whatever's "on top" first (the class
+  // alarm is deliberately NOT closable this way -- it should only ever be
+  // dismissed with the slide-to-confirm gesture, same as a real alarm),
+  // then drop out of a Budget sub-screen/sub-tab, then return to Home from
+  // any other tab, and only let the OS handle it (background/exit the app)
+  // once we're already sitting at Home with nothing open.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (classAlarm) return true;
+      if (showDailyBudget) { setShowDailyBudget(false); return true; }
+      if (budgetSubTab !== "overview") { setBudgetSubTab("overview"); return true; }
+      if (tab !== "home") { setTab("home"); return true; }
+      return false;
+    });
+    return () => sub.remove();
+  }, [classAlarm, showDailyBudget, budgetSubTab, tab]);
   // School: academic periods, the classes within them, and their weekly
   // meeting times. Seeded with one default active period so the School tab
   // is usable immediately on a brand-new install, before loadState resolves.
@@ -111,6 +171,7 @@ function AppShell({ onLock }) {
         setSubjects(s.subjects || []);
         setScheduleEntries(s.scheduleEntries || []);
         setSchoolDefaults(s.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
+        setCancelledClasses(s.cancelledClasses || []);
         if (typeof s.dark === "boolean") setDark(s.dark);
 
         // Migrate old single "income" number (pre-accounts) into the money log.
@@ -127,9 +188,22 @@ function AppShell({ onLock }) {
   useEffect(() => {
     if (!ready) return;
     if (firstLoad.current) { firstLoad.current = false; return; }
-    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults });
+    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses });
     setThemePreference(dark);
-  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults]);
+  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses]);
+
+  // Cancellation records only ever need to cover "today" at check time, so
+  // trim anything older than a week on load rather than let this list grow
+  // forever -- a week of slack in case the device's clock or timezone
+  // hiccups, not because old records need to stick around.
+  useEffect(() => {
+    if (!ready) return;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffKey = toLocalISO(cutoff);
+    setCancelledClasses((prev) => prev.filter((c) => c.date >= cutoffKey));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   // Keeps the end-of-day local notification's copy roughly current. Local
   // notifications can't recompute their own body at fire time, so instead
@@ -222,8 +296,10 @@ function AppShell({ onLock }) {
       const now = new Date();
       const nowMin = now.getHours() * 60 + now.getMinutes();
       const todayKey = todayISO();
+      const isCancelledToday = (entryId) => cancelledClasses.some((c) => c.date === todayKey && c.entryId === entryId);
 
       for (const block of todaysBlocks) {
+        if (isCancelledToday(block.entry.id)) continue; // marked suspended earlier today -- don't alarm for it again
         const { subject } = block;
         if (subject.classReminderEnabled && nowMin >= block.startMin && nowMin < block.startMin + 1) {
           const key = `${todayKey}-${block.entry.id}-class`;
@@ -249,7 +325,17 @@ function AppShell({ onLock }) {
     check();
     const iv = setInterval(check, 30000);
     return () => clearInterval(iv);
-  }, [academicPeriods, subjects, scheduleEntries, classAlarm]);
+  }, [academicPeriods, subjects, scheduleEntries, classAlarm, cancelledClasses]);
+
+  // Marking a class suspended from the alarm popup both dismisses that
+  // alarm and records the cancellation for today, so the matching
+  // class/advance alarm for the same schedule entry won't fire again later
+  // the same day (e.g. marking it suspended from the advance reminder
+  // means the "starting now" alarm won't also go off).
+  function handleSuspendClass(block) {
+    setCancelledClasses((prev) => [...prev, { date: todayISO(), entryId: block.entry.id }]);
+    setClassAlarm(null);
+  }
 
   const todayLabel = new Date().toLocaleDateString("en-PH", { weekday: "long", month: "short", day: "numeric" });
 
@@ -266,7 +352,7 @@ function AppShell({ onLock }) {
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <StatusBar style={dark ? "light" : "dark"} />
         {classAlarm && (
-          <ClassAlarmScreen alarm={classAlarm} onDismiss={() => setClassAlarm(null)} />
+          <ClassAlarmScreen alarm={classAlarm} onDismiss={() => setClassAlarm(null)} onSuspend={() => handleSuspendClass(classAlarm.block)} />
         )}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -300,13 +386,20 @@ function AppShell({ onLock }) {
           </View>
         )}
 
-        <TabTransition transitionKey={tab} style={styles.content}>
+        <SwipeNavigator
+          style={{ flex: 1 }}
+          enabled={!classAlarm}
+          onSwipeLeft={() => swipeToTab(1)}
+          onSwipeRight={() => swipeToTab(-1)}
+        >
+        <ErrorBoundary resetKey={tab}>
+        <TabTransition transitionKey={tab} direction={tabDirection} style={styles.content}>
           {tab === "home" && (
             <HomeScreen
               accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
               loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
               goals={goals} todos={todos}
-              periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries}
+              periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries} cancelledClasses={cancelledClasses}
               onViewSchedule={() => setTab("school")}
               onViewTodos={() => setTab("todo")}
             />
@@ -343,6 +436,9 @@ function AppShell({ onLock }) {
               goals={goals} setGoals={setGoals}
               dailyBudgetSettings={dailyBudgetSettings} setDailyBudgetSettings={setDailyBudgetSettings}
               setDailyBudgetLog={setDailyBudgetLog}
+              dailyBudgetLog={dailyBudgetLog}
+              subTab={budgetSubTab} setSubTab={setBudgetSubTab}
+              showDailyBudget={showDailyBudget} setShowDailyBudget={setShowDailyBudget}
             />
           )}
           {tab === "summary" && (
@@ -364,9 +460,13 @@ function AppShell({ onLock }) {
                 setScheduleEntries(data.scheduleEntries || []);
                 setSchoolDefaults(data.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
               }}
+              autoLockMinutes={autoLockMinutes}
+              onChangeAutoLockMinutes={onChangeAutoLockMinutes}
             />
           )}
         </TabTransition>
+        </ErrorBoundary>
+        </SwipeNavigator>
 
         <View style={[styles.tabBar, { borderTopColor: theme.line, backgroundColor: theme.card }]}>
           <NavBtn icon={Home} label="Home" active={tab === "home"} onPress={() => setTab("home")} theme={theme} />

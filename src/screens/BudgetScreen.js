@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell } from "lucide-react-native";
-import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
+import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, unallocatedSavings, goalProgress, addAccount as pushAccount, isPositiveAmount, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
@@ -21,7 +21,8 @@ function matchPresetName(splits) {
 export default function BudgetScreen({
   moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, setWeeklySummaries,
   savingsLog, setSavingsLog, loans, setLoans, accounts, setAccounts, transfers, setTransfers, goals, setGoals,
-  dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog,
+  dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog, dailyBudgetLog,
+  subTab, setSubTab, showDailyBudget, setShowDailyBudget,
 }) {
   const { theme } = useTheme();
   const [showBillForm, setShowBillForm] = useState(false);
@@ -33,15 +34,14 @@ export default function BudgetScreen({
   const [billStatusView, setBillStatusView] = useState("unpaid");
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
-  const [showDailyBudget, setShowDailyBudget] = useState(false);
-  const [subTab, setSubTab] = useState("overview"); // "overview" | "spending" | "borrow"
   const [addAmount, setAddAmount] = useState("");
   const [addAccount, setAddAccount] = useState(accounts[0]?.id);
+  const [addCategory, setAddCategory] = useState("other");
 
   function addMoney() {
     const amt = Number(addAmount);
     if (!isPositiveAmount(amt)) return;
-    setMoneyLog((prev) => [...prev, { id: uid(), amount: amt, account: addAccount, note: "Money added", date: todayISO(), createdAt: Date.now() }]);
+    setMoneyLog((prev) => [...prev, { id: uid(), amount: amt, account: addAccount, category: addCategory, note: "Money added", date: todayISO(), createdAt: Date.now() }]);
     setAddAmount("");
     setShowAddMoney(false);
   }
@@ -143,6 +143,7 @@ export default function BudgetScreen({
         savingsLog={savingsLog} setSavingsLog={setSavingsLog}
         dailyBudgetSettings={dailyBudgetSettings} setDailyBudgetSettings={setDailyBudgetSettings}
         setDailyBudgetLog={setDailyBudgetLog}
+        dailyBudgetLog={dailyBudgetLog}
         onClose={() => setShowDailyBudget(false)}
       />
     );
@@ -204,6 +205,13 @@ export default function BudgetScreen({
               {accounts.map((a) => (
                 <Pressable key={a.id} onPress={() => setAddAccount(a.id)} style={[styles.accountPickChip, { backgroundColor: addAccount === a.id ? a.color : "#ffffff22" }]}>
                   <Text style={[styles.accountPickText, { color: addAccount === a.id ? "#fff" : "#ffffffcc" }]}>{a.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={[styles.accountPickRow, { marginTop: 6 }]}>
+              {INCOME_CATEGORIES.map((c) => (
+                <Pressable key={c.id} onPress={() => setAddCategory(c.id)} style={[styles.accountPickChip, { backgroundColor: addCategory === c.id ? c.color : "#ffffff22" }]}>
+                  <Text style={[styles.accountPickText, { color: addCategory === c.id ? "#fff" : "#ffffffcc" }]}>{c.label}</Text>
                 </Pressable>
               ))}
             </View>

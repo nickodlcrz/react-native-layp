@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Linking, Platform, Switch, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Linking, Platform, Switch, Alert } from "react-native";
 import {
   CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays,
   ChevronLeft, ChevronRight, AlertTriangle, ChevronDown, ChevronUp, Settings, Bell, BellOff,
@@ -97,108 +97,113 @@ export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubj
   const editingTodo = editingId ? todos.find((t) => t.id === editingId) : null;
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
-      <View style={styles.headerRow}>
-        <Text style={[styles.h1, { color: theme.text }]}>Your tasks</Text>
-        <View style={styles.headerActions}>
-          {statusView === "active" && (
-            <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
-              <Pressable onPress={() => setView("list")} style={[styles.toggleBtn, view === "list" && { backgroundColor: theme.accentDark }]}>
-                <List size={13} color={view === "list" ? "#fff" : theme.textMuted} />
-              </Pressable>
-              <Pressable onPress={() => setView("week")} style={[styles.toggleBtn, view === "week" && { backgroundColor: theme.accentDark }]}>
-                <CalendarDays size={13} color={view === "week" ? "#fff" : theme.textMuted} />
-              </Pressable>
-            </View>
-          )}
-          <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Add task"}>
-            {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
-          </Pressable>
-        </View>
-      </View>
-
-      <View style={styles.chipRow}>
-        <Chip label="Active" active={statusView === "active"} onPress={() => setStatusView("active")} small />
-        <Chip label={`Finished (${todos.filter((t) => t.completed).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
-      </View>
-
-      {schoolConflicts.length > 0 && statusView === "active" && (
-        <View style={[styles.warnBanner, { backgroundColor: ACCENT.ember + "20" }]}>
-          <AlertTriangle size={14} color={ACCENT.ember} style={{ marginTop: 2 }} />
-          <Text style={[styles.warnText, { color: ACCENT.ember }]}>
-            You have multiple School tasks due on {schoolConflicts.map(fmtDay).join(", ")}. Consider spacing them out.
-          </Text>
-        </View>
-      )}
-
-      {statusView === "active" && view === "week" && (
-        <View style={[styles.weekCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <View style={styles.weekNav}>
-            <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} accessibilityLabel="Previous week"><ChevronLeft size={15} color={theme.textMuted} /></Pressable>
-            <Text style={[styles.weekLabel, { color: theme.textMuted }]}>{fmtDay(weekDates[0])} - {fmtDay(weekDates[6])}</Text>
-            <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} accessibilityLabel="Next week"><ChevronRight size={15} color={theme.textMuted} /></Pressable>
-          </View>
-          <View style={styles.weekDays}>
-            {weekDates.map((d) => {
-              const count = todos.filter((t) => t.dueDate === d && !t.completed).length;
-              const isToday = d === todayISO();
-              const isSel = d === selectedDay;
-              return (
-                <Pressable key={d} onPress={() => setSelectedDay(isSel ? null : d)} style={[styles.dayBtn, isSel && { backgroundColor: theme.accentDark }]}>
-                  <Text style={[styles.dayName, { color: isSel ? "#ffffff99" : theme.textMuted }]}>
-                    {new Date(d + "T00:00:00").toLocaleDateString("en-PH", { weekday: "narrow" })}
-                  </Text>
-                  <Text style={[styles.dayNum, { color: isSel ? "#fff" : isToday ? ACCENT.gold : theme.text }]}>{Number(d.slice(8, 10))}</Text>
-                  {count > 0 && <View style={[styles.dot, { backgroundColor: isSel ? ACCENT.gold : ACCENT.leaf }]} />}
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-        <Chip label="All" active={filter === "all"} onPress={() => setFilter("all")} />
-        {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={filter === c.id} onPress={() => setFilter(c.id)} />)}
-      </ScrollView>
-
-      {statusView === "active" && Platform.OS === "android" && (
-        <Pressable onPress={() => Linking.openSettings()} style={[styles.miuiHint, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <Settings size={13} color={theme.textMuted} />
-          <Text style={[styles.miuiHintText, { color: theme.textMuted }]}>
-            Reminders not going off? MIUI (Redmi/Xiaomi) kills background apps by default -- tap here, then allow Autostart and set Battery saver to "No restrictions" for LAYP.
-          </Text>
-        </Pressable>
-      )}
-
-      {showForm && (
-        <TodoForm
-          initial={editingTodo}
-          presetSubjectId={editingTodo ? null : pendingSubjectId}
-          subjects={subjects}
-          onSave={saveTodo}
-          onCancel={() => { setShowForm(false); setEditingId(null); setPendingSubjectId(null); }}
+    <FlatList
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 12 }}
+      data={filtered}
+      keyExtractor={(t) => t.id}
+      renderItem={({ item: t }) => (
+        <TodoRow
+          t={t}
+          subject={t.subjectId ? subjects.find((s) => s.id === t.subjectId) : null}
+          isExpanded={expandedId === t.id}
+          onToggle={toggle}
+          onEdit={startEdit}
+          onRemove={remove}
+          onExpand={setExpandedId}
+          onToggleSubtask={toggleSubtask}
         />
       )}
-
-      {filtered.length === 0 ? (
+      ListEmptyComponent={
         <EmptyState text={statusView === "done" ? "No finished tasks yet." : "No tasks here yet. Add one to get started."} />
-      ) : (
-        filtered.map((t) => (
-          <TodoRow
-            key={t.id}
-            t={t}
-            subject={t.subjectId ? subjects.find((s) => s.id === t.subjectId) : null}
-            isExpanded={expandedId === t.id}
-            onToggle={toggle}
-            onEdit={startEdit}
-            onRemove={remove}
-            onExpand={setExpandedId}
-            onToggleSubtask={toggleSubtask}
-          />
-        ))
-      )}
-    </ScrollView>
+      }
+      ListHeaderComponent={
+        <>
+          <View style={styles.headerRow}>
+            <Text style={[styles.h1, { color: theme.text }]}>Your tasks</Text>
+            <View style={styles.headerActions}>
+              {statusView === "active" && (
+                <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                  <Pressable onPress={() => setView("list")} style={[styles.toggleBtn, view === "list" && { backgroundColor: theme.accentDark }]}>
+                    <List size={13} color={view === "list" ? "#fff" : theme.textMuted} />
+                  </Pressable>
+                  <Pressable onPress={() => setView("week")} style={[styles.toggleBtn, view === "week" && { backgroundColor: theme.accentDark }]}>
+                    <CalendarDays size={13} color={view === "week" ? "#fff" : theme.textMuted} />
+                  </Pressable>
+                </View>
+              )}
+              <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Add task"}>
+                {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.chipRow}>
+            <Chip label="Active" active={statusView === "active"} onPress={() => setStatusView("active")} small />
+            <Chip label={`Finished (${todos.filter((t) => t.completed).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
+          </View>
+
+          {schoolConflicts.length > 0 && statusView === "active" && (
+            <View style={[styles.warnBanner, { backgroundColor: ACCENT.ember + "20" }]}>
+              <AlertTriangle size={14} color={ACCENT.ember} style={{ marginTop: 2 }} />
+              <Text style={[styles.warnText, { color: ACCENT.ember }]}>
+                You have multiple School tasks due on {schoolConflicts.map(fmtDay).join(", ")}. Consider spacing them out.
+              </Text>
+            </View>
+          )}
+
+          {statusView === "active" && view === "week" && (
+            <View style={[styles.weekCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+              <View style={styles.weekNav}>
+                <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} accessibilityLabel="Previous week"><ChevronLeft size={15} color={theme.textMuted} /></Pressable>
+                <Text style={[styles.weekLabel, { color: theme.textMuted }]}>{fmtDay(weekDates[0])} - {fmtDay(weekDates[6])}</Text>
+                <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} accessibilityLabel="Next week"><ChevronRight size={15} color={theme.textMuted} /></Pressable>
+              </View>
+              <View style={styles.weekDays}>
+                {weekDates.map((d) => {
+                  const count = todos.filter((t) => t.dueDate === d && !t.completed).length;
+                  const isToday = d === todayISO();
+                  const isSel = d === selectedDay;
+                  return (
+                    <Pressable key={d} onPress={() => setSelectedDay(isSel ? null : d)} style={[styles.dayBtn, isSel && { backgroundColor: theme.accentDark }]}>
+                      <Text style={[styles.dayName, { color: isSel ? "#ffffff99" : theme.textMuted }]}>
+                        {new Date(d + "T00:00:00").toLocaleDateString("en-PH", { weekday: "narrow" })}
+                      </Text>
+                      <Text style={[styles.dayNum, { color: isSel ? "#fff" : isToday ? ACCENT.gold : theme.text }]}>{Number(d.slice(8, 10))}</Text>
+                      {count > 0 && <View style={[styles.dot, { backgroundColor: isSel ? ACCENT.gold : ACCENT.leaf }]} />}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            <Chip label="All" active={filter === "all"} onPress={() => setFilter("all")} />
+            {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={filter === c.id} onPress={() => setFilter(c.id)} />)}
+          </ScrollView>
+
+          {statusView === "active" && Platform.OS === "android" && (
+            <Pressable onPress={() => Linking.openSettings()} style={[styles.miuiHint, { backgroundColor: theme.card, borderColor: theme.line }]}>
+              <Settings size={13} color={theme.textMuted} />
+              <Text style={[styles.miuiHintText, { color: theme.textMuted }]}>
+                Reminders not going off? MIUI (Redmi/Xiaomi) kills background apps by default -- tap here, then allow Autostart and set Battery saver to "No restrictions" for LAYP.
+              </Text>
+            </Pressable>
+          )}
+
+          {showForm && (
+            <TodoForm
+              initial={editingTodo}
+              presetSubjectId={editingTodo ? null : pendingSubjectId}
+              subjects={subjects}
+              onSave={saveTodo}
+              onCancel={() => { setShowForm(false); setEditingId(null); setPendingSubjectId(null); }}
+            />
+          )}
+        </>
+      }
+    />
   );
 }
 

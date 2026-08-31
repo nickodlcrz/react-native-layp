@@ -3,7 +3,7 @@ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from 
 import Slider from "@react-native-community/slider";
 import { ArrowLeft, Plus, Trash2, Check, Bell } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
-import { peso, uid, todayISO, normalizeSplits, removeSplitAndRedistribute, computeDailyBudgetReview, categoryStatusText, isPositiveAmount } from "../utils";
+import { peso, uid, todayISO, fmtDay, normalizeSplits, removeSplitAndRedistribute, computeDailyBudgetReview, categoryStatusText, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
@@ -19,7 +19,7 @@ function matchPresetName(splits) {
 
 export default function DailyBudgetScreen({
   splits, setSplits, accounts, moneyLog, expenses, weeklySummaries, loans, transfers,
-  savingsLog, setSavingsLog, dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog,
+  savingsLog, setSavingsLog, dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog, dailyBudgetLog = [],
   onClose,
 }) {
   const { theme } = useTheme();
@@ -86,6 +86,7 @@ export default function DailyBudgetScreen({
             onKeep={() => { logDecision({ choice: "kept" }); Alert.alert("Noted", "This money stays available -- it won't be counted as saved."); }}
             onRemind={() => { logDecision({ choice: "remind" }); Alert.alert("Okay", "Tomorrow's review will pick this back up."); }}
             accounts={accounts} saveAccount={saveAccount} setSaveAccount={setSaveAccount}
+            dailyBudgetLog={dailyBudgetLog}
           />
         ) : (
           <SettingsView
@@ -110,7 +111,7 @@ function HeroCard({ review, modelName, theme }) {
   );
 }
 
-function ReviewView({ review, theme, modelName, showCustom, setShowCustom, customAmount, setCustomAmount, onSaveRecommended, onSaveCustom, onKeep, onRemind, accounts, saveAccount, setSaveAccount }) {
+function ReviewView({ review, theme, modelName, showCustom, setShowCustom, customAmount, setCustomAmount, onSaveRecommended, onSaveCustom, onKeep, onRemind, accounts, saveAccount, setSaveAccount, dailyBudgetLog = [] }) {
   if (!review.hasIncome) {
     return (
       <>
@@ -202,6 +203,20 @@ function ReviewView({ review, theme, modelName, showCustom, setShowCustom, custo
               </View>
             </>
           )}
+        </View>
+      )}
+
+      {dailyBudgetLog.length > 0 && (
+        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 8 }]}>Recent decisions</Text>
+          {[...dailyBudgetLog].slice(-5).reverse().map((entry) => (
+            <View key={entry.id} style={styles.decisionRow}>
+              <Text style={[styles.decisionDate, { color: theme.textMuted }]}>{fmtDay(entry.date)}</Text>
+              <Text style={[styles.decisionText, { color: theme.text }]}>
+                {entry.choice === "saved" ? `Saved ${peso(entry.amount)}` : entry.choice === "kept" ? "Kept for tomorrow" : "Chose to be reminded tomorrow"}
+              </Text>
+            </View>
+          ))}
         </View>
       )}
     </>
@@ -308,4 +323,7 @@ const styles = StyleSheet.create({
   toggleTrack: { width: 44, height: 24, borderRadius: 12, padding: 2, justifyContent: "center" },
   toggleDot: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff", alignSelf: "flex-start" },
   toggleDotOn: { alignSelf: "flex-end" },
+  decisionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 5 },
+  decisionDate: { fontSize: 10, fontFamily: "monospace", width: 70 },
+  decisionText: { fontSize: 11, fontWeight: "600", flex: 1, textAlign: "right" },
 });

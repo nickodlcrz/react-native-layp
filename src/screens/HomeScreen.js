@@ -7,7 +7,7 @@ import { getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday,
 import AnimatedNumber from "../components/AnimatedNumber";
 import EmptyState from "../components/EmptyState";
 
-export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], onViewSchedule, onViewTodos }) {
+export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos }) {
   const { theme } = useTheme();
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
 
@@ -90,16 +90,17 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
           ) : (
             <View style={{ gap: 10 }}>
               {todaysClasses.map((block, i) => {
+                const isCancelled = cancelledClasses.some((c) => c.date === todayISO() && c.entryId === block.entry.id);
                 const isNow = nowMin >= block.startMin && nowMin < block.endMin;
                 const isDone = nowMin >= block.endMin;
                 return (
                   <View key={block.entry.id} style={[i > 0 && { paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.line }]}>
                     <SchoolLine
-                      dotColor={isNow ? ACCENT.leaf : isDone ? theme.textMuted : ACCENT.gold}
-                      tag={isNow ? "NOW" : isDone ? "DONE" : "UPCOMING"}
+                      dotColor={isCancelled ? ACCENT.ember : isNow ? ACCENT.leaf : isDone ? theme.textMuted : ACCENT.gold}
+                      tag={isCancelled ? "SUSPENDED" : isNow ? "NOW" : isDone ? "DONE" : "UPCOMING"}
                       block={block} theme={theme}
-                      sub={isNow ? `${minutesRemaining(block)} minutes remaining` : null}
-                      faded={isDone}
+                      sub={isCancelled ? null : isNow ? `${minutesRemaining(block)} minutes remaining` : null}
+                      faded={isDone || isCancelled}
                     />
                   </View>
                 );

@@ -1,9 +1,17 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
-import { GraduationCap, Clock, MapPin } from "lucide-react-native";
+import { View, Text, StyleSheet, Vibration, Platform, Alert, Pressable } from "react-native";
+import { GraduationCap, Clock, MapPin, Ban } from "lucide-react-native";
 import { ACCENT } from "../theme";
 import { fmtTime12 } from "../utils";
 import SlideToConfirm from "./SlideToConfirm";
+
+// Buzz, pause, buzz, pause, repeating -- more like an actual alarm clock
+// than a single tap-to-phone buzz. Android honors the full repeating
+// pattern natively. iOS's Vibration API only supports one fixed-length
+// buzz per call and ignores custom patterns/repeat, so there we fall back
+// to re-triggering that single buzz on an interval to get a similar
+// repeating effect.
+const VIBRATION_PATTERN = [0, 700, 400, 700, 400];
 
 // A full-screen, alarm-clock-style popup that takes over the screen when a
 // class is about to start (or is starting right now). Only appears while
@@ -13,7 +21,7 @@ import SlideToConfirm from "./SlideToConfirm";
 // shown unless the subject's own ClassReminder/AdvanceReminder toggle is
 // on -- entirely optional per subject, matching how those toggles already
 // work everywhere else in School.
-export default function ClassAlarmScreen({ alarm, onDismiss }) {
+export default function ClassAlarmScreen({ alarm, onDismiss, onSuspend }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -21,11 +29,39 @@ export default function ClassAlarmScreen({ alarm, onDismiss }) {
     return () => clearInterval(id);
   }, []);
 
+  // Starts as soon as the popup appears, stops the moment it's dismissed
+  // (unmount) or the component unmounts for any other reason -- never left
+  // buzzing in the background.
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      Vibration.vibrate(VIBRATION_PATTERN, true);
+      return () => Vibration.cancel();
+    }
+    // iOS: re-fire the single buzz on a loop to approximate the pattern.
+    Vibration.vibrate();
+    const iosLoop = setInterval(() => Vibration.vibrate(), 1100);
+    return () => {
+      clearInterval(iosLoop);
+      Vibration.cancel();
+    };
+  }, []);
+
   const { block, kind, advanceMinutes } = alarm;
   const timeStr = now.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
   const heading = kind === "advance"
     ? `Starts in ${advanceMinutes} minute${advanceMinutes === 1 ? "" : "s"}`
     : "Starting now";
+
+  function confirmSuspend() {
+    Alert.alert(
+      "Class suspended or cancelled?",
+      `This turns off today's alarm for ${block.subject.code}. It'll fire normally again next time this class meets.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Mark suspended", style: "destructive", onPress: onSuspend },
+      ]
+    );
+  }
 
   return (
     <View style={styles.overlay}>
@@ -50,6 +86,11 @@ export default function ClassAlarmScreen({ alarm, onDismiss }) {
             </View>
           )}
         </View>
+
+        <Pressable onPress={confirmSuspend} style={styles.suspendBtn} accessibilityLabel="Mark class suspended or cancelled today">
+          <Ban size={13} color="#ffffffaa" />
+          <Text style={styles.suspendText}>Class suspended today?</Text>
+        </Pressable>
       </View>
 
       <View style={styles.bottom}>
@@ -79,5 +120,7 @@ const styles = StyleSheet.create({
   desc: { fontSize: 14, color: "#ffffffcc", marginTop: 4, textAlign: "center" },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
   metaText: { fontSize: 12, color: "#ffffffaa", fontFamily: "monospace" },
+  suspendBtn: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 22, paddingVertical: 6, paddingHorizontal: 12 },
+  suspendText: { fontSize: 12, color: "#ffffffaa", fontWeight: "600" },
   bottom: {},
 });

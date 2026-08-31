@@ -36,7 +36,8 @@
           "faceIDPermission": "LAYP uses biometrics as part of unlocking your budget."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/withShowOverLockscreen.js"
     ],
     "extra": {
       "eas": {

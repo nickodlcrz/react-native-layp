@@ -97,17 +97,33 @@ export function loanTotalDue(loan) {
   return Number(loan.principal) + loanInterest(loan);
 }
 
-// Net effect a single loan has had on an account's cash balance *right now*,
-// given its current settled/unsettled state. Modeled as two discrete
-// moments rather than a running ledger:
-//   lent, unsettled:     -principal        (cash currently out)
-//   lent, settled:       +interest         (principal came back, net gain is the interest)
-//   borrowed, unsettled: +principal        (cash currently in hand)
-//   borrowed, settled:   -interest         (principal was returned, net cost is the interest)
+// How much has actually been paid back against this loan so far. A loan
+// marked "settled" is treated as fully resolved regardless of exactly what
+// was logged as payments -- settling is the stronger, final signal (covers
+// informal write-offs of small remainders, and every loan created before
+// partial payments existed, which has no `payments` array at all). While
+// still unsettled, it's the running total of whatever's been explicitly
+// recorded.
+export function loanTotalPaid(loan) {
+  if (loan.settled) return loanTotalDue(loan);
+  return (loan.payments || []).reduce((s, p) => s + Number(p.amount), 0);
+}
+
+// Net effect a single loan has had on an account's cash balance *right
+// now*, driven by actual payments made rather than a single all-or-nothing
+// moment:
+//   lent:      paid-so-far minus principal (starts at -principal, rises
+//              toward +interest as repayments come in)
+//   borrowed:  principal minus paid-so-far (starts at +principal, falls
+//              toward -interest as it's paid off)
+// This lines up exactly with the old binary settled/unsettled math at both
+// endpoints (paid=0, or paid=full total due), so existing loans -- settled
+// or not, with no payment history at all -- carry the same balance impact
+// they always did.
 export function loanNetAdjustment(loan) {
-  const interest = loanInterest(loan);
-  if (loan.type === "lent") return loan.settled ? interest : -Number(loan.principal);
-  if (loan.type === "borrowed") return loan.settled ? -interest : Number(loan.principal);
+  const paid = loanTotalPaid(loan);
+  if (loan.type === "lent") return paid - Number(loan.principal);
+  if (loan.type === "borrowed") return Number(loan.principal) - paid;
   return 0;
 }
 

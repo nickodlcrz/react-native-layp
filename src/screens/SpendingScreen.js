@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Alert } from "react-native";
 import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from "lucide-react-native";
-import { useTheme, ACCENT } from "../theme";
+import { useTheme, ACCENT, INCOME_CATEGORIES } from "../theme";
 import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
@@ -97,123 +97,133 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
   ].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
-      <View style={styles.headerRow}>
-        <Text style={[styles.h1, { color: theme.text }]}>Spending</Text>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <Pressable onPress={() => { setShowMoneyForm((s) => !s); setShowForm(false); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel={showMoneyForm ? "Close form" : "Add money"}>
-            {showMoneyForm ? <X size={16} color="#fff" /> : <ArrowDownCircle size={16} color="#fff" />}
-          </Pressable>
-          <Pressable onPress={() => { setEditingId(null); setShowForm((s) => !s); setShowMoneyForm(false); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Log expense"}>
-            {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
-          </Pressable>
-        </View>
-      </View>
-
-      <View style={[styles.totalCard, { backgroundColor: theme.accentDark }]}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.totalLabel, { color: ACCENT.gold }]}>Spent this month</Text>
-          <Text style={styles.totalValue}>{peso(monthTotal)}</Text>
-        </View>
-        <View style={{ alignItems: "flex-end" }}>
-          <Text style={[styles.totalLabel, { color: "#ffffff99" }]}>Budget left</Text>
-          <Text style={[styles.totalValue, { color: remaining < 0 ? ACCENT.ember : "#fff" }]}>{peso(remaining)}</Text>
-        </View>
-      </View>
-
-      {showMoneyForm && <MoneyForm accounts={accounts} onSave={saveMoney} />}
-      {showForm && <ExpenseForm initial={editing} splits={splits} accounts={accounts} ctx={ctx} onSave={saveExpense} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
-
-      <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Today</Text>
-      {todayExpenses.length === 0 ? <EmptyState text="Nothing logged today." /> : (
-        <View style={{ gap: 8, marginBottom: 16 }}>
-          {todayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={() => startEdit(e)} onRemove={() => remove(e.id)} />)}
-        </View>
-      )}
-
-      {(pastDates.length > 0 || weeklySummaries.length > 0) && (
-        <View style={{ marginBottom: 16 }}>
-          <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>History</Text>
-          <View style={{ gap: 8 }}>
-            {pastDates.map((d) => {
-              const dayExpenses = expenses.filter((e) => e.date === d).sort(byRecent);
-              const dayTotal = dayExpenses.reduce((s, e) => s + Number(e.amount), 0);
-              const open = !!historyOpen[d];
-              return (
-                <View key={d} style={[styles.historyGroup, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                  <Pressable onPress={() => setHistoryOpen((prev) => ({ ...prev, [d]: !open }))} style={styles.historyHeader} accessibilityLabel={open ? `Collapse ${fmtDateLong(d)}` : `Expand ${fmtDateLong(d)}`}>
-                    <Text style={[styles.historyDate, { color: theme.text }]}>{fmtDateLong(d)}</Text>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(dayTotal)}</Text>
-                      {open ? <ChevronUp size={13} color={theme.textMuted} /> : <ChevronDown size={13} color={theme.textMuted} />}
-                    </View>
-                  </Pressable>
-                  {open && (
-                    <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8 }}>
-                      {dayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} compact onEdit={() => startEdit(e)} onRemove={() => remove(e.id)} />)}
-                    </View>
-                  )}
-                </View>
-              );
-            })}
-            {[...weeklySummaries].sort((a, b) => b.startDate.localeCompare(a.startDate)).map((w) => (
-              <View key={w.id} style={[styles.weekSummaryRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                <View>
-                  <Text style={[styles.historyDate, { color: theme.text }]}>Week of {fmtDay(w.startDate)} - {fmtDay(w.endDate)}</Text>
-                  <Text style={[styles.weekSummarySub, { color: theme.textMuted }]}>{w.count} entries, summarized</Text>
-                </View>
-                <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(w.total)}</Text>
-              </View>
-            ))}
-          </View>
-          <Text style={[styles.rollupNote, { color: theme.textMuted }]}>Daily logs older than 7 days are automatically summarized into a weekly total like this, and the individual entries are removed.</Text>
-        </View>
-      )}
-
-      <Pressable onPress={() => setLedgerOpen((o) => !o)} style={styles.ledgerHeader} accessibilityLabel={ledgerOpen ? "Collapse income and outcome history" : "Expand income and outcome history"}>
-        <Text style={[styles.h2, { color: theme.text }]}>Income & outcome history</Text>
-        {ledgerOpen ? <ChevronUp size={15} color={theme.textMuted} /> : <ChevronDown size={15} color={theme.textMuted} />}
-      </Pressable>
-      {ledgerOpen && (
-        ledger.length === 0 ? <EmptyState text="Nothing logged yet." /> : (
-          <View style={{ gap: 6 }}>
-            {ledger.map((item) => (
-              <View key={item.id} style={[styles.ledgerRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                {item.kind === "in" ? <ArrowDownCircle size={16} color={ACCENT.leaf} /> : <ArrowUpCircle size={16} color={ACCENT.ember} />}
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.ledgerTitle, { color: theme.text }]}>{item.name || item.note || "Money added"}</Text>
-                  <Text style={[styles.ledgerDate, { color: theme.textMuted }]}>{fmtDay(item.date)}{item.account ? ` - ${accounts.find((a) => a.id === item.account)?.label || item.account}` : ""}</Text>
-                </View>
-                <Text style={[styles.ledgerAmount, { color: item.kind === "in" ? ACCENT.leaf : ACCENT.ember }]}>{item.kind === "in" ? "+" : "-"}{peso(item.amount)}</Text>
-              </View>
-            ))}
-          </View>
-        )
-      )}
-
-      <View style={[styles.analyticsCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-        <Text style={[styles.analyticsTitle, { color: theme.text }]}>This month’s spending</Text>
-        {analytics.categories.length === 0 ? (
-          <Text style={[styles.analyticsHint, { color: theme.textMuted }]}>Add an expense to see your category breakdown.</Text>
-        ) : analytics.categories.map((category) => {
-          const share = monthTotal ? (category.amount / monthTotal) * 100 : 0;
-          return (
-            <View key={category.id} style={styles.categoryRow}>
-              <View style={styles.categoryTopRow}>
-                <Text style={[styles.categoryLabel, { color: theme.text }]}>{category.label}</Text>
-                <Text style={[styles.categoryAmount, { color: theme.textMuted }]}>{peso(category.amount)} · {share.toFixed(0)}%</Text>
-              </View>
-              <View style={[styles.categoryTrack, { backgroundColor: theme.bg }]}><View style={[styles.categoryFill, { width: `${share}%`, backgroundColor: category.color }]} /></View>
+    <FlatList
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 12 }}
+      data={ledgerOpen ? ledger : []}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => (
+        <View style={[styles.ledgerRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          {item.kind === "in" ? <ArrowDownCircle size={16} color={ACCENT.leaf} /> : <ArrowUpCircle size={16} color={ACCENT.ember} />}
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.ledgerTitle, { color: theme.text }]}>{item.name || item.note || "Money added"}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <Text style={[styles.ledgerDate, { color: theme.textMuted }]}>{fmtDay(item.date)}{item.account ? ` - ${accounts.find((a) => a.id === item.account)?.label || item.account}` : ""}</Text>
+              {item.kind === "in" && item.category && (() => {
+                const cat = INCOME_CATEGORIES.find((c) => c.id === item.category);
+                return cat ? <View style={[styles.tag, { backgroundColor: cat.color + "22" }]}><Text style={[styles.tagText, { color: cat.color }]}>{cat.label}</Text></View> : null;
+              })()}
             </View>
-          );
-        })}
-        {analytics.previousTotal > 0 && (
-          <Text style={[styles.analyticsHint, { color: monthTotal <= analytics.previousTotal ? ACCENT.leaf : ACCENT.ember }]}>
-            {monthTotal <= analytics.previousTotal ? "↓" : "↑"} {Math.abs(((monthTotal - analytics.previousTotal) / analytics.previousTotal) * 100).toFixed(1)}% versus last month
-          </Text>
-        )}
-      </View>
-    </ScrollView>
+          </View>
+          <Text style={[styles.ledgerAmount, { color: item.kind === "in" ? ACCENT.leaf : ACCENT.ember }]}>{item.kind === "in" ? "+" : "-"}{peso(item.amount)}</Text>
+        </View>
+      )}
+      ListEmptyComponent={ledgerOpen ? <EmptyState text="Nothing logged yet." /> : null}
+      ListHeaderComponent={
+        <>
+          <View style={styles.headerRow}>
+            <Text style={[styles.h1, { color: theme.text }]}>Spending</Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable onPress={() => { setShowMoneyForm((s) => !s); setShowForm(false); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel={showMoneyForm ? "Close form" : "Add money"}>
+                {showMoneyForm ? <X size={16} color="#fff" /> : <ArrowDownCircle size={16} color="#fff" />}
+              </Pressable>
+              <Pressable onPress={() => { setEditingId(null); setShowForm((s) => !s); setShowMoneyForm(false); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Log expense"}>
+                {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={[styles.totalCard, { backgroundColor: theme.accentDark }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.totalLabel, { color: ACCENT.gold }]}>Spent this month</Text>
+              <Text style={styles.totalValue}>{peso(monthTotal)}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={[styles.totalLabel, { color: "#ffffff99" }]}>Budget left</Text>
+              <Text style={[styles.totalValue, { color: remaining < 0 ? ACCENT.ember : "#fff" }]}>{peso(remaining)}</Text>
+            </View>
+          </View>
+
+          {showMoneyForm && <MoneyForm accounts={accounts} onSave={saveMoney} />}
+          {showForm && <ExpenseForm initial={editing} splits={splits} accounts={accounts} ctx={ctx} onSave={saveExpense} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
+
+          <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Today</Text>
+          {todayExpenses.length === 0 ? <EmptyState text="Nothing logged today." /> : (
+            <View style={{ gap: 8, marginBottom: 16 }}>
+              {todayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={() => startEdit(e)} onRemove={() => remove(e.id)} />)}
+            </View>
+          )}
+
+          {(pastDates.length > 0 || weeklySummaries.length > 0) && (
+            <View style={{ marginBottom: 16 }}>
+              <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>History</Text>
+              <View style={{ gap: 8 }}>
+                {pastDates.map((d) => {
+                  const dayExpenses = expenses.filter((e) => e.date === d).sort(byRecent);
+                  const dayTotal = dayExpenses.reduce((s, e) => s + Number(e.amount), 0);
+                  const open = !!historyOpen[d];
+                  return (
+                    <View key={d} style={[styles.historyGroup, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                      <Pressable onPress={() => setHistoryOpen((prev) => ({ ...prev, [d]: !open }))} style={styles.historyHeader} accessibilityLabel={open ? `Collapse ${fmtDateLong(d)}` : `Expand ${fmtDateLong(d)}`}>
+                        <Text style={[styles.historyDate, { color: theme.text }]}>{fmtDateLong(d)}</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(dayTotal)}</Text>
+                          {open ? <ChevronUp size={13} color={theme.textMuted} /> : <ChevronDown size={13} color={theme.textMuted} />}
+                        </View>
+                      </Pressable>
+                      {open && (
+                        <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8 }}>
+                          {dayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} compact onEdit={() => startEdit(e)} onRemove={() => remove(e.id)} />)}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+                {[...weeklySummaries].sort((a, b) => b.startDate.localeCompare(a.startDate)).map((w) => (
+                  <View key={w.id} style={[styles.weekSummaryRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                    <View>
+                      <Text style={[styles.historyDate, { color: theme.text }]}>Week of {fmtDay(w.startDate)} - {fmtDay(w.endDate)}</Text>
+                      <Text style={[styles.weekSummarySub, { color: theme.textMuted }]}>{w.count} entries, summarized</Text>
+                    </View>
+                    <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(w.total)}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={[styles.rollupNote, { color: theme.textMuted }]}>Daily logs older than 7 days are automatically summarized into a weekly total like this, and the individual entries are removed.</Text>
+            </View>
+          )}
+
+          <Pressable onPress={() => setLedgerOpen((o) => !o)} style={styles.ledgerHeader} accessibilityLabel={ledgerOpen ? "Collapse income and outcome history" : "Expand income and outcome history"}>
+            <Text style={[styles.h2, { color: theme.text }]}>Income & outcome history</Text>
+            {ledgerOpen ? <ChevronUp size={15} color={theme.textMuted} /> : <ChevronDown size={15} color={theme.textMuted} />}
+          </Pressable>
+        </>
+      }
+      ListFooterComponent={
+        <View style={[styles.analyticsCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <Text style={[styles.analyticsTitle, { color: theme.text }]}>This month’s spending</Text>
+          {analytics.categories.length === 0 ? (
+            <Text style={[styles.analyticsHint, { color: theme.textMuted }]}>Add an expense to see your category breakdown.</Text>
+          ) : analytics.categories.map((category) => {
+            const share = monthTotal ? (category.amount / monthTotal) * 100 : 0;
+            return (
+              <View key={category.id} style={styles.categoryRow}>
+                <View style={styles.categoryTopRow}>
+                  <Text style={[styles.categoryLabel, { color: theme.text }]}>{category.label}</Text>
+                  <Text style={[styles.categoryAmount, { color: theme.textMuted }]}>{peso(category.amount)} · {share.toFixed(0)}%</Text>
+                </View>
+                <View style={[styles.categoryTrack, { backgroundColor: theme.bg }]}><View style={[styles.categoryFill, { width: `${share}%`, backgroundColor: category.color }]} /></View>
+              </View>
+            );
+          })}
+          {analytics.previousTotal > 0 && (
+            <Text style={[styles.analyticsHint, { color: monthTotal <= analytics.previousTotal ? ACCENT.leaf : ACCENT.ember }]}>
+              {monthTotal <= analytics.previousTotal ? "↓" : "↑"} {Math.abs(((monthTotal - analytics.previousTotal) / analytics.previousTotal) * 100).toFixed(1)}% versus last month
+            </Text>
+          )}
+        </View>
+      }
+    />
   );
 }
 
@@ -284,6 +294,7 @@ function MoneyForm({ accounts, onSave }) {
   const { theme } = useTheme();
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [category, setCategory] = useState("other");
   const [account, setAccount] = useState(accounts[0].id);
   const [date, setDate] = useState(todayISO());
   const canSave = isPositiveAmount(amount);
@@ -291,6 +302,10 @@ function MoneyForm({ accounts, onSave }) {
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <Text style={[styles.formTitle, { color: theme.text }]}>Money received / added</Text>
       <TextInput value={note} onChangeText={setNote} placeholder="e.g. Allowance, salary, gift (optional)" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Source</Text>
+      <View style={styles.chipWrap}>
+        {INCOME_CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={category === c.id} onPress={() => setCategory(c.id)} small />)}
+      </View>
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Goes into</Text>
       <View style={styles.chipWrap}>
         {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />)}
@@ -300,7 +315,7 @@ function MoneyForm({ accounts, onSave }) {
         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
-      <Pressable disabled={!canSave} onPress={() => canSave && onSave({ amount: Number(amount), note: note.trim(), account, date })} style={[styles.formBtn, { backgroundColor: ACCENT.leaf, opacity: canSave ? 1 : 0.5 }]}>
+      <Pressable disabled={!canSave} onPress={() => canSave && onSave({ amount: Number(amount), note: note.trim(), category, account, date })} style={[styles.formBtn, { backgroundColor: ACCENT.leaf, opacity: canSave ? 1 : 0.5 }]}>
         <Text style={[styles.formBtnText, { color: "#fff" }]}>Add money</Text>
       </Pressable>
     </View>
@@ -338,7 +353,7 @@ const styles = StyleSheet.create({
   weekSummarySub: { fontSize: 9, marginTop: 2 },
   rollupNote: { fontSize: 9, marginTop: 8, lineHeight: 13 },
   ledgerHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, marginTop: 4 },
-  ledgerRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
+  ledgerRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 6 },
   ledgerTitle: { fontSize: 12, fontWeight: "600" },
   ledgerDate: { fontSize: 9, marginTop: 1, fontFamily: "monospace" },
   ledgerAmount: { fontSize: 12, fontWeight: "700", fontFamily: "monospace" },
