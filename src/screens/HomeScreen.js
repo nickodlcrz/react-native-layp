@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
 import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
+import { totalBalance, netWorth as selectNetWorth, safeToSpend as selectSafeToSpend, monthlySummary, billCoverageByAccount } from "../selectors";
 import { getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday, minutesRemaining, minutesSinceMidnight } from "../school";
 import AnimatedNumber from "../components/AnimatedNumber";
 import EmptyState from "../components/EmptyState";
@@ -24,34 +25,24 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
     .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"))
     .slice(0, 5);
 
-  const totalMoney = accounts.reduce((s, a) => s + computeAccountBalance(a.id, ctx), 0);
+  const totalMoney = totalBalance(accounts, ctx);
 
   const now = new Date();
-  const inThisMonth = (dateStr) => {
-    const d = new Date(dateStr + "T00:00:00");
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  };
-  const monthIncome = moneyLog.filter((m) => inThisMonth(m.date)).reduce((s, m) => s + Number(m.amount), 0);
-  const monthSpent = expenses.filter((e) => inThisMonth(e.date)).reduce((s, e) => s + Number(e.amount), 0);
-  const monthSaved = savingsLog.filter((s) => inThisMonth(s.date)).reduce((sum, s) => sum + (s.type === "withdraw" ? -Number(s.amount) : Number(s.amount)), 0);
+  const { income: monthIncome, spent: monthSpent, saved: monthSaved } = monthlySummary({ moneyLog, expenses, savingsLog }, now);
   const monthLabel = now.toLocaleDateString("en-PH", { month: "long", year: "numeric" }).toUpperCase();
 
   const unpaidBills = bills.filter((b) => !b.paid);
   const unpaidTotal = unpaidBills.reduce((s, b) => s + b.amount, 0);
   const daysLeftInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate() + 1;
-  const safeToSpend = Math.max(0, totalMoney - unpaidTotal);
+  const safeToSpend = selectSafeToSpend(accounts, bills, ctx);
   const perDay = daysLeftInMonth > 0 ? safeToSpend / daysLeftInMonth : safeToSpend;
 
   const upcomingBills = [...unpaidBills].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 3);
-  const billCoverage = accounts.map((account) => {
-    const reserved = unpaidBills.filter((bill) => bill.account === account.id).reduce((sum, bill) => sum + Number(bill.amount), 0);
-    const balance = computeAccountBalance(account.id, ctx);
-    return { ...account, reserved, balance, remaining: balance - reserved };
-  }).filter((account) => account.reserved > 0);
+  const billCoverage = billCoverageByAccount(accounts, bills, ctx);
   const savingsTotalNow = computeSavingsTotal(savingsLog);
   const owedToMe = loans.filter((l) => l.type === "lent" && !l.settled).reduce((s, l) => s + loanTotalDue(l), 0);
   const iOwe = loans.filter((l) => l.type === "borrowed" && !l.settled).reduce((s, l) => s + loanTotalDue(l), 0);
-  const netWorth = totalMoney + savingsTotalNow + owedToMe - iOwe;
+  const netWorth = selectNetWorth(accounts, loans, savingsLog, ctx);
 
   const activeGoals = goals
     .map((g) => ({ ...g, progress: goalProgress(g, savingsLog) }))

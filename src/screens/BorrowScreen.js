@@ -6,6 +6,7 @@ import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loa
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
+import { validate, loanSchema } from "../validation";
 import { rescheduleLoanNotification, cancelTodoNotifications } from "../notifications";
 
 export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, weeklySummaries, savingsLog = [], accounts, transfers = [] }) {
@@ -131,83 +132,102 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
           {showForm && <LoanForm key={editingId || typeView} initial={editingLoan} type={typeView} ctx={ctx} accounts={accounts} onSave={saveLoan} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
         </>
       }
-      renderItem={({ item: l }) => {
-          const dleft = l.dueDate ? daysUntil(l.dueDate) : null;
-          const due = loanTotalDue(l);
-          const paid = loanTotalPaid(l);
-          const remaining = Math.max(0, due - paid);
-          const hasPartialPayments = !l.settled && paid > 0;
-          const overdue = !l.settled && dleft !== null && dleft < 0;
-          const dueSoon = !l.settled && dleft !== null && dleft >= 0 && dleft <= 2;
-          const account = accounts.find((a) => a.id === l.account);
-          const borderColor = overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.line;
-          return (
-            <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={l.settled ? "Mark unsettled" : "Mark settled"}>
-                  {l.settled ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
-                </Pressable>
-                <Pressable style={{ flex: 1 }} onPress={() => !l.settled && startEdit(l)}>
-                  <Text style={[styles.rowTitle, { color: theme.text, textDecorationLine: l.settled ? "line-through" : "none" }]}>{l.person}</Text>
-                  {l.note ? <Text style={[styles.noteText, { color: theme.textMuted }]}>{l.note}</Text> : null}
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                    <Text style={[styles.metaText, { color: theme.textMuted }]}>Principal {peso(l.principal)}</Text>
-                    {Number(l.interestPercent) > 0 && <Text style={[styles.metaText, { color: ACCENT.gold }]}>+{l.interestPercent}% interest</Text>}
-                  </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                    <Text style={[styles.totalDueText, { color: theme.text }]}>
-                      {hasPartialPayments ? `${peso(remaining)} left of ${peso(due)}` : `Total: ${peso(due)}`}
-                    </Text>
-                    {l.dueDate && (
-                      <Text style={[styles.metaText, { color: overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.textMuted }]}>
-                        {l.settled ? `settled ${fmtDay(l.settledAt)}` : dleft === 0 ? "due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `due in ${dleft}d`}
-                      </Text>
-                    )}
-                    {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
-                  </View>
-                  {hasPartialPayments && (
-                    <View style={[styles.progressTrack, { backgroundColor: theme.bg }]}>
-                      <View style={[styles.progressFill, { width: `${Math.min(100, (paid / due) * 100)}%`, backgroundColor: ACCENT.leaf }]} />
-                    </View>
-                  )}
-                </Pressable>
-                {!l.settled && (
-                  <Pressable onPress={() => { setPayingId(payingId === l.id ? null : l.id); setPaymentAmount(""); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Record a payment">
-                    <Wallet size={15} color={ACCENT.leaf} />
-                  </Pressable>
-                )}
-                {!l.settled && <Pressable onPress={() => startEdit(l)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit entry"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-                <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete entry"><Trash2 size={15} color={theme.textMuted} /></Pressable>
-              </View>
-
-              {payingId === l.id && (
-                <View style={styles.paymentRow}>
-                  <TextInput
-                    value={paymentAmount}
-                    onChangeText={(v) => setPaymentAmount(v.replace(/[^0-9.]/g, ""))}
-                    placeholder={`up to ${peso(remaining)}`}
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType="decimal-pad"
-                    autoFocus
-                    style={[styles.paymentInput, { backgroundColor: theme.bg, color: theme.text }]}
-                  />
-                  <Pressable onPress={() => recordPayment(l)} disabled={!isPositiveAmount(paymentAmount)} style={[styles.paymentConfirm, { backgroundColor: ACCENT.leaf, opacity: isPositiveAmount(paymentAmount) ? 1 : 0.5 }]} accessibilityLabel="Confirm payment">
-                    <Check size={14} color="#fff" />
-                  </Pressable>
-                </View>
-              )}
-
-              {hasPartialPayments && (l.payments || []).length > 0 && (
-                <Text style={[styles.paymentHistoryText, { color: theme.textMuted }]}>
-                  {l.payments.length} payment{l.payments.length === 1 ? "" : "s"} logged - last {peso(l.payments[l.payments.length - 1].amount)} on {fmtDay(l.payments[l.payments.length - 1].date)}
-                </Text>
-              )}
-            </View>
-          );
-        }}
-      />
+      renderItem={({ item: l }) => (
+        <LoanRow
+          l={l}
+          theme={theme}
+          accounts={accounts}
+          payingId={payingId}
+          paymentAmount={paymentAmount}
+          setPayingId={setPayingId}
+          setPaymentAmount={setPaymentAmount}
+          toggleSettled={toggleSettled}
+          startEdit={startEdit}
+          remove={remove}
+          recordPayment={recordPayment}
+        />
+      )}
+    />
   );
 }
+
+// Extracted and memoized (same pattern as TodoScreen's TodoRow) so editing
+// the add/edit form, typing a payment amount, or toggling one entry doesn't
+// force every other row in the list to re-render.
+const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paymentAmount, setPayingId, setPaymentAmount, toggleSettled, startEdit, remove, recordPayment }) {
+  const dleft = l.dueDate ? daysUntil(l.dueDate) : null;
+  const due = loanTotalDue(l);
+  const paid = loanTotalPaid(l);
+  const remaining = Math.max(0, due - paid);
+  const hasPartialPayments = !l.settled && paid > 0;
+  const overdue = !l.settled && dleft !== null && dleft < 0;
+  const dueSoon = !l.settled && dleft !== null && dleft >= 0 && dleft <= 2;
+  const account = accounts.find((a) => a.id === l.account);
+  const borderColor = overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.line;
+  return (
+    <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={l.settled ? "Mark unsettled" : "Mark settled"}>
+          {l.settled ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
+        </Pressable>
+        <Pressable style={{ flex: 1 }} onPress={() => !l.settled && startEdit(l)}>
+          <Text style={[styles.rowTitle, { color: theme.text, textDecorationLine: l.settled ? "line-through" : "none" }]}>{l.person}</Text>
+          {l.note ? <Text style={[styles.noteText, { color: theme.textMuted }]}>{l.note}</Text> : null}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
+            <Text style={[styles.metaText, { color: theme.textMuted }]}>Principal {peso(l.principal)}</Text>
+            {Number(l.interestPercent) > 0 && <Text style={[styles.metaText, { color: ACCENT.gold }]}>+{l.interestPercent}% interest</Text>}
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
+            <Text style={[styles.totalDueText, { color: theme.text }]}>
+              {hasPartialPayments ? `${peso(remaining)} left of ${peso(due)}` : `Total: ${peso(due)}`}
+            </Text>
+            {l.dueDate && (
+              <Text style={[styles.metaText, { color: overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.textMuted }]}>
+                {l.settled ? `settled ${fmtDay(l.settledAt)}` : dleft === 0 ? "due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `due in ${dleft}d`}
+              </Text>
+            )}
+            {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
+          </View>
+          {hasPartialPayments && (
+            <View style={[styles.progressTrack, { backgroundColor: theme.bg }]}>
+              <View style={[styles.progressFill, { width: `${Math.min(100, (paid / due) * 100)}%`, backgroundColor: ACCENT.leaf }]} />
+            </View>
+          )}
+        </Pressable>
+        {!l.settled && (
+          <Pressable onPress={() => { setPayingId(payingId === l.id ? null : l.id); setPaymentAmount(""); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Record a payment">
+            <Wallet size={15} color={ACCENT.leaf} />
+          </Pressable>
+        )}
+        {!l.settled && <Pressable onPress={() => startEdit(l)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit entry"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+        <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete entry"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+      </View>
+
+      {payingId === l.id && (
+        <View style={styles.paymentRow}>
+          <TextInput
+            value={paymentAmount}
+            onChangeText={(v) => setPaymentAmount(v.replace(/[^0-9.]/g, ""))}
+            placeholder={`up to ${peso(remaining)}`}
+            placeholderTextColor={theme.textMuted}
+            keyboardType="decimal-pad"
+            autoFocus
+            style={[styles.paymentInput, { backgroundColor: theme.bg, color: theme.text }]}
+          />
+          <Pressable onPress={() => recordPayment(l)} disabled={!isPositiveAmount(paymentAmount)} style={[styles.paymentConfirm, { backgroundColor: ACCENT.leaf, opacity: isPositiveAmount(paymentAmount) ? 1 : 0.5 }]} accessibilityLabel="Confirm payment">
+            <Check size={14} color="#fff" />
+          </Pressable>
+        </View>
+      )}
+
+      {hasPartialPayments && (l.payments || []).length > 0 && (
+        <Text style={[styles.paymentHistoryText, { color: theme.textMuted }]}>
+          {l.payments.length} payment{l.payments.length === 1 ? "" : "s"} logged - last {peso(l.payments[l.payments.length - 1].amount)} on {fmtDay(l.payments[l.payments.length - 1].date)}
+        </Text>
+      )}
+    </View>
+  );
+});
 
 function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
   const { theme } = useTheme();
@@ -217,20 +237,29 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
   const [interestPercent, setInterestPercent] = useState(initial?.interestPercent != null ? String(initial.interestPercent) : "0");
   const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
   const [account, setAccount] = useState(initial?.account || accounts[0]?.id);
+  const [errors, setErrors] = useState({});
   const accountBalance = computeAccountBalance(account, ctx);
   const principalNum = Number(principal) || 0;
   const exceedsBalance = type === "lent" && !initial && principalNum > accountBalance;
-  const canSave = person.trim() && isPositiveAmount(principal) && !exceedsBalance;
+
+  function attemptSave() {
+    const { ok, data, errors: fieldErrors } = validate(loanSchema, { person, note, principal, interestPercent, dueDate, account });
+    if (exceedsBalance) fieldErrors.principal = `This is more than your current balance (${peso(accountBalance)}).`;
+    setErrors(fieldErrors);
+    if (ok && !exceedsBalance) onSave({ ...data, dueDate: data.dueDate || null });
+  }
 
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>{type === "lent" ? "Who borrowed from you" : "Who you borrowed from"}</Text>
       <TextInput value={person} onChangeText={setPerson} placeholder="Name" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]} />
+      {errors.person && <Text style={styles.fieldError}>{errors.person}</Text>}
       <TextInput value={note} onChangeText={setNote} placeholder='Note, e.g. "for hospital bill" (optional)' placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]} />
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Principal (P)</Text>
           <TextInput value={principal} onChangeText={(v) => setPrincipal(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+          {errors.principal && <Text style={styles.fieldError}>{errors.principal}</Text>}
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Interest (%)</Text>
@@ -254,16 +283,9 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
         </View>
       ) : null}
 
-      {exceedsBalance && (
-        <View style={styles.warnRow}>
-          <AlertTriangle size={12} color={ACCENT.ember} />
-          <Text style={styles.warnText}>This is more than your current {accounts.find((a) => a.id === account)?.label} balance ({peso(accountBalance)}).</Text>
-        </View>
-      )}
-
       <View style={styles.formActions}>
         {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
-        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ person: person.trim(), note: note.trim(), principal: principalNum, interestPercent: Number(interestPercent) || 0, dueDate, account })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
+        <Pressable onPress={attemptSave} style={[styles.formBtn, { backgroundColor: ACCENT.gold }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add entry"}</Text>
         </Pressable>
       </View>
@@ -294,6 +316,7 @@ const styles = StyleSheet.create({
   previewText: { fontSize: 11 },
   warnRow: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginBottom: 10 },
   warnText: { fontSize: 10, color: ACCENT.ember, flex: 1, lineHeight: 14 },
+  fieldError: { color: ACCENT.ember, fontSize: 10.5, marginTop: -6, marginBottom: 8, fontWeight: "600" },
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
   formBtnText: { fontSize: 12, fontWeight: "700" },

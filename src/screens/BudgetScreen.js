@@ -2,13 +2,17 @@ import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, unallocatedSavings, goalProgress, addAccount as pushAccount, isPositiveAmount, confirmDelete } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, addAccount as pushAccount, isPositiveAmount, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
+import { validate, billSchema } from "../validation";
 import DailyBudgetScreen from "./DailyBudgetScreen";
 import SpendingScreen from "./SpendingScreen";
 import BorrowScreen from "./BorrowScreen";
+import GoalsScreen from "./GoalsScreen";
+import ActivityScreen from "./ActivityScreen";
+import ErrorBoundary from "../components/ErrorBoundary";
 import { cancelTodoNotifications, rescheduleBillNotification } from "../notifications";
 
 function matchPresetName(splits) {
@@ -29,8 +33,6 @@ export default function BudgetScreen({
   const [editingBillId, setEditingBillId] = useState(null);
   const [showSavingsForm, setShowSavingsForm] = useState(false);
   const [savingsMode, setSavingsMode] = useState("deposit");
-  const [showGoalForm, setShowGoalForm] = useState(false);
-  const [editingGoalId, setEditingGoalId] = useState(null);
   const [billStatusView, setBillStatusView] = useState("unpaid");
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
@@ -122,8 +124,6 @@ export default function BudgetScreen({
   const editingBill = editingBillId ? bills.find((b) => b.id === editingBillId) : null;
 
   const totalSavings = computeSavingsTotal(savingsLog);
-  const unallocated = unallocatedSavings(savingsLog);
-  const editingGoal = editingGoalId ? goals.find((g) => g.id === editingGoalId) : null;
 
   const totalIncome = moneyLog.reduce((s, m) => s + Number(m.amount), 0);
   const rolledTotal = weeklySummaries.reduce((s, w) => s + w.total, 0);
@@ -155,23 +155,37 @@ export default function BudgetScreen({
     <View style={{ flex: 1 }}>
       <View style={styles.subNavRow}>
         <Chip label="Overview" active={subTab === "overview"} onPress={() => setSubTab("overview")} small />
+        <Chip label="Goals" active={subTab === "goals"} onPress={() => setSubTab("goals")} small />
+        <Chip label="Activity" active={subTab === "activity"} onPress={() => setSubTab("activity")} small />
         <Chip label="Spending" active={subTab === "spending"} onPress={() => setSubTab("spending")} small />
         <Chip label="Borrow" active={subTab === "borrow"} onPress={() => setSubTab("borrow")} small />
       </View>
 
       {subTab === "spending" ? (
+        <ErrorBoundary resetKey={subTab}>
         <SpendingScreen
           expenses={expenses} setExpenses={setExpenses}
           moneyLog={moneyLog} setMoneyLog={setMoneyLog}
           weeklySummaries={weeklySummaries} setWeeklySummaries={setWeeklySummaries}
           splits={splits} loans={loans} savingsLog={savingsLog} accounts={accounts} transfers={transfers}
         />
+        </ErrorBoundary>
       ) : subTab === "borrow" ? (
+        <ErrorBoundary resetKey={subTab}>
         <BorrowScreen
           loans={loans} setLoans={setLoans}
           moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
           savingsLog={savingsLog} accounts={accounts} transfers={transfers}
         />
+        </ErrorBoundary>
+      ) : subTab === "goals" ? (
+        <ErrorBoundary resetKey={subTab}>
+        <GoalsScreen goals={goals} setGoals={setGoals} savingsLog={savingsLog} />
+        </ErrorBoundary>
+      ) : subTab === "activity" ? (
+        <ErrorBoundary resetKey={subTab}>
+        <ActivityScreen expenses={expenses} moneyLog={moneyLog} splits={splits} />
+        </ErrorBoundary>
       ) : (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <Text style={[styles.h1, { color: theme.text }]}>Pay plan</Text>
@@ -336,67 +350,6 @@ export default function BudgetScreen({
           );
         })}
 
-      <View style={styles.headerRow}>
-        <Text style={[styles.h2, { color: theme.text }]}>Savings goals</Text>
-        <Pressable onPress={() => { setEditingGoalId(null); setShowGoalForm((s) => !s); }} style={[styles.roundBtn, { backgroundColor: ACCENT.sky }]} accessibilityLabel={showGoalForm ? "Close goal form" : "Add savings goal"}>
-          {showGoalForm ? <X size={14} color="#fff" /> : <Plus size={14} color="#fff" />}
-        </Pressable>
-      </View>
-      <Text style={[styles.savingsHint, { color: theme.textMuted }]}>Earmark part of your savings toward something specific. Unallocated savings: {peso(unallocated)}.</Text>
-
-      {showGoalForm && (
-        <GoalForm
-          initial={editingGoal}
-          onSave={(data) => {
-            if (editingGoalId) {
-              setGoals((prev) => prev.map((g) => (g.id === editingGoalId ? { ...g, ...data } : g)));
-            } else {
-              setGoals((prev) => [...prev, { id: uid(), ...data, createdAt: Date.now() }]);
-            }
-            setShowGoalForm(false);
-            setEditingGoalId(null);
-          }}
-          onCancel={() => { setShowGoalForm(false); setEditingGoalId(null); }}
-        />
-      )}
-
-      {goals.length === 0 ? (
-        <EmptyState text="No savings goals yet." />
-      ) : (
-        <View style={{ gap: 8, marginBottom: 16 }}>
-          {goals.map((g) => {
-            const prog = goalProgress(g, savingsLog);
-            const met = prog.percent >= 100;
-            return (
-              <View key={g.id} style={[styles.goalCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                <View style={styles.goalHeaderRow}>
-                  <Text style={[styles.goalName, { color: theme.text }]}>{g.name}</Text>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
-                    <Pressable onPress={() => { setEditingGoalId(g.id); setShowGoalForm(true); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit goal"><Pencil size={13} color={theme.textMuted} /></Pressable>
-                    <Pressable onPress={() => confirmDelete(Alert, "Delete this goal?", `"${g.name}" will be removed. Its saved money stays in your general savings.`, () => setGoals((prev) => prev.filter((x) => x.id !== g.id)))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete goal"><Trash2 size={13} color={theme.textMuted} /></Pressable>
-                  </View>
-                </View>
-                <Text style={[styles.goalAmounts, { color: theme.textMuted }]}>{peso(prog.current)} / {peso(prog.target)}</Text>
-                <View style={[styles.track, { backgroundColor: theme.bg, marginTop: 4 }]}>
-                  <View style={[styles.trackFill, { width: `${prog.percent}%`, backgroundColor: met ? ACCENT.leaf : ACCENT.sky }]} />
-                </View>
-                <View style={styles.goalFooterRow}>
-                  <Text style={[styles.goalFooterText, { color: theme.textMuted }]}>{prog.percent.toFixed(1)}%</Text>
-                  {g.targetDate && (
-                    <Text style={[styles.goalFooterText, { color: theme.textMuted }]}>
-                      {met ? "Goal reached" : `Target: ${fmtDay(g.targetDate)}`}
-                    </Text>
-                  )}
-                </View>
-                {!met && prog.recommendedMonthly > 0 && (
-                  <Text style={[styles.goalRecommend, { color: ACCENT.sky }]}>Recommended: {peso(prog.recommendedMonthly)}/month</Text>
-                )}
-              </View>
-            );
-          })}
-        </View>
-      )}
-
       <View style={[styles.chipRow, { marginTop: savingsLog.length ? 12 : 4 }]}>
         <Chip label={`Unpaid (${unpaidBills.length})`} active={billStatusView === "unpaid"} onPress={() => setBillStatusView("unpaid")} small />
         <Chip label={`Paid (${paidBills.length})`} active={billStatusView === "paid"} onPress={() => setBillStatusView("paid")} small />
@@ -452,10 +405,18 @@ function BillForm({ initial, onSave, onCancel, splits, accounts }) {
   const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
   const [splitId, setSplitId] = useState(initial?.splitId || splits[0]?.id);
   const [account, setAccount] = useState(initial?.account || accounts[0].id);
-  const canSave = name.trim() && isPositiveAmount(amount);
+  const [errors, setErrors] = useState({});
+
+  function attemptSave() {
+    const { ok, data, errors: fieldErrors } = validate(billSchema, { name, amount, dueDate, splitId, account });
+    setErrors(fieldErrors);
+    if (ok) onSave(data);
+  }
+
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <TextInput value={name} onChangeText={setName} placeholder="e.g. Parcel COD, rent, load" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+      {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Budget category</Text>
       <View style={styles.chipWrap}>
         {splits.map((s) => <Chip key={s.id} label={s.label} color={s.color} active={splitId === s.id} onPress={() => setSplitId(s.id)} small />)}
@@ -467,11 +428,12 @@ function BillForm({ initial, onSave, onCancel, splits, accounts }) {
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+        {errors.amount && <Text style={styles.fieldError}>{errors.amount}</Text>}
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={dueDate} onChange={setDueDate} label="Needed by" /></View>
       <View style={styles.formActions}>
         {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
-        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ name: name.trim(), amount: Number(amount), dueDate, splitId, account })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
+        <Pressable onPress={attemptSave} style={[styles.formBtn, { backgroundColor: ACCENT.gold }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add bill"}</Text>
         </Pressable>
       </View>
@@ -542,32 +504,6 @@ function SavingsTransferForm({ mode, totalSavings, ctx, accounts, goals = [], on
   );
 }
 
-function GoalForm({ initial, onSave, onCancel }) {
-  const { theme } = useTheme();
-  const [name, setName] = useState(initial?.name || "");
-  const [targetAmount, setTargetAmount] = useState(initial?.targetAmount != null ? String(initial.targetAmount) : "");
-  const [targetDate, setTargetDate] = useState(initial?.targetDate || "");
-  const canSave = name.trim() && Number(targetAmount) > 0;
-
-  return (
-    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-      <Text style={[styles.formTitle, { color: theme.text }]}>{initial ? "Edit goal" : "New savings goal"}</Text>
-      <TextInput value={name} onChangeText={setName} placeholder="e.g. New laptop, Emergency fund" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
-      <View style={{ marginBottom: 12 }}>
-        <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Target amount (P)</Text>
-        <TextInput value={targetAmount} onChangeText={(v) => setTargetAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
-      </View>
-      <View style={{ marginBottom: 12 }}><CalendarPicker value={targetDate} onChange={setTargetDate} label="Target date (optional)" /></View>
-      <View style={styles.formActions}>
-        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
-        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ name: name.trim(), targetAmount: Number(targetAmount), targetDate: targetDate || null })} style={[styles.formBtn, { backgroundColor: ACCENT.sky, opacity: canSave ? 1 : 0.5 }]}>
-          <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Create goal"}</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
-
 function TransferForm({ accounts, ctx, onSave }) {
   const { theme } = useTheme();
   const [fromAccount, setFromAccount] = useState(accounts[0]?.id);
@@ -612,6 +548,7 @@ function TransferForm({ accounts, ctx, onSave }) {
 }
 
 const styles = StyleSheet.create({
+  fieldError: { color: ACCENT.ember, fontSize: 10.5, marginTop: -6, marginBottom: 8, fontWeight: "600" },
   subNavRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   dailyBudgetCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
   dailyBudgetIcon: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },

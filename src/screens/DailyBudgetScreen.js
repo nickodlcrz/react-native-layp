@@ -54,8 +54,20 @@ export default function DailyBudgetScreen({
   // double-counted across days.
   function saveAmount(amount) {
     if (!review.savings || !isPositiveAmount(amount)) return;
-    setSavingsLog((prev) => [...prev, { id: uid(), amount: Number(amount), account: saveAccount, splitId: review.savings.id, note: "Daily budget review", date: todayISO(), type: "deposit", createdAt: Date.now() }]);
-    logDecision({ choice: "saved", amount: Number(amount) });
+    // Never let a save push the real account balance negative -- cap to
+    // what's actually left right now, regardless of what the recommendation
+    // suggested. If there's truly nothing left, tell the user instead of
+    // silently saving a smaller amount they didn't ask for.
+    const cappedAmount = Math.min(Number(amount), Math.max(0, review.currentBalance || 0));
+    if (!isPositiveAmount(cappedAmount)) {
+      Alert.alert("Nothing left to save", "You don't have any available balance left today, so there's no money to move into savings right now.");
+      return;
+    }
+    if (cappedAmount < Number(amount) - 0.01) {
+      Alert.alert("Amount reduced", `Only ${peso(cappedAmount)} is actually available right now, so that's what will be saved instead of ${peso(Number(amount))}.`);
+    }
+    setSavingsLog((prev) => [...prev, { id: uid(), amount: cappedAmount, account: saveAccount, splitId: review.savings.id, note: "Daily budget review", date: todayISO(), type: "deposit", createdAt: Date.now() }]);
+    logDecision({ choice: "saved", amount: cappedAmount });
     setShowCustom(false);
     setCustomAmount("");
   }
@@ -81,7 +93,7 @@ export default function DailyBudgetScreen({
             review={review} theme={theme} modelName={modelName}
             showCustom={showCustom} setShowCustom={setShowCustom}
             customAmount={customAmount} setCustomAmount={setCustomAmount}
-            onSaveRecommended={() => saveAmount(Math.max(0, review.savings?.remaining || 0))}
+            onSaveRecommended={() => saveAmount(review.savings?.maxSafeToSave || 0)}
             onSaveCustom={() => saveAmount(customAmount)}
             onKeep={() => { logDecision({ choice: "kept" }); Alert.alert("Noted", "This money stays available -- it won't be counted as saved."); }}
             onRemind={() => { logDecision({ choice: "remind" }); Alert.alert("Okay", "Tomorrow's review will pick this back up."); }}
@@ -165,15 +177,22 @@ function ReviewView({ review, theme, modelName, showCustom, setShowCustom, custo
           <Text style={[styles.metaText, { color: theme.textMuted }]}>{peso(review.savings.actual)} saved today</Text>
           <Text style={[styles.statusText, { color: theme.textMuted }]}>{categoryStatusText(review.savings)}</Text>
 
-          {review.savings.remaining > 0.5 && (
+          {review.savings.remaining > 0.5 && review.currentBalance <= 0.5 && (
+            <Text style={[styles.statusText, { color: ACCENT.ember, marginTop: 6 }]}>
+              You've already spent all of today's available money, so there's nothing left to save right now.
+            </Text>
+          )}
+
+          {review.savings.maxSafeToSave > 0.5 && (
             <>
+              <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{peso(review.currentBalance)} actually available right now</Text>
               <Text style={[styles.miniLabel, { color: theme.textMuted, marginTop: 10 }]}>Save into</Text>
               <View style={styles.chipWrap}>
                 {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={saveAccount === a.id} onPress={() => setSaveAccount(a.id)} small />)}
               </View>
               <View style={styles.actionRow}>
                 <Pressable onPress={onSaveRecommended} style={[styles.actionBtn, { backgroundColor: ACCENT.leaf }]}>
-                  <Text style={styles.actionBtnText}>Save {peso(review.savings.remaining)}</Text>
+                  <Text style={styles.actionBtnText}>Save {peso(review.savings.maxSafeToSave)}</Text>
                 </Pressable>
                 <Pressable onPress={() => setShowCustom((s) => !s)} style={[styles.actionBtn, { backgroundColor: theme.accentDark }]}>
                   <Text style={styles.actionBtnText}>Custom amount</Text>

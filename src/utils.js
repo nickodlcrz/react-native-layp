@@ -238,7 +238,15 @@ export function computeDailyBudgetReview({ splits, accounts, moneyLog, expenses,
     if (kind === "savings") {
       // Savings is never "spent" -- kept on its own ledger with its own
       // language (saved / remaining to save), never mixed with expenses.
-      return { ...split, kind, isSavings: true, recommended, actual: savedToday, remaining: recommended - savedToday };
+      const remaining = recommended - savedToday;
+      // "remaining" is a target computed off the start-of-day pool, so on a
+      // day where everything has already been spent it can still be a large
+      // positive number even though there's no real money left to move.
+      // maxSafeToSave is the amount that can actually be saved right now
+      // without pushing the real account balance negative -- never more
+      // than what's still sitting in the accounts.
+      const maxSafeToSave = Math.max(0, Math.min(remaining, currentBalance));
+      return { ...split, kind, isSavings: true, recommended, actual: savedToday, remaining, maxSafeToSave };
     }
     const actual = todaysExpenses.filter((e) => e.splitId === split.id).reduce((s, e) => s + Number(e.amount), 0);
     return { ...split, kind, isSavings: false, recommended, actual, remaining: recommended - actual };
@@ -266,7 +274,7 @@ export function computeDailyBudgetReview({ splits, accounts, moneyLog, expenses,
   }
 
   return {
-    availableMoney, spentToday, savedToday,
+    availableMoney, spentToday, savedToday, currentBalance,
     remainingToday: availableMoney - spentToday,
     categories, needs, wants, savings,
     wantsSafeToSpend, wantsReserveNote,

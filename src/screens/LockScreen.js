@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator, useColorScheme } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Fingerprint, Delete, AlertTriangle, Sun, Moon } from "lucide-react-native";
 import { LIGHT, DARK, ACCENT } from "../theme";
@@ -20,6 +21,7 @@ export default function LockScreen({ onUnlock }) {
   const systemScheme = useColorScheme();
   const [dark, setDark] = useState(systemScheme === "dark");
   const theme = dark ? DARK : LIGHT;
+  const insets = useSafeAreaInsets();
 
   const [checking, setChecking] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
@@ -163,7 +165,7 @@ export default function LockScreen({ onUnlock }) {
   return (
     <View style={[styles.safe, { backgroundColor: theme.bg }]}>
       <StatusBar style={dark ? "light" : "dark"} backgroundColor={theme.bg} />
-      <Pressable onPress={toggleDark} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={dark ? "Switch to light mode" : "Switch to dark mode"}>
+      <Pressable onPress={toggleDark} style={[styles.themeBtn, { top: insets.top + 12, backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={dark ? "Switch to light mode" : "Switch to dark mode"}>
         {dark ? <Sun size={14} color={ACCENT.gold} /> : <Moon size={14} color={theme.text} />}
       </Pressable>
       <View style={styles.top}>

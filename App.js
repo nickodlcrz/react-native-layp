@@ -63,11 +63,25 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      {unlocked ? (
+      <View style={{ flex: 1 }}>
+        {/* AppShell now stays mounted even while locked (instead of being
+            unmounted/remounted on every lock cycle) specifically so its
+            class-alarm polling loop and reminder timers keep running behind
+            the PIN screen. Without this, an alarm due while the phone is
+            sitting on LAYP's own lock screen would never trigger the
+            in-app popup at all -- only the OS notification would still
+            fire, since that's scheduled independently of app state. */}
         <AppShell onLock={() => setUnlocked(false)} autoLockMinutes={autoLockMinutes} onChangeAutoLockMinutes={updateAutoLockMinutes} />
-      ) : (
-        <LockScreen onUnlock={() => setUnlocked(true)} />
-      )}
+        {!unlocked && (
+          // Rendered as an overlay, not a replacement -- see the zIndex
+          // note on ClassAlarmScreen for why a class alarm can still show
+          // through this, the same way a phone's own alarm clock can ring
+          // over its lock screen.
+          <View style={[StyleSheet.absoluteFillObject, { zIndex: 500, elevation: 500 }]}>
+            <LockScreen onUnlock={() => setUnlocked(true)} />
+          </View>
+        )}
+      </View>
     </SafeAreaProvider>
   );
 }
@@ -272,7 +286,10 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
       });
     };
     check();
-    const iv = setInterval(check, 30000);
+    // Polled every second (not every 30s) because `fire` matches on an exact
+    // HH:MM string -- a slow poll meant a reminder could sit undetected for
+    // up to half a minute after its minute actually started.
+    const iv = setInterval(check, 1000);
     return () => clearInterval(iv);
   }, [todos]);
 
@@ -323,7 +340,13 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
       }
     };
     check();
-    const iv = setInterval(check, 30000);
+    // This was polling every 30 seconds against a 1-minute-wide window
+    // (nowMin >= startMin && nowMin < startMin + 1), so the alarm could fire
+    // anywhere from instantly to ~30s after the class actually started,
+    // depending on where in the 30s cycle the minute boundary landed. A
+    // 1-second poll keeps the same matching logic but makes that window
+    // effectively immediate.
+    const iv = setInterval(check, 1000);
     return () => clearInterval(iv);
   }, [academicPeriods, subjects, scheduleEntries, classAlarm, cancelledClasses]);
 

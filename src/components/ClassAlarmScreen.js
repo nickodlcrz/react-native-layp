@@ -108,7 +108,12 @@ export default function ClassAlarmScreen({ alarm, onDismiss, onSuspend }) {
 const styles = StyleSheet.create({
   overlay: {
     position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: "#0B0E17", zIndex: 999, elevation: 999,
+    backgroundColor: "#0B0E17",
+    // Above the app's own PIN lock screen (zIndex 500 in App.js) so a class
+    // alarm can still interrupt even while the phone is sitting on LAYP's
+    // lock screen -- the same way a phone's own alarm clock rings over its
+    // lock screen instead of waiting for it to be unlocked.
+    zIndex: 999, elevation: 999,
     justifyContent: "space-between", paddingTop: 90, paddingBottom: 48, paddingHorizontal: 28,
   },
   top: { alignItems: "center" },

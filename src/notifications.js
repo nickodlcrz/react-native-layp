@@ -1,6 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
-import { daysUntil, fmtDateLong, fmtTime12 } from "./utils";
+import { daysUntil, fmtDateLong, fmtTime12, peso } from "./utils";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -13,7 +13,20 @@ Notifications.setNotificationHandler({
 export async function requestNotificationPermission() {
   const { status: existing } = await Notifications.getPermissionsAsync();
   if (existing === "granted") return true;
-  const { status } = await Notifications.requestPermissionsAsync();
+  const { status } = await Notifications.requestPermissionsAsync({
+    ios: {
+      // Explicit so a class alarm can actually alert/sound/appear on the
+      // lock screen on iOS -- without these, requestPermissionsAsync()
+      // still "succeeds" but iOS may silently withhold sound or lock
+      // screen presentation for the permission types it wasn't asked for.
+      allowAlert: true,
+      allowSound: true,
+      allowBadge: true,
+      allowCriticalAlerts: false, // requires a special Apple entitlement we don't have
+      allowDisplayInCarPlay: false,
+      provideAppNotificationSettings: true,
+    },
+  });
   return status === "granted";
 }
 
@@ -26,16 +39,25 @@ export async function setupAndroidChannel() {
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250, 250, 250],
       enableVibrate: true,
+      sound: "default",
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
     // Class start/advance reminders: a longer, more insistent repeating
     // buzz pattern -- these are meant to actually get noticed like an
     // alarm, matching the vibration used by the in-app alarm popup
     // (ClassAlarmScreen) for when the app happens to be in the foreground.
+    // `sound` and `lockscreenVisibility` are set explicitly here because
+    // Android ignores the per-notification `sound`/visibility once a
+    // channel exists -- only the channel's own settings apply from then on,
+    // so leaving these unset means the class alarm can silently end up with
+    // no sound and/or a hidden lock-screen preview on some devices.
     await Notifications.setNotificationChannelAsync("layp-class-alarm", {
       name: "LAYP class alarms",
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 700, 400, 700, 400, 700, 400],
       enableVibrate: true,
+      sound: "default",
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
   }
 }
@@ -222,6 +244,23 @@ export async function rescheduleSubjectNotifications(subject, entries) {
   }
 
   return { class: classIds, advance: advanceIds };
+}
+
+// Fires immediately (not scheduled ahead of time) the moment a spend
+// category crosses 80% of its recommended amount for today -- a one-off
+// heads-up, not a repeating alarm like the class/reminder notifications
+// above. Uses the same "reminders" channel/importance as other everyday
+// nudges (bills, tasks), not the insistent class-alarm channel.
+export async function notifyBudgetThreshold(category) {
+  const pct = category.recommended > 0 ? Math.round((category.actual / category.recommended) * 100) : 0;
+  return Notifications.scheduleNotificationAsync({
+    content: {
+      title: `${category.label} budget check-in`,
+      body: `You've used ${pct}% of today's ${category.label} budget (${peso(category.actual)} of ${peso(category.recommended)}).`,
+      sound: true,
+    },
+    trigger: Platform.OS === "android" ? { seconds: 1, channelId: "layp-reminders" } : { seconds: 1 },
+  });
 }
 
 export async function rescheduleBillNotification(bill) {

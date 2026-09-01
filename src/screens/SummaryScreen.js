@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Copy, Check, Lock } from "lucide-react-native";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import * as DocumentPicker from "expo-document-picker";
+import { Copy, Check, Lock, Share2, FolderOpen } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, todayISO, fmtDay, fmtDateLong, savingsTotal as computeSavingsTotal, computeAccountBalance } from "../utils";
 import { AUTO_LOCK_OPTIONS } from "../autoLockPreference";
@@ -93,20 +96,73 @@ export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog
     Alert.alert("Backup copied", "Save the copied text somewhere private. It contains your financial data.");
   }
 
-  function restoreBackup() {
+  // File-based export/import: a real JSON file the person can save to
+  // Drive/Files/email instead of a clipboard blob that's easy to
+  // accidentally overwrite before it's been pasted anywhere durable.
+  async function exportBackupToFile() {
     try {
-      const data = JSON.parse(restoreText);
+      const filename = `layp-backup-${todayISO()}.json`;
+      const uri = FileSystem.documentDirectory + filename;
+      await FileSystem.writeAsStringAsync(uri, JSON.stringify(backup), { encoding: FileSystem.EncodingType.UTF8 });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, { mimeType: "application/json", dialogTitle: "Save your LAYP backup" });
+      } else {
+        Alert.alert("Backup saved", `Saved to:\n${uri}\n\nSharing isn't available on this device, so move the file manually if you need a copy elsewhere.`);
+      }
+    } catch (e) {
+      Alert.alert("Export failed", "Couldn't create the backup file. \"Copy full backup\" still works as a fallback.");
+    }
+  }
+
+  function parseAndValidateBackup(raw) {
+    try {
+      const data = JSON.parse(raw);
       const requiredArrays = ["todos", "bills", "expenses", "moneyLog", "weeklySummaries", "savingsLog", "goals", "loans", "splits", "accounts", "transfers"];
       if (data?.version !== 1 || requiredArrays.some((key) => !Array.isArray(data[key])) || typeof data.dark !== "boolean") {
-        throw new Error("invalid backup");
+        return null;
       }
-      Alert.alert("Replace current data?", "This will overwrite the data currently stored in LAYP.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Restore", style: "destructive", onPress: () => { onRestore(data); setRestoreText(""); setShowRestore(false); } },
-      ]);
+      return data;
     } catch {
-      Alert.alert("Backup not recognized", "Paste a complete backup created by LAYP.");
+      return null;
     }
+  }
+
+  function confirmRestore(data) {
+    Alert.alert("Replace current data?", "This will overwrite the data currently stored in LAYP.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Restore", style: "destructive", onPress: () => onRestore(data) },
+    ]);
+  }
+
+  async function importBackupFromFile() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: "application/json", copyToCacheDirectory: true });
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset) return;
+      const raw = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
+      const data = parseAndValidateBackup(raw);
+      if (!data) {
+        Alert.alert("Backup not recognized", "That file doesn't look like a complete LAYP backup.");
+        return;
+      }
+      confirmRestore(data);
+    } catch (e) {
+      Alert.alert("Import failed", "Couldn't read that file.");
+    }
+  }
+
+  function restoreBackup() {
+    const data = parseAndValidateBackup(restoreText);
+    if (!data) {
+      Alert.alert("Backup not recognized", "Paste a complete backup created by LAYP.");
+      return;
+    }
+    Alert.alert("Replace current data?", "This will overwrite the data currently stored in LAYP.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Restore", style: "destructive", onPress: () => { onRestore(data); setRestoreText(""); setShowRestore(false); } },
+    ]);
   }
 
   return (
@@ -143,11 +199,25 @@ export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog
       </Pressable>
 
       <View style={styles.backupRow}>
+        <Pressable onPress={exportBackupToFile} style={[styles.backupBtn, { borderColor: theme.line, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center" }]}>
+          <Share2 size={13} color={theme.text} />
+          <Text style={[styles.backupBtnText, { color: theme.text }]}>Export backup file</Text>
+        </Pressable>
+        <Pressable onPress={importBackupFromFile} style={[styles.backupBtn, { borderColor: theme.line, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center" }]}>
+          <FolderOpen size={13} color={theme.text} />
+          <Text style={[styles.backupBtnText, { color: theme.text }]}>Import backup file</Text>
+        </Pressable>
+      </View>
+      <Text style={[styles.restoreHint, { color: theme.textMuted, marginBottom: 12 }]}>
+        Exporting saves a real .json file you can send to Drive, email, or another device -- more durable than copy/paste.
+      </Text>
+
+      <View style={styles.backupRow}>
         <Pressable onPress={copyBackup} style={[styles.backupBtn, { borderColor: theme.line }]}>
           <Text style={[styles.backupBtnText, { color: theme.text }]}>Copy full backup</Text>
         </Pressable>
         <Pressable onPress={() => setShowRestore((show) => !show)} style={[styles.backupBtn, { borderColor: theme.line }]}>
-          <Text style={[styles.backupBtnText, { color: theme.text }]}>{showRestore ? "Cancel restore" : "Restore backup"}</Text>
+          <Text style={[styles.backupBtnText, { color: theme.text }]}>{showRestore ? "Cancel restore" : "Restore from pasted text"}</Text>
         </Pressable>
       </View>
       {showRestore && (
