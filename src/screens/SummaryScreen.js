@@ -10,7 +10,7 @@ import { peso, todayISO, fmtDay, fmtDateLong, savingsTotal as computeSavingsTota
 import { AUTO_LOCK_OPTIONS } from "../autoLockPreference";
 import Chip from "../components/Chip";
 
-export default function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore, autoLockMinutes, onChangeAutoLockMinutes }) {
+function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore, autoLockMinutes, onChangeAutoLockMinutes }) {
   const { theme } = useTheme();
   const [copied, setCopied] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
@@ -251,3 +251,9 @@ const styles = StyleSheet.create({
   restoreBtn: { borderRadius: 10, alignItems: "center", paddingVertical: 10 },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
 });
+
+// Memoized: these screens now stay permanently mounted (see App.js) so
+// switching tabs is instant, which means without this, any state change
+// anywhere in the app -- not just on this screen -- would re-render and
+// recompute this one too, even while it's hidden behind another tab.
+export default React.memo(SummaryScreen);

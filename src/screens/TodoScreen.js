@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Linking, Platform, Switch, Alert } from "react-native";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Linking, Platform, Switch, Alert, Animated, LayoutAnimation, UIManager } from "react-native";
 import {
-  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays,
+  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, LayoutList, LayoutGrid, CalendarDays,
   ChevronLeft, ChevronRight, AlertTriangle, ChevronDown, ChevronUp, Settings, Bell, BellOff,
 } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
@@ -12,12 +12,28 @@ import CalendarPicker from "../components/CalendarPicker";
 import NotifyPicker from "../components/NotifyPicker";
 import { rescheduleTodoNotifications, cancelTodoNotifications } from "../notifications";
 
-export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject }) {
+// Old-architecture Android needs this opt-in for LayoutAnimation to do
+// anything at all (New Architecture/Fabric has it on by default, and this
+// is a harmless no-op there) -- without it, the "finished" list reshuffling
+// itself when a task drops out of Active wouldn't animate, it would just
+// jump.
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const LAYOUT_OPTIONS = [
+  { id: "list", icon: List, label: "List" },
+  { id: "detailed", icon: LayoutList, label: "Detailed" },
+  { id: "cards", icon: LayoutGrid, label: "Cards" },
+];
+
+function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject }) {
   const { theme } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState("list");
+  const [layout, setLayout] = useState("list");
   const [statusView, setStatusView] = useState("active");
   const [weekAnchor, setWeekAnchor] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
@@ -74,46 +90,87 @@ export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubj
     setPendingSubjectId(null);
   }
 
-  async function toggle(id) {
+  // Wrapped in useCallback so their identity stays stable across renders --
+  // without this, React.memo on TodoRow (and the row components inside it)
+  // is effectively defeated: React.memo does a shallow prop comparison,
+  // and a brand-new `onToggle`/`onEdit`/`onRemove` function reference every
+  // single render (which plain `function toggle() {}` declarations produce)
+  // reads as "props changed" regardless of whether the task data itself
+  // did, forcing every row to re-render on every keystroke in the add-task
+  // form or any other state change in this screen.
+  const toggle = useCallback(async (id) => {
     const t = todos.find((x) => x.id === id);
+    if (!t) return;
     const nowCompleted = !t.completed;
     if (nowCompleted) await cancelTodoNotifications(t.notificationIds);
+    // Animates the row's departure from (or return to) the currently
+    // filtered list -- without this, a task dropping out of Active the
+    // instant it's checked off would just jump/pop rather than settle
+    // smoothly, since the FlatList has no idea a removal is "expected".
+    LayoutAnimation.configureNext(LayoutAnimation.create(250, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
     setTodos((prev) => prev.map((x) => (x.id === id ? { ...x, completed: nowCompleted, completedAt: nowCompleted ? new Date().toISOString() : null } : x)));
-  }
-  async function remove(id) {
+  }, [todos, setTodos]);
+
+  const remove = useCallback(async (id) => {
     const t = todos.find((x) => x.id === id);
     confirmDelete(Alert, "Delete this task?", `"${t?.title}" will be removed for good.`, async () => {
       if (t?.notificationIds) await cancelTodoNotifications(t.notificationIds);
       setTodos((prev) => prev.filter((x) => x.id !== id));
-      if (editingId === id) { setEditingId(null); setShowForm(false); }
+      setEditingId((current) => (current === id ? null : current));
+      if (editingId === id) setShowForm(false);
     });
-  }
-  function startEdit(t) { setEditingId(t.id); setShowForm(true); }
-  function startAdd() { setEditingId(null); setShowForm((s) => !s); }
-  function toggleSubtask(todoId, subId) {
+  }, [todos, editingId, setTodos]);
+
+  const startEdit = useCallback((t) => { setEditingId(t.id); setShowForm(true); }, []);
+  const startAdd = useCallback(() => { setEditingId(null); setShowForm((s) => !s); }, []);
+  const toggleSubtask = useCallback((todoId, subId) => {
     setTodos((prev) => prev.map((t) => t.id === todoId ? { ...t, subtasks: (t.subtasks || []).map((s) => s.id === subId ? { ...s, done: !s.done } : s) } : t));
-  }
+  }, [setTodos]);
 
   const editingTodo = editingId ? todos.find((t) => t.id === editingId) : null;
 
+  // Cheap O(1) lookup instead of `.find()` inside every row's render --
+  // small win on its own, but multiplied across every visible row on every
+  // render it adds up for a screen with more than a handful of subjects.
+  const subjectsById = useMemo(() => {
+    const map = {};
+    for (const s of subjects) map[s.id] = s;
+    return map;
+  }, [subjects]);
+
+  const renderItem = useCallback(({ item: t }) => (
+    <TodoRow
+      t={t}
+      layout={layout}
+      subject={t.subjectId ? subjectsById[t.subjectId] : null}
+      isExpanded={expandedId === t.id}
+      onToggle={toggle}
+      onEdit={startEdit}
+      onRemove={remove}
+      onExpand={setExpandedId}
+      onToggleSubtask={toggleSubtask}
+    />
+  ), [layout, subjectsById, expandedId, toggle, startEdit, remove, toggleSubtask]);
+
   return (
     <FlatList
+      // FlatList can't change numColumns on the fly -- it has to be told
+      // via a fresh `key` so it fully re-lays-out instead of silently
+      // ignoring the change (a documented RN limitation, not a bug here).
+      key={layout}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
       data={filtered}
       keyExtractor={(t) => t.id}
-      renderItem={({ item: t }) => (
-        <TodoRow
-          t={t}
-          subject={t.subjectId ? subjects.find((s) => s.id === t.subjectId) : null}
-          isExpanded={expandedId === t.id}
-          onToggle={toggle}
-          onEdit={startEdit}
-          onRemove={remove}
-          onExpand={setExpandedId}
-          onToggleSubtask={toggleSubtask}
-        />
-      )}
+      numColumns={layout === "cards" ? 2 : 1}
+      columnWrapperStyle={layout === "cards" ? { gap: 10 } : undefined}
+      renderItem={renderItem}
+      // Keeps memory/CPU bounded on long task lists by only mounting cells
+      // near the viewport instead of the whole list at once.
+      initialNumToRender={12}
+      maxToRenderPerBatch={10}
+      windowSize={7}
+      removeClippedSubviews={Platform.OS === "android"}
       ListEmptyComponent={
         <EmptyState text={statusView === "done" ? "No finished tasks yet." : "No tasks here yet. Add one to get started."} />
       }
@@ -141,6 +198,19 @@ export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubj
           <View style={styles.chipRow}>
             <Chip label="Active" active={statusView === "active"} onPress={() => setStatusView("active")} small />
             <Chip label={`Finished (${todos.filter((t) => t.completed).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
+          </View>
+
+          <View style={[styles.layoutToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
+            {LAYOUT_OPTIONS.map((opt) => {
+              const Icon = opt.icon;
+              const active = layout === opt.id;
+              return (
+                <Pressable key={opt.id} onPress={() => setLayout(opt.id)} style={[styles.layoutBtn, active && { backgroundColor: theme.accentDark }]} accessibilityLabel={`${opt.label} view`}>
+                  <Icon size={13} color={active ? "#fff" : theme.textMuted} />
+                  <Text style={[styles.layoutBtnText, { color: active ? "#fff" : theme.textMuted }]}>{opt.label}</Text>
+                </Pressable>
+              );
+            })}
           </View>
 
           {schoolConflicts.length > 0 && statusView === "active" && (
@@ -211,16 +281,54 @@ export default function TodoScreen({ todos, setTodos, subjects = [], prefillSubj
 // one row doesn't force every other row to re-render -- matters more on
 // lower-RAM devices (e.g. Redmi 10, 4GB variant) where re-render churn is
 // more visible as scroll jank.
-const TodoRow = React.memo(function TodoRow({ t, subject, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
+//
+// A shared hook for all three layouts below: handles the "just checked
+// off" moment locally (a quick checkmark pop + strikethrough) before
+// actually committing the change, so there's a satisfying beat before the
+// task leaves the Active list, instead of it just vanishing the instant
+// you tap it. Un-completing (from the Finished list) skips the ceremony
+// and commits immediately -- there's nothing to celebrate about undoing.
+function useTaskCompletion(t, onToggle) {
+  const [optimisticDone, setOptimisticDone] = useState(false);
+  const popScale = useRef(new Animated.Value(1)).current;
+  const completingRef = useRef(false);
+  const timeoutRef = useRef(null);
+
+  React.useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
+
+  function handleToggle() {
+    if (completingRef.current) return;
+    if (t.completed) { onToggle(t.id); return; }
+    completingRef.current = true;
+    setOptimisticDone(true);
+    Animated.sequence([
+      Animated.spring(popScale, { toValue: 1.4, useNativeDriver: true, friction: 4, tension: 220 }),
+      Animated.spring(popScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 220 }),
+    ]).start();
+    timeoutRef.current = setTimeout(() => {
+      onToggle(t.id);
+      completingRef.current = false;
+      setOptimisticDone(false);
+    }, 420);
+  }
+
+  return { displayCompleted: t.completed || optimisticDone, popScale, handleToggle };
+}
+
+const TodoRow = React.memo(function TodoRow({ t, layout, subject, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
+  if (layout === "cards") return <TodoCard t={t} subject={subject} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} />;
+  if (layout === "detailed") return <TodoRowDetailed t={t} subject={subject} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} onToggleSubtask={onToggleSubtask} />;
+  return <TodoRowList t={t} subject={subject} isExpanded={isExpanded} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} onExpand={onExpand} onToggleSubtask={onToggleSubtask} />;
+});
+
+// --- List layout: the original compact row, collapsible subtasks ---
+function TodoRowList({ t, subject, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
   const { theme } = useTheme();
   const cat = CATEGORIES.find((c) => c.id === t.category);
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
-  // Any category, past its due date and not yet checked off: full red
-  // highlight, persists until completed.
-  const isOverdue = !t.completed && dleft !== null && dleft < 0;
-  // School-specific early warning, kept from before: flag it red a couple
-  // days ahead of the actual due date, not just once it's overdue.
-  const isUrgentSchool = t.category === "school" && !t.completed && dleft !== null && dleft <= 2 && dleft >= 0;
+  const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
+  const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
+  const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
   const flagged = isOverdue || isUrgentSchool;
   const subtasks = t.subtasks || [];
   const subDone = subtasks.filter((s) => s.done).length;
@@ -232,15 +340,17 @@ const TodoRow = React.memo(function TodoRow({ t, subject, isExpanded, onToggle, 
         backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
         borderColor: flagged ? ACCENT.ember : theme.line,
         borderWidth: flagged ? 1.5 : 1,
-        opacity: t.completed ? 0.6 : 1,
+        opacity: displayCompleted ? 0.6 : 1,
       },
     ]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-        <Pressable onPress={() => onToggle(t.id)}>
-          {t.completed ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
+        <Pressable onPress={handleToggle}>
+          <Animated.View style={{ transform: [{ scale: popScale }] }}>
+            {displayCompleted ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
+          </Animated.View>
         </Pressable>
-        <Pressable style={{ flex: 1 }} onPress={() => !t.completed && onEdit(t)}>
-          <Text style={[styles.rowTitle, { color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: t.completed ? "line-through" : "none" }]}>{t.title}</Text>
+        <Pressable style={{ flex: 1 }} onPress={() => !displayCompleted && onEdit(t)}>
+          <Text style={[styles.rowTitle, { color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: displayCompleted ? "line-through" : "none" }]}>{t.title}</Text>
           <View style={styles.rowMeta}>
             <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
               <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
@@ -266,7 +376,7 @@ const TodoRow = React.memo(function TodoRow({ t, subject, isExpanded, onToggle, 
             )}
           </View>
         </Pressable>
-        {!t.completed && <Pressable onPress={() => onEdit(t)} style={{ marginRight: 4 }} accessibilityLabel="Edit task"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+        {!displayCompleted && <Pressable onPress={() => onEdit(t)} style={{ marginRight: 4 }} accessibilityLabel="Edit task"><Pencil size={14} color={theme.textMuted} /></Pressable>}
         <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete task"><Trash2 size={15} color={theme.textMuted} /></Pressable>
       </View>
       {isExpanded && subtasks.length > 0 && (
@@ -281,7 +391,137 @@ const TodoRow = React.memo(function TodoRow({ t, subject, isExpanded, onToggle, 
       )}
     </View>
   );
-});
+}
+
+// --- Detailed layout: everything visible up front, no expand needed ---
+function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubtask }) {
+  const { theme } = useTheme();
+  const cat = CATEGORIES.find((c) => c.id === t.category);
+  const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
+  const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
+  const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
+  const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
+  const flagged = isOverdue || isUrgentSchool;
+  const subtasks = t.subtasks || [];
+  const subDone = subtasks.filter((s) => s.done).length;
+
+  return (
+    <View style={[
+      styles.detailedRow,
+      {
+        backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
+        borderColor: flagged ? ACCENT.ember : theme.line,
+        borderWidth: flagged ? 1.5 : 1,
+        opacity: displayCompleted ? 0.6 : 1,
+      },
+    ]}>
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+        <Pressable onPress={handleToggle} style={{ marginTop: 2 }}>
+          <Animated.View style={{ transform: [{ scale: popScale }] }}>
+            {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={theme.textMuted} />}
+          </Animated.View>
+        </Pressable>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={[styles.rowTitle, { fontSize: 15, color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: displayCompleted ? "line-through" : "none", flex: 1 }]}>{t.title}</Text>
+            <View style={{ flexDirection: "row", gap: 10, marginLeft: 8 }}>
+              {!displayCompleted && <Pressable onPress={() => onEdit(t)} accessibilityLabel="Edit task"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+              <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete task"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+            </View>
+          </View>
+
+          <View style={[styles.detailedMetaRow]}>
+            <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
+              <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
+            </View>
+            {t.reminderEnabled !== false ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                <Bell size={10} color={theme.textMuted} />
+                <Text style={[styles.metaText, { color: theme.textMuted }]}>Reminder on</Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                <BellOff size={10} color={theme.textMuted} />
+                <Text style={[styles.metaText, { color: theme.textMuted }]}>No reminder</Text>
+              </View>
+            )}
+          </View>
+
+          {subject && (
+            <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{subject.code} · {subject.description}</Text>
+          )}
+
+          <Text style={[styles.metaText, { color: flagged ? ACCENT.ember : theme.textMuted, marginTop: 4, fontWeight: "700" }]}>
+            {t.dueDate
+              ? `Due ${fmtDay(t.dueDate)} · ${dleft === 0 ? "today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}`
+              : "No due date"}
+          </Text>
+
+          {subtasks.length > 0 && (
+            <View style={{ marginTop: 10, gap: 6 }}>
+              <View style={[styles.subProgressTrack, { backgroundColor: theme.bg }]}>
+                <View style={[styles.subProgressFill, { width: `${(subDone / subtasks.length) * 100}%`, backgroundColor: ACCENT.leaf }]} />
+              </View>
+              {subtasks.map((s) => (
+                <Pressable key={s.id} onPress={() => onToggleSubtask(t.id, s.id)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  {s.done ? <CheckCircle2 size={14} color={ACCENT.leaf} /> : <Circle size={14} color={theme.textMuted} />}
+                  <Text style={{ fontSize: 11.5, color: theme.text, textDecorationLine: s.done ? "line-through" : "none" }}>{s.title}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// --- Card layout: a two-column grid, compact visual scanning ---
+function TodoCard({ t, subject, onToggle, onEdit, onRemove }) {
+  const { theme } = useTheme();
+  const cat = CATEGORIES.find((c) => c.id === t.category);
+  const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
+  const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
+  const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
+  const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
+  const flagged = isOverdue || isUrgentSchool;
+
+  return (
+    <Pressable
+      onPress={() => !displayCompleted && onEdit(t)}
+      onLongPress={() => onRemove(t.id)}
+      style={[
+        styles.card,
+        {
+          backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
+          borderColor: flagged ? ACCENT.ember : theme.line,
+          borderWidth: flagged ? 1.5 : 1,
+          opacity: displayCompleted ? 0.6 : 1,
+        },
+      ]}
+    >
+      <View style={[styles.cardAccent, { backgroundColor: cat?.color || theme.line }]} />
+      <View style={styles.cardTopRow}>
+        <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
+          <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
+        </View>
+        <Pressable onPress={handleToggle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Animated.View style={{ transform: [{ scale: popScale }] }}>
+            {displayCompleted ? <CheckCircle2 size={18} color={ACCENT.leaf} /> : <Circle size={18} color={theme.textMuted} />}
+          </Animated.View>
+        </Pressable>
+      </View>
+      <Text numberOfLines={3} style={[styles.cardTitle, { color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: displayCompleted ? "line-through" : "none" }]}>
+        {t.title}
+      </Text>
+      {subject && <Text numberOfLines={1} style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{subject.code}</Text>}
+      <Text style={[styles.metaText, { color: flagged ? ACCENT.ember : theme.textMuted, marginTop: "auto", paddingTop: 8 }]}>
+        {t.dueDate ? (dleft === 0 ? "Due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`) : "No due date"}
+      </Text>
+    </Pressable>
+  );
+}
+
 
 function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = null }) {
   const { theme } = useTheme();
@@ -388,6 +628,17 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
 }
 
 const styles = StyleSheet.create({
+  layoutToggle: { flexDirection: "row", borderWidth: 1, borderRadius: 12, padding: 3, marginBottom: 12, gap: 3 },
+  layoutBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 7, borderRadius: 9 },
+  layoutBtnText: { fontSize: 10.5, fontWeight: "700" },
+  detailedRow: { borderRadius: 16, padding: 14, marginBottom: 10 },
+  detailedMetaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" },
+  subProgressTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
+  subProgressFill: { height: 4, borderRadius: 2 },
+  card: { flex: 1, borderRadius: 16, padding: 12, marginBottom: 10, minHeight: 118, overflow: "hidden" },
+  cardAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
+  cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4, marginBottom: 8 },
+  cardTitle: { fontSize: 12.5, fontWeight: "700", lineHeight: 16 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   h1: { fontSize: 20, fontWeight: "700" },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -427,3 +678,9 @@ const styles = StyleSheet.create({
   miuiHint: { flexDirection: "row", gap: 8, borderWidth: 1, borderRadius: 14, padding: 10, marginBottom: 12, alignItems: "flex-start" },
   miuiHintText: { fontSize: 10, flex: 1, lineHeight: 14 },
 });
+
+// Memoized: these screens now stay permanently mounted (see App.js) so
+// switching tabs is instant, which means without this, any state change
+// anywhere in the app -- not just on this screen -- would re-render and
+// recompute this one too, even while it's hidden behind another tab.
+export default React.memo(TodoScreen);

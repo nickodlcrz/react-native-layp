@@ -17,8 +17,13 @@ export default function TabTransition({ transitionKey, direction = 0, style, chi
     opacity.setValue(0);
     translateX.setValue(direction === 0 ? 0 : direction * SCREEN_WIDTH * 0.25);
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.spring(translateX, { toValue: 0, useNativeDriver: true, friction: 10, tension: 60 }),
+      Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }),
+      // Tightened from friction:10/tension:60 -- now that SwipeNavigator
+      // hands off a continuous, already-moving drag into this entrance
+      // (instead of starting from a dead stop), a snappier settle keeps
+      // the two feeling like one motion instead of the entrance visibly
+      // taking its own slower beat after the drag already did its part.
+      Animated.spring(translateX, { toValue: 0, useNativeDriver: true, friction: 9, tension: 90 }),
     ]).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transitionKey]);

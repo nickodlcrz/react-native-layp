@@ -16,7 +16,7 @@ import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
 
-export default function SchoolScreen({
+function SchoolScreen({
   periods, setPeriods, subjects, setSubjects, entries, setEntries,
   schoolDefaults, setSchoolDefaults, todos, setTodos, onGoToTodoForSubject,
 }) {
@@ -769,3 +769,9 @@ const styles = StyleSheet.create({
   notesInput: { minHeight: 70, borderWidth: 1, borderRadius: 10, padding: 10, fontSize: 12, textAlignVertical: "top" },
   todoRow: { flexDirection: "row", alignItems: "center", gap: 8 },
 });
+
+// Memoized: these screens now stay permanently mounted (see App.js) so
+// switching tabs is instant, which means without this, any state change
+// anywhere in the app -- not just on this screen -- would re-render and
+// recompute this one too, even while it's hidden behind another tab.
+export default React.memo(SchoolScreen);

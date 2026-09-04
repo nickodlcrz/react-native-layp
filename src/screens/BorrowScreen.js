@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Alert } from "react-native";
+import React, { useCallback, useState } from "react";
+import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Alert, Platform } from "react-native";
 import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount, confirmDelete } from "../utils";
@@ -32,11 +32,16 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
     }
     setShowForm(false);
   }
-  async function toggleSettled(l) {
+  // Wrapped in useCallback for the same reason as TodoScreen's handlers:
+  // LoanRow is React.memo'd, and a fresh function reference on every
+  // render of this screen (which plain function declarations produce)
+  // silently defeats that -- every row would re-render on every keystroke
+  // in the payment-amount input, not just the row that input belongs to.
+  const toggleSettled = useCallback(async (l) => {
     const nowSettled = !l.settled;
     if (nowSettled && l.notificationId) await cancelTodoNotifications([l.notificationId]);
     setLoans((prev) => prev.map((x) => (x.id === l.id ? { ...x, settled: nowSettled, settledAt: nowSettled ? todayISO() : null } : x)));
-  }
+  }, [setLoans]);
 
   // Logs a partial payment against a loan without requiring the whole
   // thing to be settled at once -- each payment immediately shows up in
@@ -45,7 +50,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
   // auto-marked settled (and its reminder notification cancelled) so
   // there's no separate "now go tap settled too" step, but that's just a
   // convenience: the person can always toggle it back open again.
-  async function recordPayment(l) {
+  const recordPayment = useCallback(async (l) => {
     const amt = Number(paymentAmount);
     if (!isPositiveAmount(amt)) return;
     const payments = [...(l.payments || []), { id: uid(), amount: amt, date: todayISO(), createdAt: Date.now() }];
@@ -55,16 +60,18 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
     setLoans((prev) => prev.map((x) => (x.id === l.id ? { ...x, payments, settled: nowSettled, settledAt: nowSettled ? todayISO() : x.settledAt } : x)));
     setPayingId(null);
     setPaymentAmount("");
-  }
-  function remove(l) {
+  }, [paymentAmount, setLoans]);
+
+  const remove = useCallback((l) => {
     confirmDelete(Alert, "Delete this entry?", `The ${l.type === "lent" ? "loan to" : "loan from"} ${l.person} (${peso(loanTotalDue(l))}) will be removed for good.`, async () => {
       if (l.notificationId) await cancelTodoNotifications([l.notificationId]);
       setLoans((prev) => prev.filter((x) => x.id !== l.id));
-      if (editingId === l.id) { setEditingId(null); setShowForm(false); }
+      setEditingId((current) => (current === l.id ? null : current));
+      if (editingId === l.id) setShowForm(false);
     });
-  }
-  function startEdit(l) { setEditingId(l.id); setShowForm(true); }
-  function startAdd() { setEditingId(null); setShowForm((s) => !s); }
+  }, [editingId, setLoans]);
+  const startEdit = useCallback((l) => { setEditingId(l.id); setShowForm(true); }, []);
+  const startAdd = useCallback(() => { setEditingId(null); setShowForm((s) => !s); }, []);
 
   const filtered = loans
     .filter((l) => l.type === typeView)
@@ -78,12 +85,32 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
 
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
 
+  const renderItem = useCallback(({ item: l }) => (
+    <LoanRow
+      l={l}
+      theme={theme}
+      accounts={accounts}
+      payingId={payingId}
+      paymentAmount={payingId === l.id ? paymentAmount : ""}
+      setPayingId={setPayingId}
+      setPaymentAmount={setPaymentAmount}
+      toggleSettled={toggleSettled}
+      startEdit={startEdit}
+      remove={remove}
+      recordPayment={recordPayment}
+    />
+  ), [theme, accounts, payingId, paymentAmount, toggleSettled, startEdit, remove, recordPayment]);
+
   return (
     <FlatList
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
       data={filtered}
       keyExtractor={(l) => l.id}
+      initialNumToRender={10}
+      maxToRenderPerBatch={10}
+      windowSize={7}
+      removeClippedSubviews={Platform.OS === "android"}
       ListEmptyComponent={
         <EmptyState text={statusView === "active" ? `No ${typeView === "lent" ? "lent" : "borrowed"} entries yet.` : "Nothing settled yet."} />
       }
@@ -132,21 +159,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
           {showForm && <LoanForm key={editingId || typeView} initial={editingLoan} type={typeView} ctx={ctx} accounts={accounts} onSave={saveLoan} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
         </>
       }
-      renderItem={({ item: l }) => (
-        <LoanRow
-          l={l}
-          theme={theme}
-          accounts={accounts}
-          payingId={payingId}
-          paymentAmount={paymentAmount}
-          setPayingId={setPayingId}
-          setPaymentAmount={setPaymentAmount}
-          toggleSettled={toggleSettled}
-          startEdit={startEdit}
-          remove={remove}
-          recordPayment={recordPayment}
-        />
-      )}
+      renderItem={renderItem}
     />
   );
 }

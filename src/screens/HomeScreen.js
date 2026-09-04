@@ -8,7 +8,7 @@ import { getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday,
 import AnimatedNumber from "../components/AnimatedNumber";
 import EmptyState from "../components/EmptyState";
 
-export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos }) {
+function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos }) {
   const { theme } = useTheme();
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
 
@@ -32,7 +32,6 @@ export default function HomeScreen({ accounts, moneyLog, expenses, weeklySummari
   const monthLabel = now.toLocaleDateString("en-PH", { month: "long", year: "numeric" }).toUpperCase();
 
   const unpaidBills = bills.filter((b) => !b.paid);
-  const unpaidTotal = unpaidBills.reduce((s, b) => s + b.amount, 0);
   const daysLeftInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() - now.getDate() + 1;
   const safeToSpend = selectSafeToSpend(accounts, bills, ctx);
   const perDay = daysLeftInMonth > 0 ? safeToSpend / daysLeftInMonth : safeToSpend;
@@ -323,3 +322,9 @@ const styles = StyleSheet.create({
   taskTitle: { flex: 1, fontSize: 12, fontWeight: "600" },
   taskDue: { fontSize: 10, fontFamily: "monospace" },
 });
+
+// Memoized: these screens now stay permanently mounted (see App.js) so
+// switching tabs is instant, which means without this, any state change
+// anywhere in the app -- not just on this screen -- would re-render and
+// recompute this one too, even while it's hidden behind another tab.
+export default React.memo(HomeScreen);

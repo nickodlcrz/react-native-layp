@@ -22,7 +22,7 @@ function matchPresetName(splits) {
   return "Custom";
 }
 
-export default function BudgetScreen({
+function BudgetScreen({
   moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, setWeeklySummaries,
   savingsLog, setSavingsLog, loans, setLoans, accounts, setAccounts, transfers, setTransfers, goals, setGoals,
   dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog, dailyBudgetLog,
@@ -125,7 +125,6 @@ export default function BudgetScreen({
 
   const totalSavings = computeSavingsTotal(savingsLog);
 
-  const totalIncome = moneyLog.reduce((s, m) => s + Number(m.amount), 0);
   const rolledTotal = weeklySummaries.reduce((s, w) => s + w.total, 0);
   const totalSpent = expenses.reduce((s, e) => s + Number(e.amount), 0) + rolledTotal;
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
@@ -627,3 +626,9 @@ const styles = StyleSheet.create({
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   tagText: { fontSize: 9, fontWeight: "700" },
 });
+
+// Memoized: these screens now stay permanently mounted (see App.js) so
+// switching tabs is instant, which means without this, any state change
+// anywhere in the app -- not just on this screen -- would re-render and
+// recompute this one too, even while it's hidden behind another tab.
+export default React.memo(BudgetScreen);

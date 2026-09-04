@@ -11,10 +11,13 @@ import { ThemeContext, LIGHT, ACCENT } from "../theme";
 // component style is unavoidable.
 //
 // `resetKey` lets the parent force this boundary back to its non-error
-// state without unmounting it -- pass something that changes when the
-// user navigates away and back (e.g. the active tab key), so leaving a
-// crashed screen and returning to it gets a fresh mount instead of being
-// stuck showing the error forever.
+// state without unmounting it -- useful when a screen is deliberately
+// torn down and rebuilt (e.g. a modal closing), so returning to it later
+// gets a fresh mount instead of being stuck showing the error. Screens
+// that stay permanently mounted (like each main tab) should pass a
+// stable key instead, since there's no natural "coming back" moment to
+// hook a reset to -- for those, the "Try again" button below is the only
+// way out of an error state short of restarting the app.
 export default class ErrorBoundary extends React.Component {
   // Function components can't be class components, but they CAN read
   // context -- ThemeContext isn't available to `this.context` on a plain
@@ -49,7 +52,7 @@ export default class ErrorBoundary extends React.Component {
           <AlertTriangle size={28} color={ACCENT.ember} />
           <Text style={[styles.title, { color: theme.text }]}>Something went wrong here</Text>
           <Text style={[styles.sub, { color: theme.textMuted }]}>
-            This screen hit an unexpected error. Your data is safe -- switching tabs and coming back usually clears it.
+            This screen hit an unexpected error. Your data is safe -- tap below to reload just this screen.
           </Text>
           <Pressable onPress={() => this.setState({ hasError: false })} style={[styles.retryBtn, { backgroundColor: theme.accentDark }]}>
             <RotateCcw size={13} color="#fff" />

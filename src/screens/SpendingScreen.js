@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Alert } from "react-native";
 import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from "lucide-react-native";
 import { useTheme, ACCENT, INCOME_CATEGORIES } from "../theme";
@@ -44,14 +44,15 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
     }
     setShowForm(false);
   }
-  function remove(id) {
+  const remove = useCallback((id) => {
     const e = expenses.find((x) => x.id === id);
     confirmDelete(Alert, "Delete this expense?", `"${e?.name}" (${peso(e?.amount || 0)}) will be removed for good.`, () => {
       setExpenses((prev) => prev.filter((x) => x.id !== id));
-      if (editingId === id) { setEditingId(null); setShowForm(false); }
+      setEditingId((current) => (current === id ? null : current));
+      if (editingId === id) setShowForm(false);
     });
-  }
-  function startEdit(e) { if (e.source === "bill") return; setEditingId(e.id); setShowForm(true); }
+  }, [expenses, editingId, setExpenses]);
+  const startEdit = useCallback((e) => { if (e.source === "bill") return; setEditingId(e.id); setShowForm(true); }, []);
   function saveMoney(entry) { setMoneyLog((prev) => [...prev, { id: uid(), ...entry, createdAt: Date.now() }]); setShowMoneyForm(false); }
 
   const today = todayISO();
@@ -59,13 +60,34 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
   // saved before createdAt existed).
   const byRecent = (a, b) => (b.createdAt || 0) - (a.createdAt || 0);
   const todayExpenses = expenses.filter((e) => e.date === today).sort(byRecent);
-  const pastDates = [...new Set(expenses.filter((e) => e.date !== today).map((e) => e.date))].sort((a, b) => b.localeCompare(a));
+
+  // Grouped once (not re-filtered per day inside the render loop below) --
+  // for a user with a long history this turns an O(days x expenses) scan
+  // into a single O(expenses) pass.
+  const expensesByDate = useMemo(() => {
+    const map = {};
+    for (const e of expenses) {
+      if (e.date === today) continue;
+      (map[e.date] ||= []).push(e);
+    }
+    for (const day of Object.values(map)) day.sort(byRecent);
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, today]);
+  const allPastDates = useMemo(
+    () => Object.keys(expensesByDate).sort((a, b) => b.localeCompare(a)),
+    [expensesByDate]
+  );
+  // The History section used to render one group per day the user has
+  // *ever* logged an expense on, forever -- for someone who's used the app
+  // for months that's an ever-growing, always-fully-rendered list inside a
+  // FlatList header (which doesn't virtualize its own header content).
+  // Capped to a window with a "show more" step instead.
+  const [historyLimit, setHistoryLimit] = useState(20);
+  const pastDates = allPastDates.slice(0, historyLimit);
 
   const now = new Date();
   const monthTotal = expenses.filter((e) => { const d = new Date(e.date + "T00:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).reduce((s, e) => s + Number(e.amount), 0);
-  const totalIncome = moneyLog.reduce((s, m) => s + Number(m.amount), 0);
-  const rolledTotal = weeklySummaries.reduce((s, w) => s + w.total, 0);
-  const totalSpent = expenses.reduce((s, e) => s + Number(e.amount), 0) + rolledTotal;
   const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
   // True remaining cash across both accounts, including the effect of
   // money currently lent out or borrowed -- not just income minus spending.
@@ -165,7 +187,7 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
           <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Today</Text>
           {todayExpenses.length === 0 ? <EmptyState text="Nothing logged today." /> : (
             <View style={{ gap: 8, marginBottom: 16 }}>
-              {todayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={() => startEdit(e)} onRemove={() => remove(e.id)} />)}
+              {todayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={startEdit} onRemove={remove} />)}
             </View>
           )}
 
@@ -174,7 +196,7 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
               <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>History</Text>
               <View style={{ gap: 8 }}>
                 {pastDates.map((d) => {
-                  const dayExpenses = expenses.filter((e) => e.date === d).sort(byRecent);
+                  const dayExpenses = expensesByDate[d] || [];
                   const dayTotal = dayExpenses.reduce((s, e) => s + Number(e.amount), 0);
                   const open = !!historyOpen[d];
                   return (
@@ -188,12 +210,22 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
                       </Pressable>
                       {open && (
                         <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8 }}>
-                          {dayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} compact onEdit={() => startEdit(e)} onRemove={() => remove(e.id)} />)}
+                          {dayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} compact onEdit={startEdit} onRemove={remove} />)}
                         </View>
                       )}
                     </View>
                   );
                 })}
+                {historyLimit < allPastDates.length && (
+                  <Pressable
+                    onPress={() => setHistoryLimit((n) => n + 20)}
+                    style={[styles.historyGroup, { backgroundColor: theme.card, borderColor: theme.line, alignItems: "center", paddingVertical: 12 }]}
+                  >
+                    <Text style={[styles.metaText, { color: theme.textMuted }]}>
+                      Show {Math.min(20, allPastDates.length - historyLimit)} more days ({allPastDates.length - historyLimit} total remaining)
+                    </Text>
+                  </Pressable>
+                )}
                 {[...weeklySummaries].sort((a, b) => b.startDate.localeCompare(a.startDate)).map((w) => (
                   <View key={w.id} style={[styles.weekSummaryRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
                     <View>
@@ -242,13 +274,17 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
   );
 }
 
-function ExpenseRow({ e, splits, accounts, onEdit, onRemove, compact }) {
+// Memoized since it's rendered in loops (today's list, each expanded
+// history day) -- without React.memo here this re-renders on every parent
+// state change regardless (e.g. typing in the add-expense form re-renders
+// every visible ExpenseRow too).
+const ExpenseRow = React.memo(function ExpenseRow({ e, splits, accounts, onEdit, onRemove, compact }) {
   const { theme } = useTheme();
   const split = splits.find((s) => s.id === e.splitId);
   const account = accounts.find((a) => a.id === e.account);
   return (
     <View style={[styles.row, { backgroundColor: compact ? theme.bg : theme.card, borderColor: theme.line, borderWidth: compact ? 0 : 1 }]}>
-      <Pressable style={{ flex: 1 }} onPress={onEdit}>
+      <Pressable style={{ flex: 1 }} onPress={() => onEdit(e)}>
         <Text style={[styles.rowTitle, { color: theme.text }]}>{e.name}{e.source === "bill" ? <Text style={{ fontSize: 9, fontWeight: "400", color: theme.textMuted }}> (bill)</Text> : null}</Text>
         {e.label ? <Text style={[styles.customLabel, { color: theme.textMuted }]}>{e.label}</Text> : null}
         <View style={{ flexDirection: "row", gap: 4, marginTop: 3, flexWrap: "wrap" }}>
@@ -257,11 +293,11 @@ function ExpenseRow({ e, splits, accounts, onEdit, onRemove, compact }) {
         </View>
       </Pressable>
       <Text style={[styles.amount, { color: ACCENT.ember }]}>-{peso(e.amount)}</Text>
-      {e.source !== "bill" && <Pressable onPress={onEdit} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit expense"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-      <Pressable onPress={onRemove} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+      {e.source !== "bill" && <Pressable onPress={() => onEdit(e)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit expense"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+      <Pressable onPress={() => onRemove(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={15} color={theme.textMuted} /></Pressable>
     </View>
   );
-}
+});
 
 function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
   const { theme } = useTheme();

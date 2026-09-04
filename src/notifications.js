@@ -10,6 +10,42 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Re-exported so App.js can tell a plain notification tap apart from one of
+// the class-alarm action buttons below, without importing the raw
+// expo-notifications module itself (everything notification-related is
+// meant to funnel through this file).
+export const DEFAULT_ACTION_IDENTIFIER = Notifications.DEFAULT_ACTION_IDENTIFIER;
+export const CLASS_ALARM_CONFIRM_ACTION = "CONFIRM";
+export const CLASS_ALARM_CANCELLED_ACTION = "CANCELLED";
+const CLASS_ALARM_CATEGORY = "layp-class-alarm-actions";
+
+// Lets the class-starting-now / advance notification carry two action
+// buttons right on the notification itself (lock screen included), so it
+// can be handled without unlocking the phone or opening the app at all --
+// "I'm up" behaves like the in-app slide-to-confirm, "Class cancelled"
+// behaves like the in-app suspend button. Registering the category is
+// idempotent, so it's safe to call this on every app start.
+export async function setupNotificationCategories() {
+  await Notifications.setNotificationCategoryAsync(CLASS_ALARM_CATEGORY, [
+    // opensAppToForeground defaults to true and is left that way here on
+    // purpose: recording a cancelled class (or clearing the in-app alarm
+    // state) has to run in JS, and per Expo's own docs the response
+    // listener won't fire at all for a killed app if this were false --
+    // so tapping either button briefly foregrounds the app to actually
+    // process the action, then it can return to the background on its own.
+    { identifier: CLASS_ALARM_CONFIRM_ACTION, buttonTitle: "I'm up \u2713" },
+    { identifier: CLASS_ALARM_CANCELLED_ACTION, buttonTitle: "Class cancelled", options: { isDestructive: true } },
+  ]);
+}
+
+export async function dismissNotification(identifier) {
+  try {
+    await Notifications.dismissNotificationAsync(identifier);
+  } catch (e) {
+    // Already gone (e.g. user swiped it away first) -- nothing to do.
+  }
+}
+
 export async function requestNotificationPermission() {
   const { status: existing } = await Notifications.getPermissionsAsync();
   if (existing === "granted") return true;
@@ -169,9 +205,31 @@ export async function rescheduleDailyBudgetNotification(previousId, settings, co
   if (!settings?.enabled || !settings?.time) return null;
   const [h, m] = settings.time.split(":").map(Number);
   return Notifications.scheduleNotificationAsync({
-    content: { title: content.title, body: content.body, sound: true },
+    content: { title: content.title, body: content.body, sound: true, data: { type: "dailyBudget" } },
     trigger: Platform.OS === "android" ? { hour: h, minute: m, repeats: true, channelId: "layp-reminders" } : { hour: h, minute: m, repeats: true },
   });
+}
+
+// --- Notification tap handling ---
+//
+// Lets a screen react when the person taps a delivered notification (as
+// opposed to just receiving/displaying one). Two entry points are needed:
+// addNotificationResponseListener for taps while the app is already
+// running (foreground or background), and getLastNotificationResponse for
+// the case where tapping the notification is what *launched* the app from
+// fully killed -- that tap already happened before any listener could be
+// attached, so it has to be read back explicitly on mount instead.
+export function addNotificationResponseListener(callback) {
+  return Notifications.addNotificationResponseReceivedListener(callback);
+}
+
+export async function getLastNotificationResponse() {
+  try {
+    return await Notifications.getLastNotificationResponseAsync();
+  } catch (e) {
+    console.error("getLastNotificationResponse failed", e);
+    return null;
+  }
 }
 
 // --- School: class + advance reminders ---
@@ -192,7 +250,23 @@ function classBody(subject, entry) {
 
 async function scheduleWeekly(weekday, hour, minute, content) {
   return Notifications.scheduleNotificationAsync({
-    content: { ...content, sound: true },
+    content: {
+      ...content,
+      sound: true,
+      // Android channel vibration only fires once at delivery, not on a
+      // loop -- setting it here too doesn't change that (a real
+      // continuously-ringing alarm needs a foreground service + full-screen
+      // intent, which is native code outside what expo-notifications'
+      // JS API can configure), but it does make sure this specific
+      // notification uses the strongest available pattern rather than
+      // whatever a shared default would be.
+      vibrate: [0, 700, 400, 700, 400, 700, 400],
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      sticky: true, // can't be swiped away by accident -- only "I'm up" / "Class cancelled" or opening it clears it
+      autoDismiss: false,
+      interruptionLevel: "timeSensitive", // iOS: break through Focus/Do Not Disturb without needing the Critical Alerts entitlement
+      categoryIdentifier: CLASS_ALARM_CATEGORY,
+    },
     trigger: Platform.OS === "android" ? { weekday, hour, minute, repeats: true, channelId: "layp-class-alarm" } : { weekday, hour, minute, repeats: true },
   });
 }
@@ -219,7 +293,7 @@ export async function rescheduleSubjectNotifications(subject, entries) {
 
     if (subject.classReminderEnabled !== false) {
       for (const weekday of entry.days) {
-        classIds.push(await scheduleWeekly(weekday, h, m, { title: "\ud83d\udd14 Class starting now", body: classBody(subject, entry) }));
+        classIds.push(await scheduleWeekly(weekday, h, m, { title: "\ud83d\udd14 Class starting now", body: classBody(subject, entry), data: { type: "classAlarm", subjectId: subject.id } }));
       }
     }
 
@@ -237,7 +311,7 @@ export async function rescheduleSubjectNotifications(subject, entries) {
         const oh = Math.floor(total / 60);
         const om = total % 60;
         advanceIds.push(
-          await scheduleWeekly(wd, oh, om, { title: `\ud83d\udd14 Class in ${advanceMin} minutes`, body: classBody(subject, entry) })
+          await scheduleWeekly(wd, oh, om, { title: `\ud83d\udd14 Class in ${advanceMin} minutes`, body: classBody(subject, entry), data: { type: "classAlarm", subjectId: subject.id } })
         );
       }
     }

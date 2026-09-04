@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Vibration, Platform, Alert, Pressable } from "react-native";
+import { View, Text, StyleSheet, Vibration, Alert, Pressable } from "react-native";
 import { GraduationCap, Clock, MapPin, Ban } from "lucide-react-native";
 import { ACCENT } from "../theme";
 import { fmtTime12 } from "../utils";
@@ -31,19 +31,16 @@ export default function ClassAlarmScreen({ alarm, onDismiss, onSuspend }) {
 
   // Starts as soon as the popup appears, stops the moment it's dismissed
   // (unmount) or the component unmounts for any other reason -- never left
-  // buzzing in the background.
+  // buzzing in the background. RN's Vibration module actually implements
+  // proper pattern+repeat cross-platform (Android hands the whole waveform
+  // to the OS to loop natively; iOS/others loop it in JS via their own
+  // scheduler) -- earlier this re-triggered a single default buzz on a
+  // fixed interval for iOS under the belief that patterns/repeat were
+  // Android-only, which wasn't actually true and produced a duller,
+  // less urgent buzz than the real pattern below.
   useEffect(() => {
-    if (Platform.OS === "android") {
-      Vibration.vibrate(VIBRATION_PATTERN, true);
-      return () => Vibration.cancel();
-    }
-    // iOS: re-fire the single buzz on a loop to approximate the pattern.
-    Vibration.vibrate();
-    const iosLoop = setInterval(() => Vibration.vibrate(), 1100);
-    return () => {
-      clearInterval(iosLoop);
-      Vibration.cancel();
-    };
+    Vibration.vibrate(VIBRATION_PATTERN, true);
+    return () => Vibration.cancel();
   }, []);
 
   const { block, kind, advanceMinutes } = alarm;

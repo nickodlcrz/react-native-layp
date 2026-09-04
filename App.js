@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, BackHandler } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -6,7 +6,7 @@ import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationC
 
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import { loadState, saveState } from "./src/storage";
-import { requestNotificationPermission, setupAndroidChannel, cancelTodoNotifications, rescheduleDailyBudgetNotification } from "./src/notifications";
+import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION } from "./src/notifications";
 import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
@@ -33,10 +33,12 @@ export default function App() {
     getAutoLockMinutes().then(setAutoLockMinutesState);
   }, []);
 
-  async function updateAutoLockMinutes(minutes) {
+  const updateAutoLockMinutes = useCallback(async (minutes) => {
     setAutoLockMinutesState(minutes);
     await setAutoLockMinutes(minutes);
-  }
+  }, []);
+  const handleLock = useCallback(() => setUnlocked(false), []);
+  const handleUnlock = useCallback(() => setUnlocked(true), []);
 
   // Auto-lock: instead of always locking the instant the app leaves the
   // foreground, this now respects the person's chosen grace period --
@@ -71,14 +73,14 @@ export default function App() {
             sitting on LAYP's own lock screen would never trigger the
             in-app popup at all -- only the OS notification would still
             fire, since that's scheduled independently of app state. */}
-        <AppShell onLock={() => setUnlocked(false)} autoLockMinutes={autoLockMinutes} onChangeAutoLockMinutes={updateAutoLockMinutes} />
+        <AppShell onLock={handleLock} autoLockMinutes={autoLockMinutes} onChangeAutoLockMinutes={updateAutoLockMinutes} />
         {!unlocked && (
           // Rendered as an overlay, not a replacement -- see the zIndex
           // note on ClassAlarmScreen for why a class alarm can still show
           // through this, the same way a phone's own alarm clock can ring
           // over its lock screen.
           <View style={[StyleSheet.absoluteFillObject, { zIndex: 500, elevation: 500 }]}>
-            <LockScreen onUnlock={() => setUnlocked(true)} />
+            <LockScreen onUnlock={handleUnlock} />
           </View>
         )}
       </View>
@@ -86,7 +88,7 @@ export default function App() {
   );
 }
 
-function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
+function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
   const systemScheme = useColorScheme();
   const [dark, setDark] = useState(systemScheme === "dark");
   const [tab, setTabRaw] = useState("home");
@@ -139,6 +141,79 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
     });
     return () => sub.remove();
   }, [classAlarm, showDailyBudget, budgetSubTab, tab]);
+
+  // Tapping a notification (as opposed to just seeing it appear) should
+  // take you straight to what it's about, not just open the app to
+  // whatever tab happened to be showing. Two hooks are needed: the
+  // listener below covers taps while the app is already running
+  // (foreground or backgrounded), and the getLastNotificationResponse
+  // check covers the app being launched by the tap itself -- that tap
+  // happens before this listener even exists, so it has to be read back
+  // explicitly.
+  //
+  // The handler is kept in a ref and reassigned on every render (cheap --
+  // it's just a function reference, not a subscription) so it always
+  // closes over the latest classAlarm/academicPeriods/etc. without needing
+  // to tear down and recreate the actual OS-level subscription itself,
+  // which is set up exactly once below.
+  const notificationHandlerRef = useRef(() => {});
+  useEffect(() => {
+    notificationHandlerRef.current = async (response) => {
+      const data = response?.notification?.request?.content?.data;
+      const actionId = response?.actionIdentifier;
+      const notifId = response?.notification?.request?.identifier;
+      if (!data?.type) return;
+
+      if (data.type === "dailyBudget") {
+        if (!actionId || actionId === DEFAULT_ACTION_IDENTIFIER) {
+          setTab("budget");
+          setBudgetSubTab("overview");
+          setShowDailyBudget(true);
+        }
+        return;
+      }
+
+      if (data.type === "classAlarm") {
+        if (actionId === CLASS_ALARM_CONFIRM_ACTION) {
+          // Same effect as sliding to confirm in the in-app popup: just
+          // silence it. Doesn't touch cancelledClasses since the class is
+          // still happening -- only clears today's *alarm*, not the class.
+          if (notifId) await dismissNotification(notifId);
+          setClassAlarm((current) => (current?.block?.subject?.id === data.subjectId ? null : current));
+          return;
+        }
+        if (actionId === CLASS_ALARM_CANCELLED_ACTION) {
+          if (notifId) await dismissNotification(notifId);
+          const block = findTodaysBlockForSubject(data.subjectId);
+          if (block) handleSuspendClass(block);
+          else setClassAlarm((current) => (current?.block?.subject?.id === data.subjectId ? null : current));
+          return;
+        }
+        // A plain tap (not an action button): the live alarm popup is
+        // driven by the in-app polling loop, not by this tap -- if the
+        // class is still "now" that popup is already showing or will be
+        // within a second. Tapping just makes sure you land on School
+        // either way.
+        setTab("school");
+      }
+    };
+  });
+
+  function findTodaysBlockForSubject(subjectId) {
+    const activePeriod = getActivePeriod(academicPeriods);
+    if (!activePeriod) return null;
+    const periodSubjects = subjectsForPeriod(subjects, activePeriod.id);
+    const subjectIds = periodSubjects.map((s) => s.id);
+    const entries = scheduleEntries.filter((e) => subjectIds.includes(e.subjectId));
+    const todaysBlocks = blocksForWeekday(periodSubjects, entries, todayExpoWeekday());
+    return todaysBlocks.find((b) => b.subject.id === subjectId) || null;
+  }
+
+  useEffect(() => {
+    const sub = addNotificationResponseListener((response) => notificationHandlerRef.current(response));
+    getLastNotificationResponse().then((response) => { if (response) notificationHandlerRef.current(response); });
+    return () => sub.remove();
+  }, []);
   // School: academic periods, the classes within them, and their weekly
   // meeting times. Seeded with one default active period so the School tab
   // is usable immediately on a brand-new install, before loadState resolves.
@@ -161,6 +236,7 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
   useEffect(() => {
     (async () => {
       await setupAndroidChannel();
+      await setupNotificationCategories();
       await requestNotificationPermission();
       const s = await loadState();
       if (s) {
@@ -254,10 +330,19 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
   }, [ready]);
 
   // In-app banner while the app is open, in addition to the real OS notification.
+  const lastCheckedMinuteRef = useRef(null);
   useEffect(() => {
     const check = () => {
       const now = new Date();
       const hhmm = now.toTimeString().slice(0, 5);
+      // The actual fire condition below only changes once a minute (it
+      // matches on an exact HH:MM string), so re-running the full scan
+      // over every todo 60 times within the same minute was pure wasted
+      // CPU. Still polling every 1s so a reminder is caught within a
+      // second of its minute starting -- just skipping the expensive part
+      // for the 59 ticks where nothing could possibly have changed.
+      if (hhmm === lastCheckedMinuteRef.current) return;
+      lastCheckedMinuteRef.current = hhmm;
       const todayKey = todayISO();
       todos.forEach((t) => {
         if (t.completed || t.reminderEnabled === false) return;
@@ -301,17 +386,23 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
   // toggles, same switches School already exposes. Only checks the active
   // period's schedule, same as everywhere else class reminders apply.
   const firedClassAlarmsRef = useRef({});
+  const lastCheckedClassMinuteRef = useRef(null);
   useEffect(() => {
     const check = () => {
       if (classAlarm) return; // one at a time -- don't stack a second popup over the first
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      // Same reasoning as the todo-reminder check above: the fire window
+      // is minute-wide, so there's nothing to gain from redoing this scan
+      // 60 times within the same minute.
+      if (nowMin === lastCheckedClassMinuteRef.current) return;
+      lastCheckedClassMinuteRef.current = nowMin;
       const activePeriod = getActivePeriod(academicPeriods);
       if (!activePeriod) return;
       const periodSubjects = subjectsForPeriod(subjects, activePeriod.id);
       const subjectIds = periodSubjects.map((s) => s.id);
       const entries = scheduleEntries.filter((e) => subjectIds.includes(e.subjectId));
       const todaysBlocks = blocksForWeekday(periodSubjects, entries, todayExpoWeekday());
-      const now = new Date();
-      const nowMin = now.getHours() * 60 + now.getMinutes();
       const todayKey = todayISO();
       const isCancelledToday = (entryId) => cancelledClasses.some((c) => c.date === todayKey && c.entryId === entryId);
 
@@ -370,6 +461,109 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
     );
   }
 
+  // Stable callback/data references for the always-mounted screens below.
+  // Without these, an inline `() => setTab("school")` (or a fresh
+  // `{ ...backup }` object literal) gets created fresh every single time
+  // AppShell re-renders -- which, now that every tab stays mounted instead
+  // of being swapped in and out, happens on *any* state change anywhere in
+  // the app, not just ones relevant to a given screen. A brand-new prop
+  // reference every render defeats React.memo on the screen components
+  // below regardless of whether that screen's own data actually changed,
+  // so a keystroke in a Todo form would otherwise still force Home,
+  // School, Budget, and Summary to all re-render and recompute along with it.
+  const goToSchool = useCallback(() => setTab("school"), []);
+  const goToTodo = useCallback(() => setTab("todo"), []);
+  const clearPrefillSubject = useCallback(() => setPrefillSubjectId(null), []);
+  const goToTodoForSubject = useCallback((subjectId) => { setPrefillSubjectId(subjectId); setTab("todo"); }, []);
+  const restoreBackup = useCallback((data) => {
+    setTodos(data.todos); setBills(data.bills); setExpenses(data.expenses);
+    setMoneyLog(data.moneyLog); setWeeklySummaries(data.weeklySummaries);
+    setSavingsLog(data.savingsLog); setGoals(data.goals); setLoans(data.loans);
+    setSplits(data.splits); setAccounts(data.accounts); setTransfers(data.transfers);
+    setDark(data.dark);
+    setDailyBudgetSettings(data.dailyBudgetSettings || { ...DEFAULT_DAILY_BUDGET_SETTINGS });
+    setDailyBudgetLog(data.dailyBudgetLog || []);
+    setAcademicPeriods(data.academicPeriods?.length ? data.academicPeriods : [newAcademicPeriod("Current Schedule")]);
+    setSubjects(data.subjects || []);
+    setScheduleEntries(data.scheduleEntries || []);
+    setSchoolDefaults(data.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
+  }, []);
+  const backupData = useMemo(
+    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults }),
+    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults]
+  );
+
+  function renderTabContent(t) {
+    switch (t) {
+      case "home":
+        return (
+          <HomeScreen
+            accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
+            loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
+            goals={goals} todos={todos}
+            periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries} cancelledClasses={cancelledClasses}
+            onViewSchedule={goToSchool}
+            onViewTodos={goToTodo}
+          />
+        );
+      case "todo":
+        return (
+          <TodoScreen
+            todos={todos} setTodos={setTodos}
+            subjects={activeSubjects}
+            prefillSubjectId={prefillSubjectId}
+            onConsumePrefillSubject={clearPrefillSubject}
+          />
+        );
+      case "school":
+        return (
+          <SchoolScreen
+            periods={academicPeriods} setPeriods={setAcademicPeriods}
+            subjects={subjects} setSubjects={setSubjects}
+            entries={scheduleEntries} setEntries={setScheduleEntries}
+            schoolDefaults={schoolDefaults} setSchoolDefaults={setSchoolDefaults}
+            todos={todos} setTodos={setTodos}
+            onGoToTodoForSubject={goToTodoForSubject}
+          />
+        );
+      case "budget":
+        return (
+          <BudgetScreen
+            moneyLog={moneyLog} setMoneyLog={setMoneyLog}
+            splits={splits} setSplits={setSplits}
+            bills={bills} setBills={setBills}
+            expenses={expenses} setExpenses={setExpenses}
+            weeklySummaries={weeklySummaries} setWeeklySummaries={setWeeklySummaries}
+            savingsLog={savingsLog} setSavingsLog={setSavingsLog}
+            loans={loans} setLoans={setLoans}
+            accounts={accounts} setAccounts={setAccounts}
+            transfers={transfers} setTransfers={setTransfers}
+            goals={goals} setGoals={setGoals}
+            dailyBudgetSettings={dailyBudgetSettings} setDailyBudgetSettings={setDailyBudgetSettings}
+            setDailyBudgetLog={setDailyBudgetLog}
+            dailyBudgetLog={dailyBudgetLog}
+            subTab={budgetSubTab} setSubTab={setBudgetSubTab}
+            showDailyBudget={showDailyBudget} setShowDailyBudget={setShowDailyBudget}
+          />
+        );
+      case "summary":
+        return (
+          <SummaryScreen
+            todos={todos} splits={splits} bills={bills} expenses={expenses}
+            moneyLog={moneyLog} weeklySummaries={weeklySummaries} savingsLog={savingsLog} loans={loans}
+            accounts={accounts} transfers={transfers}
+            backup={backupData}
+            onRestore={restoreBackup}
+            autoLockMinutes={autoLockMinutes}
+            onChangeAutoLockMinutes={onChangeAutoLockMinutes}
+          />
+        );
+      default:
+        return null;
+    }
+  }
+
+
   return (
     <ThemeContext.Provider value={{ theme, dark }}>
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
@@ -415,80 +609,30 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
           onSwipeLeft={() => swipeToTab(1)}
           onSwipeRight={() => swipeToTab(-1)}
         >
-        <ErrorBoundary resetKey={tab}>
-        <TabTransition transitionKey={tab} direction={tabDirection} style={styles.content}>
-          {tab === "home" && (
-            <HomeScreen
-              accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
-              loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
-              goals={goals} todos={todos}
-              periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries} cancelledClasses={cancelledClasses}
-              onViewSchedule={() => setTab("school")}
-              onViewTodos={() => setTab("todo")}
-            />
-          )}
-          {tab === "todo" && (
-            <TodoScreen
-              todos={todos} setTodos={setTodos}
-              subjects={activeSubjects}
-              prefillSubjectId={prefillSubjectId}
-              onConsumePrefillSubject={() => setPrefillSubjectId(null)}
-            />
-          )}
-          {tab === "school" && (
-            <SchoolScreen
-              periods={academicPeriods} setPeriods={setAcademicPeriods}
-              subjects={subjects} setSubjects={setSubjects}
-              entries={scheduleEntries} setEntries={setScheduleEntries}
-              schoolDefaults={schoolDefaults} setSchoolDefaults={setSchoolDefaults}
-              todos={todos} setTodos={setTodos}
-              onGoToTodoForSubject={(subjectId) => { setPrefillSubjectId(subjectId); setTab("todo"); }}
-            />
-          )}
-          {tab === "budget" && (
-            <BudgetScreen
-              moneyLog={moneyLog} setMoneyLog={setMoneyLog}
-              splits={splits} setSplits={setSplits}
-              bills={bills} setBills={setBills}
-              expenses={expenses} setExpenses={setExpenses}
-              weeklySummaries={weeklySummaries} setWeeklySummaries={setWeeklySummaries}
-              savingsLog={savingsLog} setSavingsLog={setSavingsLog}
-              loans={loans} setLoans={setLoans}
-              accounts={accounts} setAccounts={setAccounts}
-              transfers={transfers} setTransfers={setTransfers}
-              goals={goals} setGoals={setGoals}
-              dailyBudgetSettings={dailyBudgetSettings} setDailyBudgetSettings={setDailyBudgetSettings}
-              setDailyBudgetLog={setDailyBudgetLog}
-              dailyBudgetLog={dailyBudgetLog}
-              subTab={budgetSubTab} setSubTab={setBudgetSubTab}
-              showDailyBudget={showDailyBudget} setShowDailyBudget={setShowDailyBudget}
-            />
-          )}
-          {tab === "summary" && (
-            <SummaryScreen
-              todos={todos} splits={splits} bills={bills} expenses={expenses}
-              moneyLog={moneyLog} weeklySummaries={weeklySummaries} savingsLog={savingsLog} loans={loans}
-              accounts={accounts} transfers={transfers}
-              backup={{ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults }}
-              onRestore={(data) => {
-                setTodos(data.todos); setBills(data.bills); setExpenses(data.expenses);
-                setMoneyLog(data.moneyLog); setWeeklySummaries(data.weeklySummaries);
-                setSavingsLog(data.savingsLog); setGoals(data.goals); setLoans(data.loans);
-                setSplits(data.splits); setAccounts(data.accounts); setTransfers(data.transfers);
-                setDark(data.dark);
-                setDailyBudgetSettings(data.dailyBudgetSettings || { ...DEFAULT_DAILY_BUDGET_SETTINGS });
-                setDailyBudgetLog(data.dailyBudgetLog || []);
-                setAcademicPeriods(data.academicPeriods?.length ? data.academicPeriods : [newAcademicPeriod("Current Schedule")]);
-                setSubjects(data.subjects || []);
-                setScheduleEntries(data.scheduleEntries || []);
-                setSchoolDefaults(data.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
-              }}
-              autoLockMinutes={autoLockMinutes}
-              onChangeAutoLockMinutes={onChangeAutoLockMinutes}
-            />
-          )}
-        </TabTransition>
-        </ErrorBoundary>
+        <View style={{ flex: 1 }}>
+          {["home", "todo", "school", "budget", "summary"].map((t) => (
+            // Every screen stays mounted for the app's whole lifetime instead
+            // of being torn down and rebuilt on every switch -- `display`
+            // (not conditional rendering) is what hides the inactive ones,
+            // since that's a pure layout/paint toggle with no unmount, so
+            // whatever a screen computed on its last visit (memoized totals,
+            // scroll position, open forms) is still sitting there ready the
+            // instant you swipe back. The previous version's `{tab === "x" &&
+            // <X/>}` pattern unmounted and remounted the *entire* screen on
+            // every single switch -- for a screen like Budget or School that
+            // does real work on mount (schedule/category computations), that
+            // remount cost is exactly what showed up as "the tab content
+            // takes a moment to appear" even after the swipe gesture itself
+            // became smooth.
+            <View key={t} style={[{ flex: 1 }, tab !== t && { display: "none" }]} pointerEvents={tab === t ? "auto" : "none"}>
+              <ErrorBoundary resetKey={t}>
+                <TabTransition transitionKey={tab === t ? "active" : "inactive"} direction={tabDirection} style={styles.content}>
+                  {renderTabContent(t)}
+                </TabTransition>
+              </ErrorBoundary>
+            </View>
+          ))}
+        </View>
         </SwipeNavigator>
 
         <View style={[styles.tabBar, { borderTopColor: theme.line, backgroundColor: theme.card }]}>
@@ -501,6 +645,13 @@ function AppShell({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
     </ThemeContext.Provider>
   );
 }
+
+// Memoized so the outer App component re-rendering (e.g. the auto-lock
+// AppState listener firing) doesn't cascade into re-rendering everything
+// inside AppShell -- its props (onLock, autoLockMinutes,
+// onChangeAutoLockMinutes) are all stabilized above specifically so this
+// comparison actually has a chance to succeed.
+const AppShell = React.memo(AppShellComponent);
 
 function NavBtn({ icon: Icon, label, active, onPress, theme }) {
   return (
