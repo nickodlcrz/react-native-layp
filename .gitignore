@@ -12,3 +12,4 @@ web-build/
 .DS_Store
 /android/
 /ios/
+modules/layp-alarm/android/build/
