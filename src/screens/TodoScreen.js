@@ -2,15 +2,17 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Linking, Platform, Switch, Alert, Animated, LayoutAnimation, UIManager } from "react-native";
 import {
   CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, LayoutList, LayoutGrid, CalendarDays,
-  ChevronLeft, ChevronRight, AlertTriangle, ChevronDown, ChevronUp, Settings, Bell, BellOff,
+  ChevronLeft, ChevronRight, AlertTriangle, ChevronDown, ChevronUp, Settings, Bell, BellOff, AlarmClock,
 } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
-import { uid, todayISO, daysUntil, fmtDay, getWeekDates, confirmDelete } from "../utils";
+import { uid, todayISO, daysUntil, fmtDay, fmtTime12, getWeekDates, confirmDelete } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
+import TimePicker from "../components/TimePicker";
 import NotifyPicker from "../components/NotifyPicker";
-import { rescheduleTodoNotifications, cancelTodoNotifications } from "../notifications";
+import { rescheduleTodoNotifications, cancelTodoNotifications, rescheduleTodoAlarm, cancelTodoAlarm } from "../notifications";
+import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 
 // Old-architecture Android needs this opt-in for LayoutAnimation to do
 // anything at all (New Architecture/Fabric has it on by default, and this
@@ -79,11 +81,13 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
       const prev = todos.find((t) => t.id === editingId);
       const merged = { ...prev, ...data };
       const notificationIds = await rescheduleTodoNotifications(merged);
+      await rescheduleTodoAlarm(merged);
       setTodos((prevList) => prevList.map((t) => (t.id === editingId ? { ...merged, notificationIds } : t)));
       setEditingId(null);
     } else {
       const draft = { id: uid(), ...data, completed: false };
       const notificationIds = await rescheduleTodoNotifications(draft);
+      await rescheduleTodoAlarm(draft);
       setTodos((prev) => [...prev, { ...draft, notificationIds }]);
     }
     setShowForm(false);
@@ -102,7 +106,10 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
     const t = todos.find((x) => x.id === id);
     if (!t) return;
     const nowCompleted = !t.completed;
-    if (nowCompleted) await cancelTodoNotifications(t.notificationIds);
+    if (nowCompleted) {
+      await cancelTodoNotifications(t.notificationIds);
+      await cancelTodoAlarm(t.id);
+    }
     // Animates the row's departure from (or return to) the currently
     // filtered list -- without this, a task dropping out of Active the
     // instant it's checked off would just jump/pop rather than settle
@@ -115,6 +122,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
     const t = todos.find((x) => x.id === id);
     confirmDelete(Alert, "Delete this task?", `"${t?.title}" will be removed for good.`, async () => {
       if (t?.notificationIds) await cancelTodoNotifications(t.notificationIds);
+      await cancelTodoAlarm(id);
       setTodos((prev) => prev.filter((x) => x.id !== id));
       setEditingId((current) => (current === id ? null : current));
       if (editingId === id) setShowForm(false);
@@ -361,12 +369,16 @@ function TodoRowList({ t, subject, isExpanded, onToggle, onEdit, onRemove, onExp
             {t.dueDate ? (
               <Text style={[styles.metaText, { color: flagged || dleft < 0 ? ACCENT.ember : theme.textMuted }]}>
                 {dleft === 0 ? "Due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}
+                {t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""}
               </Text>
             ) : (
               <Text style={[styles.metaText, { color: theme.textMuted }]}>No due date</Text>
             )}
             {t.reminderEnabled !== false && (
               <Bell size={10} color={theme.textMuted} />
+            )}
+            {t.alarmEnabled && t.dueTime && (
+              <AlarmClock size={10} color={ACCENT.rust || ACCENT.gold} />
             )}
             {subtasks.length > 0 && (
               <Pressable onPress={() => onExpand(isExpanded ? null : t.id)} style={{ flexDirection: "row", alignItems: "center", gap: 2 }} accessibilityLabel={isExpanded ? "Collapse subtasks" : "Expand subtasks"}>
@@ -445,6 +457,12 @@ function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubta
                 <Text style={[styles.metaText, { color: theme.textMuted }]}>No reminder</Text>
               </View>
             )}
+            {t.alarmEnabled && t.dueTime && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                <AlarmClock size={10} color={ACCENT.rust || ACCENT.gold} />
+                <Text style={[styles.metaText, { color: ACCENT.rust || ACCENT.gold }]}>Alarm set</Text>
+              </View>
+            )}
           </View>
 
           {subject && (
@@ -453,7 +471,7 @@ function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubta
 
           <Text style={[styles.metaText, { color: flagged ? ACCENT.ember : theme.textMuted, marginTop: 4, fontWeight: "700" }]}>
             {t.dueDate
-              ? `Due ${fmtDay(t.dueDate)} · ${dleft === 0 ? "today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}`
+              ? `Due ${fmtDay(t.dueDate)}${t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""} · ${dleft === 0 ? "today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}`
               : "No due date"}
           </Text>
 
@@ -530,10 +548,14 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
   const [subjectId, setSubjectId] = useState(initial?.subjectId || presetSubjectId || null);
   const [hasDueDate, setHasDueDate] = useState(initial ? !!initial.dueDate : true);
   const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
+  const [hasDueTime, setHasDueTime] = useState(!!initial?.dueTime);
+  const [dueTime, setDueTime] = useState(initial?.dueTime || "08:00");
+  const [alarmEnabled, setAlarmEnabled] = useState(initial?.alarmEnabled === true);
   const [reminderEnabled, setReminderEnabled] = useState(initial?.reminderEnabled !== false);
   const [notify, setNotify] = useState(initial?.notify || { type: "daily", time: "08:00" });
   const [subtasks, setSubtasks] = useState(initial?.subtasks || []);
   const [subDraft, setSubDraft] = useState("");
+  const alarmReady = isNativeAlarmAvailable();
 
   function toggleHasDueDate() {
     setHasDueDate((on) => {
@@ -542,6 +564,20 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
       // due date gets turned off while it's selected, fall back to Daily
       // so the reminder keeps working instead of silently doing nothing.
       if (!next && notify.type === "once") setNotify((n) => ({ ...n, type: "daily" }));
+      // A due time (and the alarm that depends on it) only makes sense
+      // alongside a due date.
+      if (!next) {
+        setHasDueTime(false);
+        setAlarmEnabled(false);
+      }
+      return next;
+    });
+  }
+
+  function toggleHasDueTime() {
+    setHasDueTime((on) => {
+      const next = !on;
+      if (!next) setAlarmEnabled(false);
       return next;
     });
   }
@@ -580,7 +616,22 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
         </View>
         <Switch value={hasDueDate} onValueChange={toggleHasDueDate} trackColor={{ false: theme.line, true: ACCENT.gold }} thumbColor="#fff" />
       </View>
-      {hasDueDate && <View style={{ marginBottom: 12 }}><CalendarPicker value={dueDate} onChange={setDueDate} label="Due date" /></View>}
+      {hasDueDate && (
+        <View style={{ marginBottom: 12 }}>
+          <CalendarPicker value={dueDate} onChange={setDueDate} label="Due date" />
+        </View>
+      )}
+
+      {hasDueDate && (
+        <View style={[styles.toggleRow, { borderColor: theme.line }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.toggleLabel, { color: theme.text }]}>Time</Text>
+            <Text style={[styles.toggleSub, { color: theme.textMuted }]}>{hasDueTime ? "Due at a specific time" : "Due sometime that day"}</Text>
+          </View>
+          <Switch value={hasDueTime} onValueChange={toggleHasDueTime} trackColor={{ false: theme.line, true: ACCENT.gold }} thumbColor="#fff" />
+        </View>
+      )}
+      {hasDueDate && hasDueTime && <View style={{ marginBottom: 12 }}><TimePicker value={dueTime} onChange={setDueTime} label="Due time" /></View>}
 
       <View style={[styles.toggleRow, { borderColor: theme.line }]}>
         <View style={{ flex: 1 }}>
@@ -594,6 +645,26 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
         <Switch value={reminderEnabled} onValueChange={setReminderEnabled} trackColor={{ false: theme.line, true: ACCENT.leaf }} thumbColor="#fff" />
       </View>
       {reminderEnabled && <NotifyPicker notify={notify} setNotify={setNotify} allowOnce={hasDueDate} />}
+
+      <View style={[styles.toggleRow, { borderColor: theme.line }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.toggleLabel, { color: theme.text }]}>Alarm</Text>
+          <Text style={[styles.toggleSub, { color: theme.textMuted }]}>
+            {!hasDueDate || !hasDueTime
+              ? "Set a due date and time to enable a real ringing alarm"
+              : !alarmReady
+                ? "Rings like an alarm clock at the due time -- needs the LAYP Android build"
+                : "Rings like an alarm clock at the due time, even if LAYP is closed"}
+          </Text>
+        </View>
+        <Switch
+          value={alarmEnabled}
+          onValueChange={setAlarmEnabled}
+          disabled={!hasDueDate || !hasDueTime}
+          trackColor={{ false: theme.line, true: ACCENT.rust || ACCENT.gold }}
+          thumbColor="#fff"
+        />
+      </View>
 
       <Text style={[styles.label, { color: theme.textMuted }]}>Subtasks (optional)</Text>
       {subtasks.length > 0 && (
@@ -619,7 +690,7 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
             <Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text>
           </Pressable>
         )}
-        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ title: title.trim(), category, subjectId: category === "school" ? subjectId : null, dueDate: hasDueDate ? dueDate : null, reminderEnabled, notify, subtasks })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
+        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ title: title.trim(), category, subjectId: category === "school" ? subjectId : null, dueDate: hasDueDate ? dueDate : null, dueTime: hasDueDate && hasDueTime ? dueTime : null, alarmEnabled: hasDueDate && hasDueTime ? alarmEnabled : false, reminderEnabled, notify, subtasks })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add task"}</Text>
         </Pressable>
       </View>

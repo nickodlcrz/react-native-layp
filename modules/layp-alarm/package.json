@@ -1,0 +1,7 @@
+{
+  "name": "layp-alarm",
+  "version": "1.0.0",
+  "description": "Native Android alarm engine for LAYP -- AlarmManager + BroadcastReceiver + a full-screen lock-screen alarm Activity, replacing the old JS-timer-driven class alarm.",
+  "main": "index.js",
+  "license": "MIT"
+}

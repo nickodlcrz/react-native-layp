@@ -1,6 +1,13 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { daysUntil, fmtDateLong, fmtTime12, peso } from "./utils";
+import * as LaypAlarm from "../modules/layp-alarm";
+
+// Ids for a subject's "class starting now" alarm that were armed through
+// the native Kotlin alarm engine (see modules/layp-alarm) are prefixed so
+// cancelSubjectNotifications can tell them apart from a plain
+// expo-notifications id and route the cancel to the right place.
+const NATIVE_ALARM_PREFIX = "native:";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -172,6 +179,40 @@ export async function cancelTodoNotifications(ids) {
   }
 }
 
+// --- Task alarms ---
+//
+// Separate from the soft Reminder notification above: a task alarm is the
+// real ringing kind (sound, vibration, full-screen lock-screen UI), armed
+// through the same native Kotlin engine School's class alarms use (see
+// modules/layp-alarm). Only meaningful once a task has both a due date and
+// a due time -- there's no cross-platform equivalent, so on iOS (or an
+// Android build that hasn't linked the native module yet) this silently
+// does nothing and the ordinary Reminder notification still covers it.
+export async function rescheduleTodoAlarm(todo) {
+  if (!LaypAlarm.isNativeAlarmAvailable()) return false;
+  const id = `task:${todo.id}`;
+  if (todo.completed || !todo.alarmEnabled || !todo.dueDate || !todo.dueTime) {
+    await LaypAlarm.cancelAlarm(id);
+    return false;
+  }
+  const [hour, minute] = todo.dueTime.split(":").map(Number);
+  await LaypAlarm.updateAlarm({
+    id,
+    title: "\u23f0 Task due now",
+    body: todo.title,
+    hour,
+    minute,
+    date: todo.dueDate,
+    kind: "task",
+  });
+  return true;
+}
+
+export async function cancelTodoAlarm(todoId) {
+  if (!LaypAlarm.isNativeAlarmAvailable()) return;
+  await LaypAlarm.cancelAlarm(`task:${todoId}`);
+}
+
 // Loans get one simple one-time reminder at 9am on the due date -- these
 // aren't recurring like task reminders, since a loan has a single due
 // moment rather than an ongoing schedule.
@@ -271,9 +312,39 @@ async function scheduleWeekly(weekday, hour, minute, content) {
   });
 }
 
+// Arms the real, ringing "class starting now" alarm through the native
+// Kotlin engine (AlarmManager + a full-screen lock-screen Activity) rather
+// than an expo-notifications trigger -- see modules/layp-alarm. One native
+// alarm id per schedule entry (it already carries its own list of meeting
+// days), prefixed so cancelSubjectNotifications can recognize and route to
+// it later.
+async function scheduleNativeClassAlarm(subject, entry, hour, minute) {
+  if (!entry.days?.length) return null;
+  const id = `class:${subject.id}:${entry.id}`;
+  await LaypAlarm.updateAlarm({
+    id,
+    title: "\ud83d\udd14 Class starting now",
+    body: classBody(subject, entry),
+    hour,
+    minute,
+    days: entry.days,
+    repeatWeekly: true,
+    kind: "class",
+  });
+  return `${NATIVE_ALARM_PREFIX}${id}`;
+}
+
+async function cancelClassAlarmId(id) {
+  if (id.startsWith(NATIVE_ALARM_PREFIX)) {
+    await LaypAlarm.cancelAlarm(id.slice(NATIVE_ALARM_PREFIX.length));
+  } else {
+    await cancelTodoNotifications([id]);
+  }
+}
+
 export async function cancelSubjectNotifications(subject) {
   if (!subject?.notificationIds) return;
-  await cancelTodoNotifications(subject.notificationIds.class);
+  for (const id of subject.notificationIds.class || []) await cancelClassAlarmId(id);
   await cancelTodoNotifications(subject.notificationIds.advance);
 }
 
@@ -292,8 +363,16 @@ export async function rescheduleSubjectNotifications(subject, entries) {
     const [h, m] = (entry.startTime || "08:00").split(":").map(Number);
 
     if (subject.classReminderEnabled !== false) {
-      for (const weekday of entry.days) {
-        classIds.push(await scheduleWeekly(weekday, h, m, { title: "\ud83d\udd14 Class starting now", body: classBody(subject, entry), data: { type: "classAlarm", subjectId: subject.id } }));
+      if (LaypAlarm.isNativeAlarmAvailable()) {
+        const id = await scheduleNativeClassAlarm(subject, entry, h, m);
+        if (id) classIds.push(id);
+      } else {
+        // iOS, or an Android build made before this module was linked --
+        // falls back to the previous expo-notifications-based weekly
+        // trigger so class reminders keep working either way.
+        for (const weekday of entry.days) {
+          classIds.push(await scheduleWeekly(weekday, h, m, { title: "\ud83d\udd14 Class starting now", body: classBody(subject, entry), data: { type: "classAlarm", subjectId: subject.id } }));
+        }
       }
     }
 

@@ -1,0 +1,45 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!-- Exact-time scheduling for the alarm to ring at precisely the right
+       minute (Android 12+ requires SCHEDULE_EXACT_ALARM to be granted via
+       Settings -- see LaypAlarmModule.openExactAlarmSettings). -->
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.VIBRATE" />
+  <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application>
+    <receiver
+        android:name=".LaypAlarmReceiver"
+        android:exported="false" />
+
+    <!-- AlarmManager entries are wiped on reboot -- this puts every
+         still-pending alarm back on the clock as soon as the device (or
+         just the app, after an update) comes back up. -->
+    <receiver
+        android:name=".BootReceiver"
+        android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+
+    <activity
+        android:name=".AlarmActivity"
+        android:exported="false"
+        android:launchMode="singleInstance"
+        android:excludeFromRecents="true"
+        android:screenOrientation="portrait"
+        android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+    <service
+        android:name=".AlarmSoundService"
+        android:exported="false"
+        android:foregroundServiceType="mediaPlayback" />
+  </application>
+</manifest>

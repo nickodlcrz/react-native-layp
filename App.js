@@ -11,6 +11,7 @@ import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyB
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
+import { isNativeAlarmAvailable } from "./modules/layp-alarm";
 import LockScreen from "./src/screens/LockScreen";
 import ClassAlarmScreen from "./src/components/ClassAlarmScreen";
 import { getAutoLockMinutes, setAutoLockMinutes, AUTO_LOCK_OPTIONS, DEFAULT_AUTO_LOCK_MINUTES } from "./src/autoLockPreference";
@@ -378,13 +379,12 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     return () => clearInterval(iv);
   }, [todos]);
 
-  // Alarm-style class reminders: a full-screen popup (ClassAlarmScreen)
-  // that takes over while the app is in the foreground, on top of the
-  // ordinary OS notification (see notifications.js) that still fires
-  // either way in case the app is backgrounded. Entirely optional per
-  // subject -- gated on that subject's own ClassReminder / AdvanceReminder
-  // toggles, same switches School already exposes. Only checks the active
-  // period's schedule, same as everywhere else class reminders apply.
+  // Alarm-style class reminders. The "class starting now" ring itself is
+  // now armed natively (see modules/layp-alarm and
+  // notifications.js#rescheduleSubjectNotifications) so it keeps working
+  // even when the app is closed -- this effect only still owns the
+  // "advance" heads-up popup, plus the "class" popup as a fallback for
+  // iOS or an Android build that hasn't linked the native module yet.
   const firedClassAlarmsRef = useRef({});
   const lastCheckedClassMinuteRef = useRef(null);
   useEffect(() => {
@@ -409,7 +409,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
       for (const block of todaysBlocks) {
         if (isCancelledToday(block.entry.id)) continue; // marked suspended earlier today -- don't alarm for it again
         const { subject } = block;
-        if (subject.classReminderEnabled && nowMin >= block.startMin && nowMin < block.startMin + 1) {
+        if (!isNativeAlarmAvailable() && subject.classReminderEnabled && nowMin >= block.startMin && nowMin < block.startMin + 1) {
           const key = `${todayKey}-${block.entry.id}-class`;
           if (!firedClassAlarmsRef.current[key]) {
             firedClassAlarmsRef.current[key] = true;
@@ -452,14 +452,6 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   }
 
   const todayLabel = new Date().toLocaleDateString("en-PH", { weekday: "long", month: "short", day: "numeric" });
-
-  if (!ready) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg, alignItems: "center", justifyContent: "center" }]}>
-        <Text style={{ color: theme.textMuted }}>Loading LAYP...</Text>
-      </SafeAreaView>
-    );
-  }
 
   // Stable callback/data references for the always-mounted screens below.
   // Without these, an inline `() => setTab("school")` (or a fresh
@@ -563,6 +555,19 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     }
   }
 
+
+  // All hooks for this component are declared above this point -- this
+  // early return for the loading screen has to come after every one of
+  // them (not interleaved, as it originally was) or the hook count
+  // changes between the "loading" render and the first "ready" render,
+  // which React detects as a Rules-of-Hooks violation and throws on.
+  if (!ready) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg, alignItems: "center", justifyContent: "center" }]}>
+        <Text style={{ color: theme.textMuted }}>Loading LAYP...</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <ThemeContext.Provider value={{ theme, dark }}>
