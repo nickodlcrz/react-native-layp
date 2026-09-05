@@ -25,6 +25,12 @@ export function isNativeAlarmAvailable() {
 //   id: string -- groups every occurrence scheduled for this alarm, so a
 //     later cancelAlarm(id)/updateAlarm(id, ...) call affects all of them.
 //   title: string, body?: string
+//   heading?: string -- big/prominent line on the ring screen's detail card
+//     (e.g. a subject code, or a task's title). Falls back to `title`.
+//   subheading?: string -- secondary line under `heading` (e.g. a class
+//     description).
+//   details?: string[] -- short, already-formatted rows shown below the
+//     divider (schedule time, room, instructor, due date, notes, ...).
 //   hour: number, minute: number
 //   days?: number[] -- Expo/this app's weekday convention (1=Sun...7=Sat).
 //     Omit for a one-shot alarm instead of a weekly-repeating one.
@@ -48,6 +54,19 @@ export async function updateAlarm(config) {
 export async function cancelAlarm(id) {
   if (!LaypAlarmNative) return false;
   await LaypAlarmNative.cancelAlarm(id);
+  return true;
+}
+
+// Marks `id` (the same groupId passed to scheduleAlarm/updateAlarm)
+// suspended for just today -- the next time that occurrence is due to
+// ring natively, it's silently skipped (no sound, no lock-screen popup),
+// then the flag clears itself so the alarm resumes normally the following
+// week. Safe to call ahead of the alarm actually firing (e.g. right after
+// an advance reminder) -- it doesn't need the alarm to be currently
+// ringing.
+export async function suspendAlarmToday(id) {
+  if (!LaypAlarmNative) return false;
+  await LaypAlarmNative.suspendAlarmToday(id);
   return true;
 }
 
@@ -83,4 +102,14 @@ export function addAlarmSnoozedListener(callback) {
 export function addAlarmDismissedListener(callback) {
   if (!LaypAlarmNative) return { remove() {} };
   return LaypAlarmNative.addListener("onAlarmDismissed", callback);
+}
+
+// Fired when the person marks "class suspended/cancelled today" from the
+// native ring screen itself (as opposed to the in-app advance popup, which
+// already calls onSuspend locally) -- callback receives { id, date, kind }
+// so App.js can mirror the same cancelledClasses bookkeeping either path
+// takes.
+export function addAlarmSuspendedListener(callback) {
+  if (!LaypAlarmNative) return { remove() {} };
+  return LaypAlarmNative.addListener("onAlarmSuspended", callback);
 }

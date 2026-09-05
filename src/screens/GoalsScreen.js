@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import { Plus, X, Pencil, Trash2 } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
-import { peso, uid, fmtDay, goalProgress, unallocatedSavings, confirmDelete } from "../utils";
+import { peso, uid, fmtDay, goalProgress, unallocatedSavings } from "../utils";
 import { validate, goalSchema } from "../validation";
 import CalendarPicker from "../components/CalendarPicker";
+import { confirmDelete } from "../components/ConfirmModal";
 import EmptyState from "../components/EmptyState";
 
 export default function GoalsScreen({ goals, setGoals, savingsLog }) {
@@ -26,7 +27,7 @@ export default function GoalsScreen({ goals, setGoals, savingsLog }) {
     setEditingGoalId(null);
   }
   function removeGoal(g) {
-    confirmDelete(Alert, "Delete this goal?", `"${g.name}" will be removed. Its saved money stays in your general savings.`, () => {
+    confirmDelete("Delete this goal?", `"${g.name}" will be removed. Its saved money stays in your general savings.`, () => {
       setGoals((prev) => prev.filter((x) => x.id !== g.id));
     });
   }

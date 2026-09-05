@@ -1,14 +1,15 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, FlatList, StyleSheet } from "react-native";
 import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from "lucide-react-native";
 import { useTheme, ACCENT, INCOME_CATEGORIES } from "../theme";
-import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, confirmDelete, computeDailyBudgetReview } from "../utils";
+import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview } from "../utils";
 import { categoryBreakdown } from "../selectors";
 import { validate, expenseSchema } from "../validation";
 import { notifyBudgetThreshold } from "../notifications";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
+import { confirmDelete } from "../components/ConfirmModal";
 
 export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [] }) {
   const { theme } = useTheme();
@@ -46,7 +47,7 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
   }
   const remove = useCallback((id) => {
     const e = expenses.find((x) => x.id === id);
-    confirmDelete(Alert, "Delete this expense?", `"${e?.name}" (${peso(e?.amount || 0)}) will be removed for good.`, () => {
+    confirmDelete("Delete this expense?", `"${e?.name}" (${peso(e?.amount || 0)}) will be removed for good.`, () => {
       setExpenses((prev) => prev.filter((x) => x.id !== id));
       setEditingId((current) => (current === id ? null : current));
       if (editingId === id) setShowForm(false);

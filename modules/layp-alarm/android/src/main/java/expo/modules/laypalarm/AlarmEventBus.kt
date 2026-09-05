@@ -10,6 +10,7 @@ object AlarmEventBus {
     fun onFired(alarm: StoredAlarm)
     fun onSnoozed(alarm: StoredAlarm, minutes: Int)
     fun onDismissed(alarm: StoredAlarm)
+    fun onSuspended(alarm: StoredAlarm, dateIso: String)
   }
 
   private val listeners = mutableListOf<Listener>()
@@ -37,5 +38,16 @@ object AlarmEventBus {
   @Synchronized
   fun notifyDismissed(alarm: StoredAlarm) {
     listeners.forEach { it.onDismissed(alarm) }
+  }
+
+  // Fired when the person marks "class suspended/cancelled today" right
+  // from the native ring screen -- lets JS mirror the same
+  // cancelledClasses bookkeeping it already does when suspending from the
+  // in-app advance popup (see App.js#handleSuspendClass), so a home-screen
+  // "cancelled" badge stays correct no matter which UI the suspend came
+  // from.
+  @Synchronized
+  fun notifySuspended(alarm: StoredAlarm, dateIso: String) {
+    listeners.forEach { it.onSuspended(alarm, dateIso) }
   }
 }

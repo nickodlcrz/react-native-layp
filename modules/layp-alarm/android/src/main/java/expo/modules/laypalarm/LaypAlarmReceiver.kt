@@ -4,6 +4,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.Calendar
 
 // The bridge between Android's alarm system and LAYP's alarm experience --
 // this is what AlarmManager actually launches at the scheduled time, and it
@@ -14,8 +17,19 @@ class LaypAlarmReceiver : BroadcastReceiver() {
     val alarm = AlarmStore.get(context, key) ?: return
 
     // Re-arm next week's occurrence immediately -- dismissing (or even
-    // just sitting on) today's alarm should never cost next week's.
+    // just sitting on) today's alarm should never cost next week's. Done
+    // before the skip check below so a suspended-today class still comes
+    // back normally next time it meets.
     AlarmScheduler.rearmIfWeekly(context, alarm)
+
+    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().time)
+    if (AlarmStore.consumeSkipIfToday(context, alarm.groupId, today)) {
+      // Marked "class suspended/cancelled" earlier today (from the in-app
+      // advance popup, or a previous occurrence's ring screen) -- honor it
+      // silently: no sound, no lock-screen activity, nothing for the
+      // person to dismiss for a class that isn't actually happening.
+      return
+    }
 
     val soundIntent = Intent(context, AlarmSoundService::class.java).apply {
       putExtra(AlarmScheduler.EXTRA_KEY, key)

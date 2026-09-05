@@ -36,13 +36,27 @@ class AlarmSoundService : Service() {
     val key = intent?.getStringExtra(AlarmScheduler.EXTRA_KEY)
     val alarm = key?.let { AlarmStore.get(this, it) }
 
-    startForeground(NOTIFICATION_ID, buildNotification(alarm?.title ?: "LAYP Alarm", alarm?.body ?: ""))
+    startForeground(NOTIFICATION_ID, buildNotification(alarm))
     startSound()
     startVibration()
     return START_NOT_STICKY
   }
 
-  private fun buildNotification(title: String, body: String): Notification {
+  // The heads-up notification shown alongside the ring screen -- built from
+  // the same heading/subheading/details the ring screen itself uses (see
+  // AlarmActivity) rather than just the short one-line `body`, so glancing
+  // at the notification shade (or a paired wearable) gives the same detail
+  // a look at the phone screen would.
+  private fun buildNotification(alarm: StoredAlarm?): Notification {
+    val title = alarm?.title ?: "LAYP Alarm"
+    val summary = alarm?.subheading?.takeIf { it.isNotBlank() } ?: alarm?.body ?: ""
+    val bigText = buildString {
+      if (!alarm?.heading.isNullOrBlank()) appendLine(alarm?.heading)
+      if (!alarm?.subheading.isNullOrBlank()) appendLine(alarm?.subheading)
+      alarm?.details.orEmpty().forEach { appendLine(it) }
+      if (isEmpty() && alarm?.body != null) append(alarm.body)
+    }.trim()
+
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       val nm = getSystemService(NotificationManager::class.java)
       if (nm.getNotificationChannel(CHANNEL_ID) == null) {
@@ -69,7 +83,8 @@ class AlarmSoundService : Service() {
 
     return Notification.Builder(this, CHANNEL_ID)
       .setContentTitle(title)
-      .setContentText(body)
+      .setContentText(summary)
+      .setStyle(Notification.BigTextStyle().bigText(bigText.ifBlank { summary }))
       .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
       .setOngoing(true)
       .setCategory(Notification.CATEGORY_ALARM)

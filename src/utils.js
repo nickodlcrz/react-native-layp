@@ -317,18 +317,12 @@ export function dailyBudgetNotificationContent(review) {
 }
 
 // --- Shared UI helpers ---
-
-// Every destructive delete across the app should use this exact pattern
-// (title, message, Cancel/Delete-destructive) -- the same one School's
-// subject delete already used, now the standard everywhere instead of only
-// there. Native Alert.alert requires RN's Alert module, passed in by the
-// caller (kept out of utils.js's own imports to keep this a pure module).
-export function confirmDelete(Alert, title, message, onConfirm) {
-  Alert.alert(title, message, [
-    { text: "Cancel", style: "cancel" },
-    { text: "Delete", style: "destructive", onPress: onConfirm },
-  ]);
-}
+//
+// Destructive confirmations (delete, replace-data, etc.) go through
+// src/components/ConfirmModal.js's confirmDelete/confirmAction instead of
+// RN's Alert.alert -- that dialog can't be restyled at all (always renders
+// as the bare platform AlertDialog), so a themed in-app modal replaced it
+// everywhere. See that file for the actual implementation.
 
 // --- Account management, mirroring how budget splits work ---
 

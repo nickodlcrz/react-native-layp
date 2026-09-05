@@ -25,6 +25,14 @@ export const DEFAULT_ACTION_IDENTIFIER = Notifications.DEFAULT_ACTION_IDENTIFIER
 export const CLASS_ALARM_CONFIRM_ACTION = "CONFIRM";
 export const CLASS_ALARM_CANCELLED_ACTION = "CANCELLED";
 const CLASS_ALARM_CATEGORY = "layp-class-alarm-actions";
+export const CLASS_CHECKIN_YES_ACTION = "CHECKIN_YES";
+export const CLASS_CHECKIN_NONE_ACTION = "CHECKIN_NONE";
+const CLASS_CHECKIN_CATEGORY = "layp-class-checkin-actions";
+// How long before a class's own alarm the "Do you have class today?"
+// check-in fires. Fixed rather than user-configurable to keep this simple
+// -- long enough to actually be useful (worth checking your schedule for),
+// short enough to still be "this morning" rather than the night before.
+const CLASS_CHECKIN_MINUTES_BEFORE = 60;
 
 // Lets the class-starting-now / advance notification carry two action
 // buttons right on the notification itself (lock screen included), so it
@@ -42,6 +50,10 @@ export async function setupNotificationCategories() {
     // process the action, then it can return to the background on its own.
     { identifier: CLASS_ALARM_CONFIRM_ACTION, buttonTitle: "I'm up \u2713" },
     { identifier: CLASS_ALARM_CANCELLED_ACTION, buttonTitle: "Class cancelled", options: { isDestructive: true } },
+  ]);
+  await Notifications.setNotificationCategoryAsync(CLASS_CHECKIN_CATEGORY, [
+    { identifier: CLASS_CHECKIN_YES_ACTION, buttonTitle: "Yes" },
+    { identifier: CLASS_CHECKIN_NONE_ACTION, buttonTitle: "None", options: { isDestructive: true } },
   ]);
 }
 
@@ -188,7 +200,10 @@ export async function cancelTodoNotifications(ids) {
 // a due time -- there's no cross-platform equivalent, so on iOS (or an
 // Android build that hasn't linked the native module yet) this silently
 // does nothing and the ordinary Reminder notification still covers it.
-export async function rescheduleTodoAlarm(todo) {
+// `subject` is optional -- pass the todo's linked school subject (when
+// todo.category === "school") so the ring screen/notification can show
+// which class it's for, not just the bare task title.
+export async function rescheduleTodoAlarm(todo, subject) {
   if (!LaypAlarm.isNativeAlarmAvailable()) return false;
   const id = `task:${todo.id}`;
   if (todo.completed || !todo.alarmEnabled || !todo.dueDate || !todo.dueTime) {
@@ -196,10 +211,19 @@ export async function rescheduleTodoAlarm(todo) {
     return false;
   }
   const [hour, minute] = todo.dueTime.split(":").map(Number);
+  const details = [`\u{1F4C5} Due ${fmtDateLong(todo.dueDate)} \u00b7 ${fmtTime12(todo.dueTime)}`];
+  if (subject) details.push(`\u{1F393} ${subject.code}${subject.description ? ` \u2014 ${subject.description}` : ""}`);
+  if (todo.subtasks?.length) {
+    const done = todo.subtasks.filter((s) => s.done).length;
+    details.push(`\u2705 ${done}/${todo.subtasks.length} subtasks done`);
+  }
   await LaypAlarm.updateAlarm({
     id,
     title: "\u23f0 Task due now",
     body: todo.title,
+    heading: todo.title,
+    subheading: subject ? subject.code : (todo.category ? todo.category[0].toUpperCase() + todo.category.slice(1) : ""),
+    details,
     hour,
     minute,
     date: todo.dueDate,
@@ -251,6 +275,34 @@ export async function rescheduleDailyBudgetNotification(previousId, settings, co
   });
 }
 
+// One-time cleanup for a bug in an earlier version: a race between two
+// overlapping reschedule calls could leave an extra, permanently untracked
+// copy of this repeating notification on the device (see the debounce +
+// request-token guard around this function's call site in App.js). Only
+// dailyBudgetNotifId was ever remembered, so any duplicate had no way to
+// get cancelled on its own -- this sweeps every *scheduled* notification
+// (not yet-delivered ones sitting in the shade) tagged data.type ===
+// "dailyBudget" and cancels all of them, so the very next
+// rescheduleDailyBudgetNotification call above starts from a clean slate
+// instead of adding yet another copy alongside existing duplicates. Safe
+// to call on every app start -- it's a no-op once there's nothing left to
+// clean up.
+export async function cleanupDuplicateDailyBudgetNotifications() {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const dupes = scheduled.filter((n) => n.content?.data?.type === "dailyBudget");
+    for (const n of dupes) {
+      try {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      } catch (e) {
+        // already gone -- fine
+      }
+    }
+  } catch (e) {
+    // best-effort cleanup; a failure here shouldn't block the app
+  }
+}
+
 // --- Notification tap handling ---
 //
 // Lets a screen react when the person taps a delivered notification (as
@@ -286,7 +338,19 @@ export async function getLastNotificationResponse() {
 function classBody(subject, entry) {
   const time = `${fmtTime12(entry.startTime)} \u2013 ${fmtTime12(entry.endTime)}`;
   const room = subject.room ? `\nRoom ${subject.room}` : "";
-  return `${subject.code} \u2014 ${subject.description}\n${time}${room}`;
+  const professor = subject.professor ? `\n${subject.professor}` : "";
+  return `${subject.code} \u2014 ${subject.description}\n${time}${room}${professor}`;
+}
+
+// Short, already-formatted rows for the ring screen's detail card (native
+// AlarmActivity, and the in-app ClassAlarmScreen) -- one line per known
+// fact about the meeting, skipping anything the subject hasn't filled in.
+function classDetailLines(subject, entry) {
+  const lines = [`\u{1F550} ${fmtTime12(entry.startTime)} \u2013 ${fmtTime12(entry.endTime)}`];
+  if (subject.room) lines.push(`\u{1F4CD} Room ${subject.room}`);
+  if (subject.professor) lines.push(`\u{1F9D1}\u200D\u{1F3EB} ${subject.professor}`);
+  if (subject.notes) lines.push(`\u{1F4DD} ${subject.notes}`);
+  return lines;
 }
 
 async function scheduleWeekly(weekday, hour, minute, content) {
@@ -325,6 +389,9 @@ async function scheduleNativeClassAlarm(subject, entry, hour, minute) {
     id,
     title: "\ud83d\udd14 Class starting now",
     body: classBody(subject, entry),
+    heading: subject.code || "Class starting now",
+    subheading: subject.description || "",
+    details: classDetailLines(subject, entry),
     hour,
     minute,
     days: entry.days,
@@ -332,6 +399,65 @@ async function scheduleNativeClassAlarm(subject, entry, hour, minute) {
     kind: "class",
   });
   return `${NATIVE_ALARM_PREFIX}${id}`;
+}
+
+// Marks a class's native "starting now" alarm suspended for just today --
+// called both from the in-app advance-reminder popup (App.js#
+// handleSuspendClass) and, symmetrically, whenever the native ring screen's
+// own "Class suspended today?" option fires (see addAlarmSuspendedListener
+// below), so either path keeps the other in sync.
+export async function suspendClassAlarmToday(subjectId, entryId) {
+  if (!LaypAlarm.isNativeAlarmAvailable()) return;
+  await LaypAlarm.suspendAlarmToday(`class:${subjectId}:${entryId}`);
+}
+
+// callback receives { id: "class:<subjectId>:<entryId>", date, kind }.
+// Only fires for a suspend that happened natively (the in-app popup's own
+// suspend button already updates cancelledClasses directly in App.js).
+export function addClassAlarmSuspendedListener(callback) {
+  return LaypAlarm.addAlarmSuspendedListener((event) => {
+    if (event?.kind !== "class") return;
+    const parts = (event.id || "").split(":");
+    if (parts[0] !== "class" || parts.length < 3) return;
+    callback({ subjectId: parts[1], entryId: parts[2], date: event.date });
+  });
+}
+
+// "Do you have class today?" -- a lighter-weight, earlier heads-up than
+// the actual class alarm, for the common case where a class is
+// suspended/cancelled and the person already knows before the alarm's own
+// time comes around. Tapping "None" reuses the exact same suspend
+// machinery as the in-app/native "Class suspended today?" option (see
+// addClassAlarmSuspendedListener's App.js counterpart, handleSuspendClass)
+// so it's honored the same way either alarm would have checked it.
+// Deliberately a plain expo-notification (not a native ring) -- this is a
+// question to answer when convenient, not something that needs to wake
+// the phone up like a real alarm.
+async function scheduleClassCheckIn(subject, entry, hour, minute) {
+  const ids = [];
+  for (const weekday of entry.days) {
+    let total = hour * 60 + minute - CLASS_CHECKIN_MINUTES_BEFORE;
+    let wd = weekday;
+    if (total < 0) {
+      total += 24 * 60;
+      wd = wd === 1 ? 7 : wd - 1;
+    }
+    const oh = Math.floor(total / 60);
+    const om = total % 60;
+    ids.push(
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Do you have class today?",
+          body: `${subject.code} \u2014 ${subject.description}, ${fmtTime12(entry.startTime)}`,
+          sound: true,
+          categoryIdentifier: CLASS_CHECKIN_CATEGORY,
+          data: { type: "classCheckIn", subjectId: subject.id, entryId: entry.id },
+        },
+        trigger: Platform.OS === "android" ? { weekday: wd, hour: oh, minute: om, repeats: true, channelId: "layp-reminders" } : { weekday: wd, hour: oh, minute: om, repeats: true },
+      })
+    );
+  }
+  return ids;
 }
 
 async function cancelClassAlarmId(id) {
@@ -346,18 +472,20 @@ export async function cancelSubjectNotifications(subject) {
   if (!subject?.notificationIds) return;
   for (const id of subject.notificationIds.class || []) await cancelClassAlarmId(id);
   await cancelTodoNotifications(subject.notificationIds.advance);
+  await cancelTodoNotifications(subject.notificationIds.checkIn);
 }
 
 // Cancels this subject's previous notifications, then schedules fresh ones
 // from its current reminder settings and the full list of schedule entries
-// currently belonging to it. Returns the new { class, advance } id arrays to
-// store back on the subject. Pass an empty `entries` array (or call
-// cancelSubjectNotifications directly) to just stop reminders, e.g. when the
-// subject's period is no longer the active one.
+// currently belonging to it. Returns the new { class, advance, checkIn } id
+// arrays to store back on the subject. Pass an empty `entries` array (or
+// call cancelSubjectNotifications directly) to just stop reminders, e.g.
+// when the subject's period is no longer the active one.
 export async function rescheduleSubjectNotifications(subject, entries) {
   await cancelSubjectNotifications(subject);
   const classIds = [];
   const advanceIds = [];
+  const checkInIds = [];
 
   for (const entry of entries) {
     const [h, m] = (entry.startTime || "08:00").split(":").map(Number);
@@ -374,6 +502,7 @@ export async function rescheduleSubjectNotifications(subject, entries) {
           classIds.push(await scheduleWeekly(weekday, h, m, { title: "\ud83d\udd14 Class starting now", body: classBody(subject, entry), data: { type: "classAlarm", subjectId: subject.id } }));
         }
       }
+      checkInIds.push(...(await scheduleClassCheckIn(subject, entry, h, m)));
     }
 
     if (subject.advanceReminderEnabled) {
@@ -396,7 +525,7 @@ export async function rescheduleSubjectNotifications(subject, entries) {
     }
   }
 
-  return { class: classIds, advance: advanceIds };
+  return { class: classIds, advance: advanceIds, checkIn: checkInIds };
 }
 
 // Fires immediately (not scheduled ahead of time) the moment a spend

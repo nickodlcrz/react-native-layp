@@ -6,14 +6,15 @@ import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationC
 
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import { loadState, saveState } from "./src/storage";
-import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION } from "./src/notifications";
+import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
 import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
-import { isNativeAlarmAvailable } from "./modules/layp-alarm";
+import { isNativeAlarmAvailable, getAlarmStatus, openExactAlarmSettings, openBatteryOptimizationSettings } from "./modules/layp-alarm";
 import LockScreen from "./src/screens/LockScreen";
 import ClassAlarmScreen from "./src/components/ClassAlarmScreen";
+import { ConfirmModalHost } from "./src/components/ConfirmModal";
 import { getAutoLockMinutes, setAutoLockMinutes, AUTO_LOCK_OPTIONS, DEFAULT_AUTO_LOCK_MINUTES } from "./src/autoLockPreference";
 
 import HomeScreen from "./src/screens/HomeScreen";
@@ -125,6 +126,35 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   const [reminderBanner, setReminderBanner] = useState(null);
   const [classAlarm, setClassAlarm] = useState(null); // { block, kind: "class" | "advance", advanceMinutes } | null
   const [cancelledClasses, setCancelledClasses] = useState([]); // [{ date, entryId }] -- classes marked suspended/cancelled for a specific day, from the alarm popup
+  const [alarmReliabilityBanner, setAlarmReliabilityBanner] = useState(null); // { exact: bool, battery: bool } | null -- surfaced once so real alarms don't silently degrade to inexact/Doze-delayed timing
+
+  // Checked once on launch: if the OS-level "Alarms & reminders" permission
+  // hasn't been granted (Android 12+) or the app isn't exempted from
+  // battery optimization, every native alarm (class + task) can silently
+  // fall back to inexact, Doze-batched timing -- which looks like "the
+  // alarm rang late" with no error anywhere. Surfacing it once up front is
+  // cheaper than debugging phantom delay reports per device.
+  useEffect(() => {
+    if (!isNativeAlarmAvailable()) return;
+    getAlarmStatus().then((status) => {
+      if (!status) return;
+      if (!status.exactAlarmsAllowed || !status.ignoringBatteryOptimizations) {
+        setAlarmReliabilityBanner({ exact: !status.exactAlarmsAllowed, battery: !status.ignoringBatteryOptimizations });
+      }
+    });
+  }, []);
+
+  // A class suspended natively (from the lock-screen ring screen's own
+  // "Class suspended today?" option) needs the same cancelledClasses entry
+  // the in-app advance popup already writes -- otherwise Home's "cancelled"
+  // badge and the JS polling loop's isCancelledToday check wouldn't know
+  // about a suspend that happened while the app was backgrounded/killed.
+  useEffect(() => {
+    const sub = addClassAlarmSuspendedListener(({ entryId, date }) => {
+      setCancelledClasses((prev) => (prev.some((c) => c.date === date && c.entryId === entryId) ? prev : [...prev, { date, entryId }]));
+    });
+    return () => sub.remove();
+  }, []);
 
   // Hardware back button: close whatever's "on top" first (the class
   // alarm is deliberately NOT closable this way -- it should only ever be
@@ -197,6 +227,25 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
         // either way.
         setTab("school");
       }
+
+      if (data.type === "classCheckIn") {
+        if (notifId) await dismissNotification(notifId);
+        if (actionId === CLASS_CHECKIN_NONE_ACTION) {
+          // Same suspend path the ring screen's own "Class suspended
+          // today?" option uses -- marks cancelledClasses and tells the
+          // native engine to skip today's alarm for this entry, so
+          // answering "None" here actually prevents the alarm later, not
+          // just this notification.
+          const block = findTodaysBlockForSubject(data.subjectId);
+          if (block) handleSuspendClass(block);
+          return;
+        }
+        // "Yes" (or a plain tap): nothing to do -- the class alarm rings
+        // normally, same as if this check-in had never been answered.
+        if (!actionId || actionId === DEFAULT_ACTION_IDENTIFIER || actionId === CLASS_CHECKIN_YES_ACTION) {
+          setTab("school");
+        }
+      }
     };
   });
 
@@ -239,6 +288,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
       await setupAndroidChannel();
       await setupNotificationCategories();
       await requestNotificationPermission();
+      await cleanupDuplicateDailyBudgetNotifications();
       const s = await loadState();
       if (s) {
         setTodos(s.todos || []);
@@ -301,14 +351,37 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   // the app cancels + reschedules the repeating daily notification any time
   // the numbers behind it change (new expense, new income, model edited,
   // reminder settings changed) -- see dailyBudgetNotificationContent.
+  //
+  // Debounced (rather than firing on every single dependency change) and
+  // guarded with a request token: without both of these, logging a few
+  // expenses back-to-back could fire this effect twice before the first
+  // async reschedule finished. Both calls would read the same
+  // (not-yet-updated) tracked id, both would cancel it, and both would
+  // schedule a brand-new *repeating* notification -- but only one of the
+  // two new ids ever gets saved to state, so the other became a
+  // permanently untracked, never-cancelled duplicate that just kept firing
+  // every day alongside the real one. The token below makes sure only the
+  // most recent reschedule call is ever trusted; a stale one cancels the
+  // notification it just created instead of leaving it orphaned.
+  const dailyBudgetRequestRef = useRef(0);
   useEffect(() => {
     if (!ready) return;
-    (async () => {
-      const review = computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers });
-      const content = dailyBudgetNotificationContent(review);
-      const id = await rescheduleDailyBudgetNotification(dailyBudgetNotifId, dailyBudgetSettings, content);
-      if (id !== dailyBudgetNotifId) setDailyBudgetNotifId(id);
-    })();
+    const timer = setTimeout(() => {
+      const myToken = ++dailyBudgetRequestRef.current;
+      (async () => {
+        const review = computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers });
+        const content = dailyBudgetNotificationContent(review);
+        const id = await rescheduleDailyBudgetNotification(dailyBudgetNotifId, dailyBudgetSettings, content);
+        if (dailyBudgetRequestRef.current !== myToken) {
+          // A newer change already superseded this one while we were
+          // awaiting -- this id would otherwise never be cancelled again.
+          if (id) await cancelTodoNotifications([id]);
+          return;
+        }
+        if (id !== dailyBudgetNotifId) setDailyBudgetNotifId(id);
+      })();
+    }, 800);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, dailyBudgetSettings, splits, moneyLog, expenses, savingsLog, accounts, weeklySummaries, loans, transfers]);
 
@@ -445,10 +518,13 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   // alarm and records the cancellation for today, so the matching
   // class/advance alarm for the same schedule entry won't fire again later
   // the same day (e.g. marking it suspended from the advance reminder
-  // means the "starting now" alarm won't also go off).
+  // means the "starting now" alarm won't also go off) -- including the
+  // native "starting now" alarm, which otherwise has no way to know about
+  // cancelledClasses at all (see suspendClassAlarmToday).
   function handleSuspendClass(block) {
     setCancelledClasses((prev) => [...prev, { date: todayISO(), entryId: block.entry.id }]);
     setClassAlarm(null);
+    suspendClassAlarmToday(block.subject.id, block.entry.id);
   }
 
   const todayLabel = new Date().toLocaleDateString("en-PH", { weekday: "long", month: "short", day: "numeric" });
@@ -573,6 +649,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     <ThemeContext.Provider value={{ theme, dark }}>
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <StatusBar style={dark ? "light" : "dark"} />
+        <ConfirmModalHost />
         {classAlarm && (
           <ClassAlarmScreen alarm={classAlarm} onDismiss={() => setClassAlarm(null)} onSuspend={() => handleSuspendClass(classAlarm.block)} />
         )}
@@ -605,6 +682,35 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
               <Text style={styles.bannerBody}>{reminderBanner.message}</Text>
             </View>
             <Pressable onPress={() => setReminderBanner(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><X size={14} color="#fff" /></Pressable>
+          </View>
+        )}
+
+        {alarmReliabilityBanner && (
+          <View style={[styles.banner, { backgroundColor: theme.accentDark }]}>
+            <Bell size={16} color={ACCENT.gold} style={{ marginTop: 2 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.bannerTitle}>Alarms may ring late</Text>
+              <Text style={styles.bannerBody}>
+                {alarmReliabilityBanner.exact && alarmReliabilityBanner.battery
+                  ? "Grant \"Alarms & reminders\" and turn off battery optimization for LAYP so class and task alarms ring exactly on time, even in the background."
+                  : alarmReliabilityBanner.exact
+                  ? "Grant LAYP the \"Alarms & reminders\" permission so alarms ring exactly on time instead of being delayed."
+                  : "Turn off battery optimization for LAYP so alarms aren't delayed while the app is in the background."}
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                {alarmReliabilityBanner.exact && (
+                  <Pressable onPress={() => { openExactAlarmSettings(); setAlarmReliabilityBanner(null); }}>
+                    <Text style={styles.bannerAction}>Fix alarm permission</Text>
+                  </Pressable>
+                )}
+                {alarmReliabilityBanner.battery && (
+                  <Pressable onPress={() => { openBatteryOptimizationSettings(); setAlarmReliabilityBanner(null); }}>
+                    <Text style={styles.bannerAction}>Fix battery setting</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+            <Pressable onPress={() => setAlarmReliabilityBanner(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}><X size={14} color="#fff" /></Pressable>
           </View>
         )}
 
@@ -679,6 +785,7 @@ const styles = StyleSheet.create({
   banner: { flexDirection: "row", gap: 8, borderRadius: 16, padding: 12, marginHorizontal: 16, marginBottom: 4 },
   bannerTitle: { color: "#fff", fontSize: 12, fontWeight: "700" },
   bannerBody: { color: "#ffffffcc", fontSize: 11, marginTop: 2 },
+  bannerAction: { color: ACCENT.gold, fontSize: 12, fontWeight: "700" },
   content: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
   tabBar: { flexDirection: "row", justifyContent: "space-around", paddingTop: 8, paddingBottom: 10, borderTopWidth: 1 },
   navBtn: { flex: 1, alignItems: "center", gap: 2, paddingHorizontal: 2, paddingVertical: 6, borderRadius: 12 },

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Vibration, Alert, Pressable } from "react-native";
+import { View, Text, StyleSheet, Vibration, Pressable } from "react-native";
 import { GraduationCap, Clock, MapPin, Ban } from "lucide-react-native";
 import { ACCENT } from "../theme";
 import { fmtTime12 } from "../utils";
 import SlideToConfirm from "./SlideToConfirm";
+import { confirmAction } from "./ConfirmModal";
 
 // Buzz, pause, buzz, pause, repeating -- more like an actual alarm clock
 // than a single tap-to-phone buzz. Android honors the full repeating
@@ -50,14 +51,13 @@ export default function ClassAlarmScreen({ alarm, onDismiss, onSuspend }) {
     : "Starting now";
 
   function confirmSuspend() {
-    Alert.alert(
-      "Class suspended or cancelled?",
-      `This turns off today's alarm for ${block.subject.code}. It'll fire normally again next time this class meets.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Mark suspended", style: "destructive", onPress: onSuspend },
-      ]
-    );
+    confirmAction({
+      title: "Class suspended or cancelled?",
+      message: `This turns off today's alarm for ${block.subject.code}. It'll fire normally again next time this class meets.`,
+      confirmLabel: "Mark suspended",
+      destructive: true,
+      onConfirm: onSuspend,
+    });
   }
 
   return (
@@ -72,6 +72,7 @@ export default function ClassAlarmScreen({ alarm, onDismiss, onSuspend }) {
         <View style={styles.card}>
           <Text style={styles.code}>{block.subject.code}</Text>
           <Text style={styles.desc}>{block.subject.description}</Text>
+          <View style={styles.divider} />
           <View style={styles.metaRow}>
             <Clock size={13} color="#ffffffaa" />
             <Text style={styles.metaText}>{fmtTime12(block.entry.startTime)} – {fmtTime12(block.entry.endTime)}</Text>
@@ -84,8 +85,8 @@ export default function ClassAlarmScreen({ alarm, onDismiss, onSuspend }) {
           )}
         </View>
 
-        <Pressable onPress={confirmSuspend} style={styles.suspendBtn} accessibilityLabel="Mark class suspended or cancelled today">
-          <Ban size={13} color="#ffffffaa" />
+        <Pressable onPress={confirmSuspend} style={({ pressed }) => [styles.suspendBtn, { opacity: pressed ? 0.7 : 1 }]} accessibilityLabel="Mark class suspended or cancelled today">
+          <Ban size={13} color={ACCENT.ember} />
           <Text style={styles.suspendText}>Class suspended today?</Text>
         </Pressable>
       </View>
@@ -105,7 +106,10 @@ export default function ClassAlarmScreen({ alarm, onDismiss, onSuspend }) {
 const styles = StyleSheet.create({
   overlay: {
     position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: "#0B0E17",
+    // A subtle two-tone backdrop (a slightly warmer, lifted top fading to
+    // near-black) instead of one flat color, so the screen reads as having
+    // depth rather than a single plain fill.
+    backgroundColor: "#0F1320",
     // Above the app's own PIN lock screen (zIndex 500 in App.js) so a class
     // alarm can still interrupt even while the phone is sitting on LAYP's
     // lock screen -- the same way a phone's own alarm clock rings over its
@@ -113,16 +117,33 @@ const styles = StyleSheet.create({
     zIndex: 999, elevation: 999,
     justifyContent: "space-between", paddingTop: 90, paddingBottom: 48, paddingHorizontal: 28,
   },
-  top: { alignItems: "center" },
-  iconWrap: { width: 60, height: 60, borderRadius: 30, backgroundColor: "#ffffff14", alignItems: "center", justifyContent: "center", marginBottom: 18 },
-  time: { fontSize: 48, fontWeight: "800", color: "#fff", fontFamily: "monospace", letterSpacing: 1 },
-  heading: { fontSize: 13, fontWeight: "700", color: ACCENT.gold, marginTop: 6, marginBottom: 28, textTransform: "uppercase", letterSpacing: 0.6 },
-  card: { width: "100%", backgroundColor: "#ffffff10", borderRadius: 20, padding: 20, alignItems: "center" },
+  top: { alignItems: "center", width: "100%" },
+  iconWrap: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: "#D9A44122", borderWidth: 2, borderColor: "#D9A44166",
+    alignItems: "center", justifyContent: "center", marginBottom: 18,
+  },
+  // width: "100%" + textAlign: "center" (rather than relying only on the
+  // parent's alignItems: "center") so the visible glyphs are centered
+  // within the full screen width, not just within their own wrap-content
+  // box -- letterSpacing on a large monospace clock otherwise reserves a
+  // sliver of trailing space that makes the box (and therefore the text
+  // inside it) measure and land slightly off-center.
+  time: { width: "100%", textAlign: "center", fontSize: 48, fontWeight: "800", color: "#fff", fontFamily: "monospace" },
+  heading: { width: "100%", textAlign: "center", fontSize: 13, fontWeight: "700", color: ACCENT.gold, marginTop: 6, marginBottom: 28, textTransform: "uppercase", letterSpacing: 0.6 },
+  card: {
+    width: "100%", backgroundColor: "#ffffff0d", borderRadius: 20, padding: 20, alignItems: "center",
+    borderWidth: 1, borderColor: "#D9A44133",
+  },
   code: { fontSize: 22, fontWeight: "800", color: "#fff" },
   desc: { fontSize: 14, color: "#ffffffcc", marginTop: 4, textAlign: "center" },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
+  divider: { width: "100%", height: 1, backgroundColor: "#D9A44133", marginTop: 14, marginBottom: 10 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 },
   metaText: { fontSize: 12, color: "#ffffffaa", fontFamily: "monospace" },
-  suspendBtn: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 22, paddingVertical: 6, paddingHorizontal: 12 },
-  suspendText: { fontSize: 12, color: "#ffffffaa", fontWeight: "600" },
+  suspendBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 22,
+    paddingVertical: 10, paddingHorizontal: 16, borderRadius: 30, backgroundColor: "#D1573F1F",
+  },
+  suspendText: { fontSize: 12.5, color: ACCENT.ember, fontWeight: "700" },
   bottom: {},
 });

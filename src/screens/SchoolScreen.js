@@ -12,6 +12,7 @@ import {
   getCurrentAndNextClass, minutesRemaining,
 } from "../school";
 import { rescheduleSubjectNotifications, cancelSubjectNotifications } from "../notifications";
+import { confirmDelete } from "../components/ConfirmModal";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
@@ -575,11 +576,8 @@ function SubjectDetail({ subject, subjectEntries, todos, onBack, onEdit, onDelet
   const activeTodos = relatedTodos.filter((t) => !t.completed).sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"));
   const doneTodos = relatedTodos.filter((t) => t.completed);
 
-  function confirmDelete() {
-    Alert.alert("Delete this class?", `${subject.code} and its schedule will be removed. Linked tasks will keep their titles but lose the subject link.`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: onDelete },
-    ]);
+  function handleDeleteSubject() {
+    confirmDelete("Delete this class?", `${subject.code} and its schedule will be removed. Linked tasks will keep their titles but lose the subject link.`, onDelete);
   }
 
   return (
@@ -591,7 +589,7 @@ function SubjectDetail({ subject, subjectEntries, todos, onBack, onEdit, onDelet
         </Pressable>
         <View style={{ flexDirection: "row", gap: 14 }}>
           <Pressable onPress={onEdit} accessibilityLabel="Edit class"><Pencil size={15} color={theme.textMuted} /></Pressable>
-          <Pressable onPress={confirmDelete} accessibilityLabel="Delete class"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+          <Pressable onPress={handleDeleteSubject} accessibilityLabel="Delete class"><Trash2 size={15} color={theme.textMuted} /></Pressable>
         </View>
       </View>
 

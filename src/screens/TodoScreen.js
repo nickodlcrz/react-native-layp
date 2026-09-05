@@ -1,17 +1,18 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Linking, Platform, Switch, Alert, Animated, LayoutAnimation, UIManager } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Linking, Platform, Switch, Animated, LayoutAnimation, UIManager } from "react-native";
 import {
   CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, LayoutList, LayoutGrid, CalendarDays,
   ChevronLeft, ChevronRight, AlertTriangle, ChevronDown, ChevronUp, Settings, Bell, BellOff, AlarmClock,
 } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
-import { uid, todayISO, daysUntil, fmtDay, fmtTime12, getWeekDates, confirmDelete } from "../utils";
+import { uid, todayISO, daysUntil, fmtDay, fmtTime12, getWeekDates } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import TimePicker from "../components/TimePicker";
 import NotifyPicker from "../components/NotifyPicker";
 import { rescheduleTodoNotifications, cancelTodoNotifications, rescheduleTodoAlarm, cancelTodoAlarm } from "../notifications";
+import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 
 // Old-architecture Android needs this opt-in for LayoutAnimation to do
@@ -77,17 +78,20 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
   }, [todos, filter, view, weekDates, selectedDay, statusView]);
 
   async function saveTodo(data) {
+    const linkedSubject = data.category === "school" && data.subjectId
+      ? subjects.find((s) => s.id === data.subjectId)
+      : null;
     if (editingId) {
       const prev = todos.find((t) => t.id === editingId);
       const merged = { ...prev, ...data };
       const notificationIds = await rescheduleTodoNotifications(merged);
-      await rescheduleTodoAlarm(merged);
+      await rescheduleTodoAlarm(merged, linkedSubject);
       setTodos((prevList) => prevList.map((t) => (t.id === editingId ? { ...merged, notificationIds } : t)));
       setEditingId(null);
     } else {
       const draft = { id: uid(), ...data, completed: false };
       const notificationIds = await rescheduleTodoNotifications(draft);
-      await rescheduleTodoAlarm(draft);
+      await rescheduleTodoAlarm(draft, linkedSubject);
       setTodos((prev) => [...prev, { ...draft, notificationIds }]);
     }
     setShowForm(false);
@@ -120,7 +124,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
 
   const remove = useCallback(async (id) => {
     const t = todos.find((x) => x.id === id);
-    confirmDelete(Alert, "Delete this task?", `"${t?.title}" will be removed for good.`, async () => {
+    confirmDelete("Delete this task?", `"${t?.title}" will be removed for good.`, async () => {
       if (t?.notificationIds) await cancelTodoNotifications(t.notificationIds);
       await cancelTodoAlarm(id);
       setTodos((prev) => prev.filter((x) => x.id !== id));

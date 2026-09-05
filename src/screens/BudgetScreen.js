@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, addAccount as pushAccount, isPositiveAmount, confirmDelete } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, addAccount as pushAccount, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
@@ -14,6 +14,7 @@ import GoalsScreen from "./GoalsScreen";
 import ActivityScreen from "./ActivityScreen";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { cancelTodoNotifications, rescheduleBillNotification } from "../notifications";
+import { confirmDelete } from "../components/ConfirmModal";
 
 function matchPresetName(splits) {
   for (const [name, preset] of Object.entries(DEFAULT_SPLITS)) {
@@ -93,7 +94,7 @@ function BudgetScreen({
   }
   function removeBill(id) {
     const bill = bills.find((b) => b.id === id);
-    confirmDelete(Alert, "Delete this bill?", `"${bill?.name}" will be removed for good.`, async () => {
+    confirmDelete("Delete this bill?", `"${bill?.name}" will be removed for good.`, async () => {
       if (bill?.notificationId) await cancelTodoNotifications([bill.notificationId]);
       setExpenses((prev) => prev.filter((e) => e.billId !== id));
       setBills((prev) => prev.filter((b) => b.id !== id));
@@ -113,7 +114,7 @@ function BudgetScreen({
       return;
     }
     const account = accounts.find((a) => a.id === id);
-    confirmDelete(Alert, "Delete this account?", `"${account?.label}" will be removed.`, () => {
+    confirmDelete("Delete this account?", `"${account?.label}" will be removed.`, () => {
       setAccounts((prev) => prev.length > 1 ? prev.filter((a) => a.id !== id) : prev);
     });
   }
@@ -343,7 +344,7 @@ function BudgetScreen({
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <Text style={[styles.smallRowAmount, { color: isWithdraw ? ACCENT.ember : ACCENT.leaf }]}>{isWithdraw ? "-" : "+"}{peso(s.amount)}</Text>
-                <Pressable onPress={() => confirmDelete(Alert, "Delete this entry?", "This savings entry will be removed for good.", () => setSavingsLog((prev) => prev.filter((x) => x.id !== s.id)))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete savings entry"><Trash2 size={13} color={theme.textMuted} /></Pressable>
+                <Pressable onPress={() => confirmDelete("Delete this entry?", "This savings entry will be removed for good.", () => setSavingsLog((prev) => prev.filter((x) => x.id !== s.id)))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete savings entry"><Trash2 size={13} color={theme.textMuted} /></Pressable>
               </View>
             </View>
           );

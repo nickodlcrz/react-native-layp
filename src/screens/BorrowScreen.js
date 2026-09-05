@@ -1,13 +1,14 @@
 import React, { useCallback, useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Alert, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
 import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount, confirmDelete } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import { validate, loanSchema } from "../validation";
 import { rescheduleLoanNotification, cancelTodoNotifications } from "../notifications";
+import { confirmDelete } from "../components/ConfirmModal";
 
 export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, weeklySummaries, savingsLog = [], accounts, transfers = [] }) {
   const { theme } = useTheme();
@@ -63,7 +64,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
   }, [paymentAmount, setLoans]);
 
   const remove = useCallback((l) => {
-    confirmDelete(Alert, "Delete this entry?", `The ${l.type === "lent" ? "loan to" : "loan from"} ${l.person} (${peso(loanTotalDue(l))}) will be removed for good.`, async () => {
+    confirmDelete("Delete this entry?", `The ${l.type === "lent" ? "loan to" : "loan from"} ${l.person} (${peso(loanTotalDue(l))}) will be removed for good.`, async () => {
       if (l.notificationId) await cancelTodoNotifications([l.notificationId]);
       setLoans((prev) => prev.filter((x) => x.id !== l.id));
       setEditingId((current) => (current === l.id ? null : current));

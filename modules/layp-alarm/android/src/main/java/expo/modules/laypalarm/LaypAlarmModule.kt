@@ -10,7 +10,9 @@ import android.os.PowerManager
 import android.provider.Settings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 // The React Native <-> Kotlin bridge described by the architecture doc:
 // LAYP (JS) decides *what* to schedule, this module hands it to
@@ -25,7 +27,7 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
   override fun definition() = ModuleDefinition {
     Name("LaypAlarm")
 
-    Events("onAlarmFired", "onAlarmSnoozed", "onAlarmDismissed")
+    Events("onAlarmFired", "onAlarmSnoozed", "onAlarmDismissed", "onAlarmSuspended")
 
     OnCreate {
       AlarmEventBus.addListener(this@LaypAlarmModule)
@@ -35,7 +37,8 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
       AlarmEventBus.removeListener(this@LaypAlarmModule)
     }
 
-    // config: { id, title, body?, hour, minute, days?: number[] (1=Sun...7=Sat),
+    // config: { id, title, body?, heading?, subheading?, details?: string[],
+    //           hour, minute, days?: number[] (1=Sun...7=Sat),
     //           date?: "YYYY-MM-DD", repeatWeekly?: boolean, kind?: string }
     AsyncFunction("scheduleAlarm") { config: Map<String, Any?> ->
       scheduleFromConfig(config)
@@ -65,6 +68,9 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
           requestCode = AlarmStore.requestCodeFor(key),
           title = "LAYP Alarm",
           body = "Snoozed reminder",
+          heading = "LAYP Alarm",
+          subheading = "Snoozed reminder",
+          details = emptyList(),
           hour = cal.get(Calendar.HOUR_OF_DAY),
           minute = cal.get(Calendar.MINUTE),
           dayOfWeek = 0,
@@ -77,6 +83,17 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
 
     AsyncFunction("dismissAlarm") { id: String ->
       AlarmScheduler.cancelGroup(context, id)
+    }
+
+    // Marks `id` (a groupId, e.g. "class:<subjectId>:<entryId>") suspended
+    // for just today's date -- the next time that occurrence is due to
+    // ring, LaypAlarmReceiver sees the flag and skips the ring silently,
+    // then the flag clears itself so the class alarms normally again next
+    // time it meets. Safe to call ahead of time (e.g. right after the
+    // advance reminder) or from the ring screen itself.
+    AsyncFunction("suspendAlarmToday") { id: String ->
+      val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Calendar.getInstance().time)
+      AlarmStore.setSkipToday(context, id, today)
     }
 
     AsyncFunction("getAlarmStatus") {
@@ -124,6 +141,10 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
     val id = config["id"] as? String ?: return
     val title = config["title"] as? String ?: "LAYP Alarm"
     val body = config["body"] as? String ?: ""
+    val heading = config["heading"] as? String ?: title
+    val subheading = config["subheading"] as? String ?: ""
+    @Suppress("UNCHECKED_CAST")
+    val details = (config["details"] as? List<Any?>)?.mapNotNull { it as? String } ?: emptyList()
     val hour = (config["hour"] as? Number)?.toInt() ?: 8
     val minute = (config["minute"] as? Number)?.toInt() ?: 0
     val kind = config["kind"] as? String ?: "task"
@@ -143,7 +164,8 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
         context,
         StoredAlarm(
           key = key, groupId = id, requestCode = AlarmStore.requestCodeFor(key),
-          title = title, body = body, hour = hour, minute = minute,
+          title = title, body = body, heading = heading, subheading = subheading, details = details,
+          hour = hour, minute = minute,
           dayOfWeek = 0, repeatWeekly = false, oneShotDate = date, kind = kind
         )
       )
@@ -157,7 +179,8 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
           context,
           StoredAlarm(
             key = key, groupId = id, requestCode = AlarmStore.requestCodeFor(key),
-            title = title, body = body, hour = hour, minute = minute,
+            title = title, body = body, heading = heading, subheading = subheading, details = details,
+            hour = hour, minute = minute,
             dayOfWeek = weekday, repeatWeekly = repeatWeekly, oneShotDate = null, kind = kind
           )
         )
@@ -178,5 +201,9 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
 
   override fun onDismissed(alarm: StoredAlarm) {
     sendEvent("onAlarmDismissed", mapOf("id" to alarm.groupId))
+  }
+
+  override fun onSuspended(alarm: StoredAlarm, dateIso: String) {
+    sendEvent("onAlarmSuspended", mapOf("id" to alarm.groupId, "date" to dateIso, "kind" to alarm.kind))
   }
 }
