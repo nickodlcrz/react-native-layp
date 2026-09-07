@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import Slider from "@react-native-community/slider";
 import { ArrowLeft, Plus, Trash2, Check, Bell } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
@@ -7,6 +7,7 @@ import { peso, uid, todayISO, fmtDay, normalizeSplits, removeSplitAndRedistribut
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
+import { hapticSuccess } from "../haptics";
 
 // If the current splits exactly match a known preset, show that preset's
 // name; otherwise this is a user-customized model.
@@ -44,7 +45,14 @@ export default function DailyBudgetScreen({
   }
   function removeSplit(id) { setSplits((prev) => removeSplitAndRedistribute(prev, id)); }
 
+  // One decision per calendar day -- once today's review has been acted on
+  // (saved, kept, or "remind me"), it's locked: the action buttons hide and
+  // a summary of what was chosen shows instead. This naturally resets every
+  // midnight since it's keyed off todayISO(), no separate reset logic needed.
+  const todayDecision = dailyBudgetLog.find((e) => e.date === todayISO());
+
   function logDecision(entry) {
+    if (todayDecision) return; // already decided today -- ignore late/duplicate taps
     setDailyBudgetLog((prev) => [...prev, { id: uid(), date: todayISO(), ...entry }]);
   }
 
@@ -53,6 +61,7 @@ export default function DailyBudgetScreen({
   // review simply recomputes off the current balance, so nothing gets
   // double-counted across days.
   function saveAmount(amount) {
+    if (todayDecision) return; // one save per day -- see todayDecision above
     if (!review.savings || !isPositiveAmount(amount)) return;
     // Never let a save push the real account balance negative -- cap to
     // what's actually left right now, regardless of what the recommendation
@@ -70,9 +79,11 @@ export default function DailyBudgetScreen({
     logDecision({ choice: "saved", amount: cappedAmount });
     setShowCustom(false);
     setCustomAmount("");
+    hapticSuccess();
   }
 
   return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
     <View style={{ flex: 1 }}>
       <View style={styles.headerRow}>
         <Pressable onPress={onClose} style={[styles.roundBtn, { backgroundColor: theme.card, borderColor: theme.line, borderWidth: 1 }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Back">
@@ -87,7 +98,7 @@ export default function DailyBudgetScreen({
         <Chip label="Model & reminder" active={view === "settings"} onPress={() => setView("settings")} small />
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
         {view === "review" ? (
           <ReviewView
             review={review} theme={theme} modelName={modelName}
@@ -95,10 +106,10 @@ export default function DailyBudgetScreen({
             customAmount={customAmount} setCustomAmount={setCustomAmount}
             onSaveRecommended={() => saveAmount(review.savings?.maxSafeToSave || 0)}
             onSaveCustom={() => saveAmount(customAmount)}
-            onKeep={() => { logDecision({ choice: "kept" }); Alert.alert("Noted", "This money stays available -- it won't be counted as saved."); }}
-            onRemind={() => { logDecision({ choice: "remind" }); Alert.alert("Okay", "Tomorrow's review will pick this back up."); }}
+            onKeep={() => { if (!todayDecision) { logDecision({ choice: "kept" }); Alert.alert("Noted", "This money stays available -- it won't be counted as saved."); } }}
+            onRemind={() => { if (!todayDecision) { logDecision({ choice: "remind" }); Alert.alert("Okay", "Tomorrow's review will pick this back up."); } }}
             accounts={accounts} saveAccount={saveAccount} setSaveAccount={setSaveAccount}
-            dailyBudgetLog={dailyBudgetLog}
+            dailyBudgetLog={dailyBudgetLog} todayDecision={todayDecision}
           />
         ) : (
           <SettingsView
@@ -110,6 +121,7 @@ export default function DailyBudgetScreen({
         )}
       </ScrollView>
     </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -123,7 +135,7 @@ function HeroCard({ review, modelName, theme }) {
   );
 }
 
-function ReviewView({ review, theme, modelName, showCustom, setShowCustom, customAmount, setCustomAmount, onSaveRecommended, onSaveCustom, onKeep, onRemind, accounts, saveAccount, setSaveAccount, dailyBudgetLog = [] }) {
+function ReviewView({ review, theme, modelName, showCustom, setShowCustom, customAmount, setCustomAmount, onSaveRecommended, onSaveCustom, onKeep, onRemind, accounts, saveAccount, setSaveAccount, dailyBudgetLog = [], todayDecision }) {
   if (!review.hasIncome) {
     return (
       <>
@@ -177,13 +189,28 @@ function ReviewView({ review, theme, modelName, showCustom, setShowCustom, custo
           <Text style={[styles.metaText, { color: theme.textMuted }]}>{peso(review.savings.actual)} saved today</Text>
           <Text style={[styles.statusText, { color: theme.textMuted }]}>{categoryStatusText(review.savings)}</Text>
 
-          {review.savings.remaining > 0.5 && review.currentBalance <= 0.5 && (
+          {review.savings.remaining > 0.5 && review.currentBalance <= 0.5 && !todayDecision && (
             <Text style={[styles.statusText, { color: ACCENT.ember, marginTop: 6 }]}>
               You've already spent all of today's available money, so there's nothing left to save right now.
             </Text>
           )}
 
-          {review.savings.maxSafeToSave > 0.5 && (
+          {/* Once today's decision is made (saved / kept / remind), it's
+              locked in -- no more Save/Keep/Remind buttons until the next
+              calendar day rolls the review over, so you can't accidentally
+              save into the same day twice. */}
+          {todayDecision ? (
+            <View style={[styles.lockedRow, { borderColor: theme.line }]}>
+              <Check size={13} color={ACCENT.leaf} />
+              <Text style={[styles.lockedText, { color: theme.text }]}>
+                {todayDecision.choice === "saved"
+                  ? `Today's decision: saved ${peso(todayDecision.amount)}`
+                  : todayDecision.choice === "kept"
+                  ? "Today's decision: kept for tomorrow"
+                  : "Today's decision: remind me tomorrow"}
+              </Text>
+            </View>
+          ) : review.savings.maxSafeToSave > 0.5 && (
             <>
               <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{peso(review.currentBalance)} actually available right now</Text>
               <Text style={[styles.miniLabel, { color: theme.textMuted, marginTop: 10 }]}>Save into</Text>
@@ -342,6 +369,8 @@ const styles = StyleSheet.create({
   toggleTrack: { width: 44, height: 24, borderRadius: 12, padding: 2, justifyContent: "center" },
   toggleDot: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff", alignSelf: "flex-start" },
   toggleDotOn: { alignSelf: "flex-end" },
+  lockedRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, paddingTop: 10, borderTopWidth: 1 },
+  lockedText: { fontSize: 12, fontWeight: "700" },
   decisionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 5 },
   decisionDate: { fontSize: 10, fontFamily: "monospace", width: 70 },
   decisionText: { fontSize: 11, fontWeight: "600", flex: 1, textAlign: "right" },

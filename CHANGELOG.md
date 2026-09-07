@@ -1,0 +1,40 @@
+# Changelog
+
+All notable changes to LAYP are documented here. Newest entries first.
+
+## [Unreleased]
+
+### Added
+- **Recurring bills** — bills can now repeat weekly or monthly. Set from the bill form (One-time / Weekly / Monthly); once a recurring bill is fully paid (in full or via the last partial payment), the next occurrence is created automatically with the same amount/category/account and its due date advanced by one interval, reminder scheduled and all. Monthly correctly handles month-end overflow (e.g. Jan 31 rolls to Feb 28/29, not into March).
+- **Haptic feedback** — added `expo-haptics` (new dependency) and a central `src/haptics.js` helper. A success buzz on saving a transfer, finishing a task, or paying a bill (full or partial); an impact buzz on deletions. Wired into `ConfirmModal` itself (one integration point covers every `confirmDelete`/`confirmAction` call across the app) plus the few success paths that don't go through a confirm dialog.
+- **Search & filter for expenses** — a search box (matches name or label) plus spending-label filter chips on the Spending tab. Searches across your full expense history, not just what's currently expanded in Today/History, and swaps to a flat results list while a search/filter is active.
+- **Notification scheduling error handling** — every call to expo-notifications' scheduler now goes through one wrapper (`safeScheduleNotificationAsync`) that catches failures (permission revoked mid-session, an OS/OEM scheduling restriction, etc.) instead of letting them throw. A failed schedule returns `null` and is filtered out of the ids LAYP stores, so a failed alarm/reminder can no longer be silently recorded as if it were actually armed. Also now warns on launch if notification permission isn't granted at all, since every reminder/bill/class-alarm feature quietly depends on it.
+- **Spending labels** — expenses can now be tagged with a quick-pick category (Food, Transportation, School, Bills, Shopping, Entertainment, Health, Other) via chips in the expense form, in addition to the existing free-text custom label. Shown as a small tag on each expense row (this display already existed; there was just no easy way to set it before).
+- **"Log again" / memory spending** — a new selector groups past expenses by name + amount and surfaces the ones you've logged 2+ times as one-tap "log again" chips above the add-expense button, reusing the same split/account/label as the most recent matching entry. A short confirm still appears before it's added, so a stray tap can't silently create a duplicate expense.
+- **Backup validation with Zod** — restoring a backup used to only check that top-level fields were arrays of *some* kind; it never validated what was inside them. `src/backupSchema.js` now checks every bill/expense/loan/transfer/etc. has its required fields with the right types (amounts must actually be numbers), and rejection messages now point at the specific field that failed instead of a generic "backup not recognized."
+- **Debounced saves** — state changes are now batched into a single `AsyncStorage` write roughly 800ms after they settle, instead of one write per keystroke/tap. Flushes immediately if the app is backgrounded so nothing in the debounce window gets lost.
+- **Tab bar redesign** — rebuilt as its own component (`src/components/TabBar.js`) with a sliding animated indicator behind the active tab, a floating rounded-card look with a subtle shadow, and a small press-in/press-out bounce per tab. Tap targets bumped to a 48pt minimum height for accessibility.
+- **Single source of truth for tabs** — the list of tabs (key, label, icon) now lives in one `TABS` array in `App.js`; the swipe-navigation order (`TAB_ORDER`) is derived from it instead of being a second, separately-maintained list. Adding, removing, or reordering a tab is now a one-line change instead of editing two places that had to be kept in sync by hand.
+- **Partial bill payments** — bills now track `paidAmount` separately from `amount`. A new "Pay part" action opens an inline amount field (with a "pay in full" shortcut) and creates an expense for just that amount; a thin progress bar shows how much of the bill is covered so far. "Unpaid total" on the Bills tab now reflects the actual remaining balance, not the original bill amounts.
+- **Customizable class check-in** — the "Do you have class today?" heads-up (previously a fixed 60 minutes before class, hardcoded) now has its own enable/disable toggle and a minutes-before picker (30/45/60/90/120), settable both as a school-wide default and per subject.
+- **More test coverage** — added unit tests for the new backup schema, the new "log again" selector, and previously-untested savings/goal calculations (`savingsTotal`, `unallocatedSavings`, `goalCurrentAmount`, `goalProgress`, `splitKind`). Test suite is now 57 tests across 5 files, all passing.
+
+### Changed
+- **Record IDs** — `uid()` switched from `Math.random().toString(36).slice(2, 10)` to `Crypto.randomUUID()` (expo-crypto). The old scheme had a fairly small space of possible values for what are, in several cases, financial record IDs; collisions were unlikely but not worth the risk as data accumulates.
+- **Todo reminder notifications** now include the due date/time, the task's category or linked subject, and subtask progress, instead of just a generic "Reminder" title and a one-line due date. The native full-screen Todo alarm already had this detail; the lighter notification is now brought up to the same standard.
+- **Daily Budget review** now allows exactly one decision (save / keep / remind) per calendar day. Once a decision is made, the action buttons are replaced with a "Today's decision: ..." summary; it clears itself automatically at midnight since it's keyed by date, so no separate reset logic was needed.
+- **Confirmation dialogs** — the last two screens still using the OS-native `Alert.alert` two-button confirmation (the "Replace current data?" restore prompts in the Summary tab) now use the same in-app `ConfirmModal` used everywhere else in the app.
+
+### Fixed
+- **Swipe-gesture "reload" glitch** — swiping right on the Home tab (or left on the last tab) used to animate the whole screen fully off-screen and then teleport it back instantly once the app correctly refused to change tabs, which looked like a flash/reload. `SwipeNavigator` now knows which directions actually have a destination tab, applies rubber-band resistance when dragging toward a dead end, and always eases back smoothly instead of snapping.
+- **Keyboard covering form inputs** — `BillForm` and `SavingsTransferForm` (both in the Budget tab) and the custom-amount field in Daily Budget are now wrapped in `KeyboardAvoidingView`, so the amount input isn't left hidden behind the keyboard on smaller phones.
+
+## Earlier (pre-changelog)
+Everything before this file was added, going back to the original React Native/Expo build-out: core screens (Home, Todo, School, Budget, Daily Budget, Goals, Borrow, Spending, Activity, Summary), the native Android alarm module (`layp-alarm`), notification scheduling, backup/restore, and the ongoing move toward a Zustand-based store are not itemized here retroactively.
+
+## Not yet done (tracked, not forgotten)
+From the reliability/architecture proposal this update was based on:
+- Recurring income/transfers (recurring bills are now done — see above), custom per-label spending limit alerts (an automatic 80%-of-budget-split alert already exists; a user-configurable limit like "Food: ₱3,000/month, alert at 80%" is still open), spending-insight charts, data archive/cleanup, CSV export
+- Data-model consolidation (Accounts/Transactions/Bills/Loans/Goals/School as a formal layer with shared selectors) and the broader App.js domain-context/reducer refactor
+- TypeScript migration
+- *(The native Kotlin school-alarm engine was already in place before this changelog started — `scheduleNativeClassAlarm` in `notifications.js` already routes class alarms through `modules/layp-alarm` the same way Todo alarms do.)*

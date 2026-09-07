@@ -28,11 +28,12 @@ const CLASS_ALARM_CATEGORY = "layp-class-alarm-actions";
 export const CLASS_CHECKIN_YES_ACTION = "CHECKIN_YES";
 export const CLASS_CHECKIN_NONE_ACTION = "CHECKIN_NONE";
 const CLASS_CHECKIN_CATEGORY = "layp-class-checkin-actions";
-// How long before a class's own alarm the "Do you have class today?"
-// check-in fires. Fixed rather than user-configurable to keep this simple
-// -- long enough to actually be useful (worth checking your schedule for),
-// short enough to still be "this morning" rather than the night before.
-const CLASS_CHECKIN_MINUTES_BEFORE = 60;
+// Fallback for how long before a class's own alarm the "Do you have class
+// today?" check-in fires, used only if a subject somehow has no value of
+// its own. Per-subject (subject.classCheckInMinutes, defaulting from
+// DEFAULT_SCHOOL_DEFAULTS in theme.js) is now configurable in the
+// Add/Edit Subject form instead of being fixed app-wide.
+const CLASS_CHECKIN_MINUTES_BEFORE_FALLBACK = 60;
 
 // Lets the class-starting-now / advance notification carry two action
 // buttons right on the notification itself (lock screen included), so it
@@ -117,16 +118,54 @@ export async function setupAndroidChannel() {
   }
 }
 
-function reminderBody(todo) {
-  if (!todo.dueDate) return `Reminder: "${todo.title}"`;
-  const dleft = daysUntil(todo.dueDate);
-  const when = dleft === 0 ? "today" : dleft < 0 ? `${Math.abs(dleft)} day(s) ago` : `in ${dleft} day(s)`;
-  return `"${todo.title}" is due ${when} (${fmtDateLong(todo.dueDate)})`;
+// Wraps every call to expo-notifications' own scheduleNotificationAsync so
+// a failure -- permission revoked mid-session, an OS/OEM scheduling
+// restriction, a malformed trigger -- can't leave LAYP's own state
+// believing a reminder was armed when the platform actually refused it.
+// Returns null instead of throwing, so one failed occurrence (say, one
+// weekday of a weekly reminder) doesn't abort every other id still being
+// scheduled around it -- callers building an ids array should filter out
+// nulls before storing the result.
+async function safeScheduleNotificationAsync(config) {
+  try {
+    return await Notifications.scheduleNotificationAsync(config);
+  } catch (e) {
+    console.error("Failed to schedule notification:", e?.message || e);
+    return null;
+  }
 }
 
-async function scheduleOne(todo, trigger) {
-  return Notifications.scheduleNotificationAsync({
-    content: { title: "Reminder", body: reminderBody(todo), sound: true },
+// Builds the full task detail line used by the soft Reminder notification --
+// due date/time, category (or linked subject if it's a school task), and
+// subtask progress -- so the notification alone tells the whole story
+// instead of just the bare title. `subject` is optional (only present for
+// category === "school" tasks with a linked subject), mirroring how
+// rescheduleTodoAlarm already builds its own richer detail list for the
+// native full-screen alarm.
+function reminderBody(todo, subject) {
+  const parts = [];
+  if (todo.dueDate) {
+    const dleft = daysUntil(todo.dueDate);
+    const when = dleft === 0 ? "today" : dleft < 0 ? `${Math.abs(dleft)} day(s) ago` : `in ${dleft} day(s)`;
+    const timeSuffix = todo.dueTime ? ` \u00b7 ${fmtTime12(todo.dueTime)}` : "";
+    parts.push(`Due ${when} (${fmtDateLong(todo.dueDate)}${timeSuffix})`);
+  }
+  if (subject) {
+    parts.push(`${subject.code}${subject.description ? ` \u2014 ${subject.description}` : ""}`);
+  } else if (todo.category) {
+    parts.push(todo.category[0].toUpperCase() + todo.category.slice(1));
+  }
+  if (todo.subtasks?.length) {
+    const done = todo.subtasks.filter((s) => s.done).length;
+    parts.push(`${done}/${todo.subtasks.length} subtasks done`);
+  }
+  const detail = parts.join(" \u00b7 ");
+  return detail ? `"${todo.title}" \u2014 ${detail}` : `"${todo.title}"`;
+}
+
+async function scheduleOne(todo, trigger, subject) {
+  return safeScheduleNotificationAsync({
+    content: { title: todo.title, body: reminderBody(todo, subject), sound: true },
     trigger:
       Platform.OS === "android" ? { ...trigger, channelId: "layp-reminders" } : trigger,
   });
@@ -142,7 +181,10 @@ async function scheduleOne(todo, trigger) {
 // for repeating reminders (see the "isPastDue" cleanup check in App.js).
 // Only the "once" type inherently needs a specific date to fire on, so it
 // requires a due date; every other type works with or without one.
-export async function rescheduleTodoNotifications(todo) {
+// `subject` is optional -- pass the todo's linked school subject (when
+// todo.category === "school") so the notification body can name the class,
+// the same way rescheduleTodoAlarm already does for the native alarm.
+export async function rescheduleTodoNotifications(todo, subject) {
   await cancelTodoNotifications(todo.notificationIds);
   if (todo.completed || todo.reminderEnabled === false) return [];
 
@@ -155,29 +197,29 @@ export async function rescheduleTodoNotifications(todo) {
     const fireDate = new Date(`${todo.dueDate}T00:00:00`);
     fireDate.setHours(h, m, 0, 0);
     if (fireDate.getTime() > Date.now()) {
-      ids.push(await scheduleOne(todo, { date: fireDate }));
+      ids.push(await scheduleOne(todo, { date: fireDate }, subject));
     }
   } else if (n.type === "daily") {
     const [h, m] = (n.time || "08:00").split(":").map(Number);
     // Repeats every day at this time. Expo will keep firing it; the app
     // cancels it once the task is marked complete or the due date passes
     // (see the daily "isPastDue" cleanup check in App.js).
-    ids.push(await scheduleOne(todo, { hour: h, minute: m, repeats: true }));
+    ids.push(await scheduleOne(todo, { hour: h, minute: m, repeats: true }, subject));
   } else if (n.type === "weekly") {
     const [h, m] = (n.time || "08:00").split(":").map(Number);
     for (const weekday of n.weekdays || []) {
-      ids.push(await scheduleOne(todo, { weekday, hour: h, minute: m, repeats: true }));
+      ids.push(await scheduleOne(todo, { weekday, hour: h, minute: m, repeats: true }, subject));
     }
   } else if (n.type === "interval") {
     const hrs = Number(n.intervalHours) || 1;
-    ids.push(await scheduleOne(todo, { seconds: hrs * 3600, repeats: true }));
+    ids.push(await scheduleOne(todo, { seconds: hrs * 3600, repeats: true }, subject));
   } else if (n.type === "custom") {
     for (const t of n.times || []) {
       const [h, m] = t.split(":").map(Number);
-      ids.push(await scheduleOne(todo, { hour: h, minute: m, repeats: true }));
+      ids.push(await scheduleOne(todo, { hour: h, minute: m, repeats: true }, subject));
     }
   }
-  return ids;
+  return ids.filter(Boolean);
 }
 
 export async function cancelTodoNotifications(ids) {
@@ -252,7 +294,7 @@ export async function rescheduleLoanNotification(loan) {
       ? `${loan.person} owes you ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(loan.principal * (1 + (loan.interestPercent || 0) / 100))} today`
       : `You owe ${loan.person} ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(loan.principal * (1 + (loan.interestPercent || 0) / 100))} today`;
 
-  const id = await Notifications.scheduleNotificationAsync({
+  const id = await safeScheduleNotificationAsync({
     content: { title: "Payment due", body, sound: true },
     trigger: Platform.OS === "android" ? { date: fireDate, channelId: "layp-reminders" } : { date: fireDate },
   });
@@ -269,7 +311,7 @@ export async function rescheduleDailyBudgetNotification(previousId, settings, co
   await cancelTodoNotifications(previousId ? [previousId] : []);
   if (!settings?.enabled || !settings?.time) return null;
   const [h, m] = settings.time.split(":").map(Number);
-  return Notifications.scheduleNotificationAsync({
+  return safeScheduleNotificationAsync({
     content: { title: content.title, body: content.body, sound: true, data: { type: "dailyBudget" } },
     trigger: Platform.OS === "android" ? { hour: h, minute: m, repeats: true, channelId: "layp-reminders" } : { hour: h, minute: m, repeats: true },
   });
@@ -354,7 +396,7 @@ function classDetailLines(subject, entry) {
 }
 
 async function scheduleWeekly(weekday, hour, minute, content) {
-  return Notifications.scheduleNotificationAsync({
+  return safeScheduleNotificationAsync({
     content: {
       ...content,
       sound: true,
@@ -434,9 +476,10 @@ export function addClassAlarmSuspendedListener(callback) {
 // question to answer when convenient, not something that needs to wake
 // the phone up like a real alarm.
 async function scheduleClassCheckIn(subject, entry, hour, minute) {
+  const minutesBefore = Number(subject.classCheckInMinutes) || CLASS_CHECKIN_MINUTES_BEFORE_FALLBACK;
   const ids = [];
   for (const weekday of entry.days) {
-    let total = hour * 60 + minute - CLASS_CHECKIN_MINUTES_BEFORE;
+    let total = hour * 60 + minute - minutesBefore;
     let wd = weekday;
     if (total < 0) {
       total += 24 * 60;
@@ -445,7 +488,7 @@ async function scheduleClassCheckIn(subject, entry, hour, minute) {
     const oh = Math.floor(total / 60);
     const om = total % 60;
     ids.push(
-      await Notifications.scheduleNotificationAsync({
+      await safeScheduleNotificationAsync({
         content: {
           title: "Do you have class today?",
           body: `${subject.code} \u2014 ${subject.description}, ${fmtTime12(entry.startTime)}`,
@@ -457,7 +500,7 @@ async function scheduleClassCheckIn(subject, entry, hour, minute) {
       })
     );
   }
-  return ids;
+  return ids.filter(Boolean);
 }
 
 async function cancelClassAlarmId(id) {
@@ -502,7 +545,9 @@ export async function rescheduleSubjectNotifications(subject, entries) {
           classIds.push(await scheduleWeekly(weekday, h, m, { title: "\ud83d\udd14 Class starting now", body: classBody(subject, entry), data: { type: "classAlarm", subjectId: subject.id } }));
         }
       }
-      checkInIds.push(...(await scheduleClassCheckIn(subject, entry, h, m)));
+      if (subject.classCheckInEnabled !== false) {
+        checkInIds.push(...(await scheduleClassCheckIn(subject, entry, h, m)));
+      }
     }
 
     if (subject.advanceReminderEnabled) {
@@ -525,7 +570,7 @@ export async function rescheduleSubjectNotifications(subject, entries) {
     }
   }
 
-  return { class: classIds, advance: advanceIds, checkIn: checkInIds };
+  return { class: classIds.filter(Boolean), advance: advanceIds.filter(Boolean), checkIn: checkInIds.filter(Boolean) };
 }
 
 // Fires immediately (not scheduled ahead of time) the moment a spend
@@ -535,7 +580,7 @@ export async function rescheduleSubjectNotifications(subject, entries) {
 // nudges (bills, tasks), not the insistent class-alarm channel.
 export async function notifyBudgetThreshold(category) {
   const pct = category.recommended > 0 ? Math.round((category.actual / category.recommended) * 100) : 0;
-  return Notifications.scheduleNotificationAsync({
+  return safeScheduleNotificationAsync({
     content: {
       title: `${category.label} budget check-in`,
       body: `You've used ${pct}% of today's ${category.label} budget (${peso(category.actual)} of ${peso(category.recommended)}).`,
@@ -552,7 +597,7 @@ export async function rescheduleBillNotification(bill) {
   const fireDate = new Date(`${bill.dueDate}T09:00:00`);
   if (fireDate.getTime() <= Date.now()) return null;
 
-  return Notifications.scheduleNotificationAsync({
+  return safeScheduleNotificationAsync({
     content: {
       title: "Bill due today",
       body: `${bill.name} needs ${new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(bill.amount)} today`,

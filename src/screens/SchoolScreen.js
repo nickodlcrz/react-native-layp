@@ -4,7 +4,7 @@ import {
   GraduationCap, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   Bell, BellOff, MapPin, User, Clock, BookOpen, CircleCheck,
 } from "lucide-react-native";
-import { useTheme, ACCENT, WEEKDAYS, ADVANCE_REMINDER_OPTIONS } from "../theme";
+import { useTheme, ACCENT, WEEKDAYS, ADVANCE_REMINDER_OPTIONS, CHECKIN_REMINDER_OPTIONS } from "../theme";
 import { uid, fmtTime12, fmtDateLong, daysUntil } from "../utils";
 import {
   newAcademicPeriod, makePeriodActive, getActivePeriod, copyPeriodSchedule,
@@ -66,6 +66,8 @@ function SchoolScreen({
         classReminderEnabled: data.classReminderEnabled,
         advanceReminderEnabled: data.advanceReminderEnabled,
         advanceReminderMinutes: data.advanceReminderMinutes,
+        classCheckInEnabled: data.classCheckInEnabled,
+        classCheckInMinutes: data.classCheckInMinutes,
       };
       const others = entriesForSubject(entries, merged.id).filter((e) => e.id !== editingPrimaryEntry?.id);
       const primary = editingPrimaryEntry
@@ -82,6 +84,7 @@ function SchoolScreen({
         room: data.room, professor: data.professor, notes: "",
         classReminderEnabled: data.classReminderEnabled, advanceReminderEnabled: data.advanceReminderEnabled,
         advanceReminderMinutes: data.advanceReminderMinutes, notificationIds: null,
+        classCheckInEnabled: data.classCheckInEnabled, classCheckInMinutes: data.classCheckInMinutes,
       };
       const entry = { id: uid(), subjectId: subject.id, days: data.days, startTime: data.startTime, endTime: data.endTime };
       const ids = await rescheduleFor(subject, [entry]);
@@ -396,6 +399,14 @@ function DefaultsPanel({ defaults, setDefaults }) {
           ))}
         </View>
       )}
+      <ToggleRow label="Do you have class today?" sub="Earlier heads-up so you can catch a suspended class ahead of time" value={defaults.classCheckInEnabled} onChange={(v) => setDefaults({ ...defaults, classCheckInEnabled: v })} />
+      {defaults.classCheckInEnabled && (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+          {CHECKIN_REMINDER_OPTIONS.map((mins) => (
+            <Chip key={mins} label={mins < 60 ? `${mins}m before` : `${mins / 60}h before`} small color={ACCENT.sky} active={Number(defaults.classCheckInMinutes) === mins} onPress={() => setDefaults({ ...defaults, classCheckInMinutes: mins })} />
+          ))}
+        </View>
+      )}
       <Text style={[styles.hint, { color: theme.textMuted }]}>New classes start with these settings -- override any of them per class below.</Text>
     </View>
   );
@@ -428,6 +439,8 @@ function SubjectForm({ initialSubject, initialEntry, defaults, onSave, onCancel 
   const [classReminderEnabled, setClassReminderEnabled] = useState(initialSubject ? initialSubject.classReminderEnabled !== false : defaults.classReminderEnabled);
   const [advanceReminderEnabled, setAdvanceReminderEnabled] = useState(initialSubject ? !!initialSubject.advanceReminderEnabled : defaults.advanceReminderEnabled);
   const [advanceReminderMinutes, setAdvanceReminderMinutes] = useState(initialSubject?.advanceReminderMinutes || defaults.advanceReminderMinutes);
+  const [classCheckInEnabled, setClassCheckInEnabled] = useState(initialSubject ? initialSubject.classCheckInEnabled !== false : defaults.classCheckInEnabled);
+  const [classCheckInMinutes, setClassCheckInMinutes] = useState(initialSubject?.classCheckInMinutes || defaults.classCheckInMinutes);
 
   const canSave = code.trim().length > 0 && description.trim().length > 0 && days.length > 0;
 
@@ -474,6 +487,18 @@ function SubjectForm({ initialSubject, initialEntry, defaults, onSave, onCancel 
             ))}
           </View>
         )}
+        {classReminderEnabled && (
+          <>
+            <ToggleRow label="Do you have class today?" sub="Earlier heads-up so you can catch a suspended class ahead of time" value={classCheckInEnabled} onChange={setClassCheckInEnabled} />
+            {classCheckInEnabled && (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
+                {CHECKIN_REMINDER_OPTIONS.map((mins) => (
+                  <Chip key={mins} label={mins < 60 ? `${mins}m before` : `${mins / 60}h before`} small color={ACCENT.sky} active={Number(classCheckInMinutes) === mins} onPress={() => setClassCheckInMinutes(mins)} />
+                ))}
+              </View>
+            )}
+          </>
+        )}
       </View>
 
       <View style={styles.formActions}>
@@ -482,7 +507,7 @@ function SubjectForm({ initialSubject, initialEntry, defaults, onSave, onCancel 
         </Pressable>
         <Pressable
           disabled={!canSave}
-          onPress={() => canSave && onSave({ code: code.trim(), description: description.trim(), room: room.trim(), professor: professor.trim(), days, startTime, endTime, classReminderEnabled, advanceReminderEnabled, advanceReminderMinutes })}
+          onPress={() => canSave && onSave({ code: code.trim(), description: description.trim(), room: room.trim(), professor: professor.trim(), days, startTime, endTime, classReminderEnabled, advanceReminderEnabled, advanceReminderMinutes, classCheckInEnabled, classCheckInMinutes })}
           style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}
         >
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initialSubject ? "Save changes" : "Add class"}</Text>

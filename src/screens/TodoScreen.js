@@ -12,6 +12,7 @@ import CalendarPicker from "../components/CalendarPicker";
 import TimePicker from "../components/TimePicker";
 import NotifyPicker from "../components/NotifyPicker";
 import { rescheduleTodoNotifications, cancelTodoNotifications, rescheduleTodoAlarm, cancelTodoAlarm } from "../notifications";
+import { hapticSuccess } from "../haptics";
 import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 
@@ -84,13 +85,13 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
     if (editingId) {
       const prev = todos.find((t) => t.id === editingId);
       const merged = { ...prev, ...data };
-      const notificationIds = await rescheduleTodoNotifications(merged);
+      const notificationIds = await rescheduleTodoNotifications(merged, linkedSubject);
       await rescheduleTodoAlarm(merged, linkedSubject);
       setTodos((prevList) => prevList.map((t) => (t.id === editingId ? { ...merged, notificationIds } : t)));
       setEditingId(null);
     } else {
       const draft = { id: uid(), ...data, completed: false };
-      const notificationIds = await rescheduleTodoNotifications(draft);
+      const notificationIds = await rescheduleTodoNotifications(draft, linkedSubject);
       await rescheduleTodoAlarm(draft, linkedSubject);
       setTodos((prev) => [...prev, { ...draft, notificationIds }]);
     }
@@ -113,6 +114,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
     if (nowCompleted) {
       await cancelTodoNotifications(t.notificationIds);
       await cancelTodoAlarm(t.id);
+      hapticSuccess();
     }
     // Animates the row's departure from (or return to) the currently
     // filtered list -- without this, a task dropping out of Active the

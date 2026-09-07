@@ -1,15 +1,15 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet } from "react-native";
-import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from "lucide-react-native";
-import { useTheme, ACCENT, INCOME_CATEGORIES } from "../theme";
+import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search } from "lucide-react-native";
+import { useTheme, ACCENT, INCOME_CATEGORIES, SPENDING_LABELS } from "../theme";
 import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview } from "../utils";
-import { categoryBreakdown } from "../selectors";
+import { categoryBreakdown, frequentExpenseTemplates } from "../selectors";
 import { validate, expenseSchema } from "../validation";
 import { notifyBudgetThreshold } from "../notifications";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
-import { confirmDelete } from "../components/ConfirmModal";
+import { confirmDelete, confirmAction } from "../components/ConfirmModal";
 
 export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [] }) {
   const { theme } = useTheme();
@@ -56,6 +56,24 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
   const startEdit = useCallback((e) => { if (e.source === "bill") return; setEditingId(e.id); setShowForm(true); }, []);
   function saveMoney(entry) { setMoneyLog((prev) => [...prev, { id: uid(), ...entry, createdAt: Date.now() }]); setShowMoneyForm(false); }
 
+  // "Log again" quick-add -- lets a repeat expense (same coffee, same
+  // jeepney fare) be re-logged with one tap and a confirm, instead of
+  // reopening the form and retyping the name and amount. Reuses whichever
+  // split/account/label the most recent matching expense used, dated
+  // today.
+  const quickTemplates = useMemo(() => frequentExpenseTemplates(expenses), [expenses]);
+  function logAgain(template) {
+    confirmAction({
+      title: "Log this expense again?",
+      message: `${template.name} - ${peso(template.amount)}`,
+      confirmLabel: "Log it",
+      onConfirm: () => saveExpense({
+        name: template.name, label: template.label, amount: template.amount,
+        splitId: template.splitId, account: template.account, date: todayISO(),
+      }),
+    });
+  }
+
   const today = todayISO();
   // Recently added first: sort by createdAt (fallback to id for old entries
   // saved before createdAt existed).
@@ -86,6 +104,27 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
   // Capped to a window with a "show more" step instead.
   const [historyLimit, setHistoryLimit] = useState(20);
   const pastDates = allPastDates.slice(0, historyLimit);
+
+  // Search/filter -- matches name or label (case-insensitive substring),
+  // optionally narrowed further to one spending label. Active whenever
+  // either is set; searches across *all* expenses (not just what's
+  // currently visible in Today/History) so it can find something from
+  // months back without paging through History first.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterLabel, setFilterLabel] = useState(null);
+  const isFiltering = searchQuery.trim().length > 0 || !!filterLabel;
+  const searchResults = useMemo(() => {
+    if (!isFiltering) return [];
+    const q = searchQuery.trim().toLowerCase();
+    return expenses
+      .filter((e) => {
+        const matchesQuery = !q || e.name.toLowerCase().includes(q) || (e.label || "").toLowerCase().includes(q);
+        const matchesLabel = !filterLabel || (e.label || "").toLowerCase() === filterLabel.toLowerCase();
+        return matchesQuery && matchesLabel;
+      })
+      .sort(byRecent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, searchQuery, filterLabel, isFiltering]);
 
   const now = new Date();
   const monthTotal = expenses.filter((e) => { const d = new Date(e.date + "T00:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).reduce((s, e) => s + Number(e.amount), 0);
@@ -182,17 +221,68 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
             </View>
           </View>
 
-          {showMoneyForm && <MoneyForm accounts={accounts} ctx={ctx} onSave={saveMoney} />}
-          {showForm && <ExpenseForm initial={editing} splits={splits} accounts={accounts} ctx={ctx} onSave={saveExpense} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
-
-          <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Today</Text>
-          {todayExpenses.length === 0 ? <EmptyState text="Nothing logged today." /> : (
-            <View style={{ gap: 8, marginBottom: 16 }}>
-              {todayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={startEdit} onRemove={remove} />)}
+          {!showForm && !showMoneyForm && (
+            <View style={{ marginBottom: 14 }}>
+              <View style={[styles.searchRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                <Search size={14} color={theme.textMuted} />
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search expenses..."
+                  placeholderTextColor={theme.textMuted}
+                  style={[styles.searchInput, { color: theme.text }]}
+                />
+                {isFiltering && (
+                  <Pressable onPress={() => { setSearchQuery(""); setFilterLabel(null); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Clear search">
+                    <X size={14} color={theme.textMuted} />
+                  </Pressable>
+                )}
+              </View>
+              <View style={[styles.chipWrap, { marginTop: 8, marginBottom: 0 }]}>
+                {SPENDING_LABELS.map((l) => (
+                  <Chip key={l.id} label={l.label} color={l.color} small active={filterLabel === l.label} onPress={() => setFilterLabel((cur) => (cur === l.label ? null : l.label))} />
+                ))}
+              </View>
             </View>
           )}
 
-          {(pastDates.length > 0 || weeklySummaries.length > 0) && (
+          {!showForm && !showMoneyForm && !isFiltering && quickTemplates.length > 0 && (
+            <View style={{ marginBottom: 14 }}>
+              <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 6 }]}>Log again</Text>
+              <View style={styles.chipWrap}>
+                {quickTemplates.map((t) => (
+                  <Chip key={t.id} label={`${t.name} - ${peso(t.amount)}`} small onPress={() => logAgain(t)} />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {showMoneyForm && <MoneyForm accounts={accounts} ctx={ctx} onSave={saveMoney} />}
+          {showForm && <ExpenseForm initial={editing} splits={splits} accounts={accounts} ctx={ctx} onSave={saveExpense} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
+
+          {isFiltering ? (
+            <View style={{ marginBottom: 16 }}>
+              <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>
+                {searchResults.length} result{searchResults.length === 1 ? "" : "s"}
+              </Text>
+              {searchResults.length === 0 ? <EmptyState text="No matching expenses." /> : (
+                <View style={{ gap: 8 }}>
+                  {searchResults.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={startEdit} onRemove={remove} />)}
+                </View>
+              )}
+            </View>
+          ) : (
+            <>
+              <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Today</Text>
+              {todayExpenses.length === 0 ? <EmptyState text="Nothing logged today." /> : (
+                <View style={{ gap: 8, marginBottom: 16 }}>
+                  {todayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={startEdit} onRemove={remove} />)}
+                </View>
+              )}
+            </>
+          )}
+
+          {!isFiltering && (pastDates.length > 0 || weeklySummaries.length > 0) && (
             <View style={{ marginBottom: 16 }}>
               <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>History</Text>
               <View style={{ gap: 8 }}>
@@ -325,7 +415,13 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <TextInput value={name} onChangeText={setName} placeholder="What did you spend on?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
       {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
-      <TextInput value={label} onChangeText={setLabel} placeholder="Custom label / note (optional)" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text, marginBottom: 12 }]} />
+      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Label (optional)</Text>
+      <View style={styles.chipWrap}>
+        {SPENDING_LABELS.map((l) => (
+          <Chip key={l.id} label={l.label} color={l.color} active={label.trim().toLowerCase() === l.label.toLowerCase()} onPress={() => setLabel((cur) => (cur.trim().toLowerCase() === l.label.toLowerCase() ? "" : l.label))} small />
+        ))}
+      </View>
+      <TextInput value={label} onChangeText={setLabel} placeholder="Or type a custom label / note" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text, marginBottom: 12 }]} />
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Budget category</Text>
       <View style={styles.chipWrap}>
         {splits.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={splitId === c.id} onPress={() => setSplitId(c.id)} small />)}
@@ -404,6 +500,8 @@ const styles = StyleSheet.create({
   input: { fontSize: 13, fontWeight: "500", marginBottom: 8, paddingVertical: 4 },
   amountInput: { fontSize: 13, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontFamily: "monospace" },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12, gap: 6 },
+  searchRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  searchInput: { flex: 1, fontSize: 13 },
   miniLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 },
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },

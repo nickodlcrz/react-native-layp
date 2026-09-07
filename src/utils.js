@@ -1,7 +1,19 @@
+import * as Crypto from "expo-crypto";
+
 export const peso = (n) =>
   "\u20B1" + (Number(n) || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 });
 
-export const uid = () => Math.random().toString(36).slice(2, 10);
+// Was Math.random().toString(36).slice(2, 10) -- a 6-character base-36
+// string has only ~2 billion possible values and Math.random() isn't
+// cryptographically random to begin with, so collisions were a real (if
+// rare) risk as records accumulate. randomUUID() gives a proper 122-bit
+// random ID with negligible collision odds -- worth it here since these
+// IDs are used for financial records (expenses, bills, transfers) where
+// two records silently sharing an ID could corrupt totals or overwrite
+// each other. expo-crypto works the same on iOS/Android/web, unlike relying
+// on a global crypto.randomUUID() that may or may not be polyfilled by the
+// JS engine.
+export const uid = () => Crypto.randomUUID();
 export const isPositiveAmount = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
 
 // IMPORTANT: never use Date.toISOString() for calendar dates. It converts to
@@ -22,6 +34,27 @@ export function daysUntil(dateStr) {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   return Math.round((d - now) / 86400000);
+}
+
+// Advances a due date for a recurring bill -- "weekly" just adds 7 days,
+// "monthly" moves to the same day-of-month next month. Monthly uses
+// setDate/setMonth rather than naive day-arithmetic so a Jan 31 bill lands
+// on Feb 28 (or 29) instead of overflowing into March; JS's Date normalizes
+// an out-of-range day-of-month for you when you set the month first.
+export function nextRecurringDate(dateStr, frequency) {
+  const d = new Date(dateStr + "T00:00:00");
+  if (frequency === "weekly") {
+    d.setDate(d.getDate() + 7);
+  } else if (frequency === "monthly") {
+    const day = d.getDate();
+    d.setDate(1); // avoid skipping a month when the target month is shorter
+    d.setMonth(d.getMonth() + 1);
+    const daysInTargetMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, daysInTargetMonth));
+  } else {
+    return dateStr;
+  }
+  return toLocalISO(d);
 }
 export function fmtDay(dateStr) {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" });

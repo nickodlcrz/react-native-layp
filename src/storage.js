@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState } from "react-native";
 
 // --- Storage layout ---
 //
@@ -104,7 +105,7 @@ export async function loadState() {
   }
 }
 
-export async function saveState(state) {
+export async function writeStateNow(state) {
   try {
     const pairs = DOMAIN_KEYS
       .filter((name) => state[name] !== undefined)
@@ -113,4 +114,47 @@ export async function saveState(state) {
   } catch (e) {
     console.error("saveState failed", e);
   }
+}
+
+// LAYP's save effect in App.js fires on every relevant state change, which
+// without debouncing meant one AsyncStorage.multiSet call per keystroke
+// while editing an amount field, per subtask checkbox tap, etc. Callers
+// that change several fields in quick succession (typing, dragging a
+// slider) now collapse into a single write ~800ms after things settle,
+// instead of re-serializing and re-writing the same domains over and over.
+const SAVE_DEBOUNCE_MS = 800;
+let pendingState = null;
+let saveTimer = null;
+
+async function flushPendingSave() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (!pendingState) return;
+  const state = pendingState;
+  pendingState = null;
+  await writeStateNow(state);
+}
+
+// If the app gets backgrounded (or killed) while a save is still debouncing,
+// waiting out the rest of the debounce window risks losing whatever changed
+// in the last ~800ms. Flushing immediately on any non-"active" AppState
+// transition means the debounce only ever delays writes while the user is
+// actively still in the app, never across a backgrounding.
+AppState.addEventListener("change", (next) => {
+  if (next !== "active") flushPendingSave();
+});
+
+export function saveState(state) {
+  pendingState = state;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushPendingSave, SAVE_DEBOUNCE_MS);
+}
+
+// For call sites that need the write to have actually landed before moving
+// on (there are none yet, but this is here so that need doesn't require
+// touching the debounce internals above).
+export async function flushSaveState() {
+  await flushPendingSave();
 }

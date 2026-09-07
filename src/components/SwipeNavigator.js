@@ -32,15 +32,42 @@ const SWIPE_VELOCITY_THRESHOLD = 0.35;
 // failed. Reading the latest callbacks through refs (updated on every
 // render, but never causing the responder itself to be rebuilt) is what
 // makes the handlers see current values without that staleness.
-export default function SwipeNavigator({ onSwipeLeft, onSwipeRight, enabled = true, style, children }) {
+// Diminishing-returns curve for dragging past an edge that has nowhere to
+// go (swiping right on the first tab, or left on the last one) -- a real
+// pager resists past its end instead of sliding freely and then teleporting
+// back once released. log1p keeps the resistance strong close to 0 (so it
+// still *feels* like a drag, not a wall) while flattening out hard the
+// further the finger travels, capped well short of a full screen-width.
+function rubberBand(dx) {
+  const sign = Math.sign(dx);
+  return sign * Math.log1p(Math.abs(dx) / 18) * 18;
+}
+
+export default function SwipeNavigator({ onSwipeLeft, onSwipeRight, enabled = true, canSwipeLeft = true, canSwipeRight = true, style, children }) {
   const onSwipeLeftRef = useRef(onSwipeLeft);
   const onSwipeRightRef = useRef(onSwipeRight);
   const enabledRef = useRef(enabled);
+  // "Left"/"right" here match the gesture direction (dx sign), same
+  // convention as onSwipeLeft/onSwipeRight below: dragging left (dx < 0)
+  // is what triggers onSwipeLeft, so canSwipeLeft gates that direction.
+  const canSwipeLeftRef = useRef(canSwipeLeft);
+  const canSwipeRightRef = useRef(canSwipeRight);
   onSwipeLeftRef.current = onSwipeLeft;
   onSwipeRightRef.current = onSwipeRight;
   enabledRef.current = enabled;
+  canSwipeLeftRef.current = canSwipeLeft;
+  canSwipeRightRef.current = canSwipeRight;
 
   const dragX = useRef(new Animated.Value(0)).current;
+
+  // Applies rubber-band resistance whenever the drag points toward a
+  // direction that has no destination tab, otherwise passes the raw finger
+  // delta straight through.
+  function dampedValue(dx) {
+    const goingLeft = dx < 0;
+    const allowed = goingLeft ? canSwipeLeftRef.current : canSwipeRightRef.current;
+    return allowed ? dx : rubberBand(dx);
+  }
 
   const panResponder = useRef(
     PanResponder.create({
@@ -54,11 +81,28 @@ export default function SwipeNavigator({ onSwipeLeft, onSwipeRight, enabled = tr
         // by the time this fires, the touch has already moved past the
         // 16px claim threshold above, so starting at 0 would cause a
         // visible little jump to catch up to the real finger position.
-        dragX.setValue(g.dx);
+        // Run it through the same damping as every subsequent move so a
+        // fast initial grant at a boundary doesn't jump straight to the
+        // undamped position before easing in.
+        dragX.setValue(dampedValue(g.dx));
       },
-      onPanResponderMove: Animated.event([null, { dx: dragX }], { useNativeDriver: false }),
+      // Can't use Animated.event here since the boundary case needs a
+      // nonlinear (damped) transform of dx rather than a 1:1 passthrough --
+      // this still runs entirely on the JS thread same as before
+      // (useNativeDriver: false), so it's no more or less "native" than
+      // the previous Animated.event wiring.
+      onPanResponderMove: (_, g) => dragX.setValue(dampedValue(g.dx)),
       onPanResponderRelease: (_, g) => {
-        if (!enabledRef.current) {
+        const goingLeft = g.dx < 0;
+        const allowed = goingLeft ? canSwipeLeftRef.current : canSwipeRightRef.current;
+        // No destination in this direction (or swiping disabled outright,
+        // e.g. a class alarm is up) -- spring back from wherever the
+        // damped drag left off. Never plays the full off-screen exit
+        // animation here, which is exactly what used to cause the
+        // "reload"-looking snap: the content would slide fully off, the
+        // tab wouldn't actually change, and it would then reappear at 0
+        // with no animation at all.
+        if (!enabledRef.current || !allowed) {
           Animated.spring(dragX, { toValue: 0, useNativeDriver: false, friction: 9, tension: 70 }).start();
           return;
         }
@@ -73,7 +117,6 @@ export default function SwipeNavigator({ onSwipeLeft, onSwipeRight, enabled = tr
         // back to 0 and separately playing an unrelated entrance
         // animation, which is what used to create the "wait for it"
         // feeling even once the swipe was recognized.
-        const goingLeft = g.dx < 0;
         Animated.timing(dragX, {
           toValue: goingLeft ? -SCREEN_WIDTH : SCREEN_WIDTH,
           duration: 140,

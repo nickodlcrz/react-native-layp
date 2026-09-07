@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, BackHandler } from "react-native";
+import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, BackHandler, Alert } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap } from "lucide-react-native";
@@ -25,6 +25,21 @@ import SummaryScreen from "./src/screens/SummaryScreen";
 import TabTransition from "./src/components/TabTransition";
 import SwipeNavigator from "./src/components/SwipeNavigator";
 import ErrorBoundary from "./src/components/ErrorBoundary";
+import TabBar from "./src/components/TabBar";
+
+// Single source of truth for which tabs exist, their order, icons, and
+// labels -- the old version had this order duplicated as a bare array of
+// strings (TAB_ORDER, for swipe direction) *and* as four separate hardcoded
+// <NavBtn> lines (for the tab bar itself), so adding/reordering a tab meant
+// remembering to update both in sync. Module-level (not inside the
+// component) since it's static and TabBar/swipe logic both just read it.
+const TABS = [
+  { key: "home", label: "Home", icon: Home },
+  { key: "todo", label: "Todo", icon: ListTodo },
+  { key: "school", label: "School", icon: GraduationCap },
+  { key: "budget", label: "Budget", icon: Wallet },
+];
+const TAB_ORDER = TABS.map((t) => t.key);
 
 export default function App() {
   const [unlocked, setUnlocked] = useState(false);
@@ -95,7 +110,6 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   const [dark, setDark] = useState(systemScheme === "dark");
   const [tab, setTabRaw] = useState("home");
   const [tabDirection, setTabDirection] = useState(0);
-  const TAB_ORDER = ["home", "todo", "school", "budget"];
   function setTab(next) {
     setTabDirection(Math.sign(TAB_ORDER.indexOf(next) - TAB_ORDER.indexOf(tab)));
     setTabRaw(next);
@@ -287,7 +301,20 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     (async () => {
       await setupAndroidChannel();
       await setupNotificationCategories();
-      await requestNotificationPermission();
+      // Every reminder/bill/class-alarm feature in the app quietly depends
+      // on this having been granted -- if it wasn't, LAYP would otherwise
+      // just silently fail to remind about anything with no indication why.
+      // Surfaces on every launch while permission stays off (not just the
+      // first time) since it's genuinely actionable each time, not a nag
+      // about something already resolved -- stops appearing entirely once
+      // the person grants it from Settings.
+      const notifGranted = await requestNotificationPermission();
+      if (!notifGranted) {
+        Alert.alert(
+          "Notifications are off",
+          "LAYP can't send task reminders, bill alerts, or class alarms without notification permission. You can turn it on anytime from your phone's Settings."
+        );
+      }
       await cleanupDuplicateDailyBudgetNotifications();
       const s = await loadState();
       if (s) {
@@ -717,6 +744,13 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
         <SwipeNavigator
           style={{ flex: 1 }}
           enabled={!classAlarm}
+          // A drag "left" moves to the next tab, "right" moves to the
+          // previous one -- these tell SwipeNavigator when there's actually
+          // a tab in that direction so it can resist the drag at either end
+          // (Home swiping right, or the last tab swiping left) instead of
+          // dragging freely and then snapping back once released.
+          canSwipeLeft={TAB_ORDER.indexOf(tab) < TAB_ORDER.length - 1}
+          canSwipeRight={TAB_ORDER.indexOf(tab) > 0}
           onSwipeLeft={() => swipeToTab(1)}
           onSwipeRight={() => swipeToTab(-1)}
         >
@@ -746,12 +780,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
         </View>
         </SwipeNavigator>
 
-        <View style={[styles.tabBar, { borderTopColor: theme.line, backgroundColor: theme.card }]}>
-          <NavBtn icon={Home} label="Home" active={tab === "home"} onPress={() => setTab("home")} theme={theme} />
-          <NavBtn icon={ListTodo} label="Todo" active={tab === "todo"} onPress={() => setTab("todo")} theme={theme} />
-          <NavBtn icon={GraduationCap} label="School" active={tab === "school"} onPress={() => setTab("school")} theme={theme} />
-          <NavBtn icon={Wallet} label="Budget" active={tab === "budget"} onPress={() => setTab("budget")} theme={theme} />
-        </View>
+        <TabBar tabs={TABS} activeKey={tab} onChange={setTab} theme={theme} />
       </SafeAreaView>
     </ThemeContext.Provider>
   );
@@ -763,16 +792,6 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
 // onChangeAutoLockMinutes) are all stabilized above specifically so this
 // comparison actually has a chance to succeed.
 const AppShell = React.memo(AppShellComponent);
-
-function NavBtn({ icon: Icon, label, active, onPress, theme }) {
-  return (
-    <Pressable onPress={onPress} style={[styles.navBtn, active && { backgroundColor: theme.bg }]} accessibilityRole="tab" accessibilityLabel={label} accessibilityHint={`Open ${label}`} accessibilityState={{ selected: active }} android_ripple={{ color: theme.line, borderless: true }}>
-      <Icon size={17} color={active ? theme.text : theme.textMuted} strokeWidth={active ? 2.4 : 2} />
-      <Text style={[styles.navLabel, { color: active ? theme.text : theme.textMuted }]}>{label}</Text>
-      {active && <View style={[styles.navDot, { backgroundColor: ACCENT.gold }]} />}
-    </Pressable>
-  );
-}
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
@@ -787,8 +806,4 @@ const styles = StyleSheet.create({
   bannerBody: { color: "#ffffffcc", fontSize: 11, marginTop: 2 },
   bannerAction: { color: ACCENT.gold, fontSize: 12, fontWeight: "700" },
   content: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
-  tabBar: { flexDirection: "row", justifyContent: "space-around", paddingTop: 8, paddingBottom: 10, borderTopWidth: 1 },
-  navBtn: { flex: 1, alignItems: "center", gap: 2, paddingHorizontal: 2, paddingVertical: 6, borderRadius: 12 },
-  navLabel: { fontSize: 8.5, fontWeight: "700" },
-  navDot: { width: 4, height: 4, borderRadius: 2 },
 });

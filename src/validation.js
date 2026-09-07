@@ -30,6 +30,7 @@ export const billSchema = z.object({
   dueDate: isoDate,
   splitId: z.string().min(1, "Choose a budget category"),
   account: z.string().min(1, "Choose an account"),
+  recurring: z.enum(["weekly", "monthly"]).nullable().optional(),
 });
 
 export const loanSchema = z.object({

@@ -9,6 +9,8 @@ import { useTheme, ACCENT } from "../theme";
 import { peso, todayISO, fmtDay, fmtDateLong, savingsTotal as computeSavingsTotal, computeAccountBalance } from "../utils";
 import { AUTO_LOCK_OPTIONS } from "../autoLockPreference";
 import Chip from "../components/Chip";
+import { confirmAction } from "../components/ConfirmModal";
+import { validateBackup } from "../backupSchema";
 
 function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore, autoLockMinutes, onChangeAutoLockMinutes }) {
   const { theme } = useTheme();
@@ -116,23 +118,22 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
   }
 
   function parseAndValidateBackup(raw) {
-    try {
-      const data = JSON.parse(raw);
-      const requiredArrays = ["todos", "bills", "expenses", "moneyLog", "weeklySummaries", "savingsLog", "goals", "loans", "splits", "accounts", "transfers"];
-      if (data?.version !== 1 || requiredArrays.some((key) => !Array.isArray(data[key])) || typeof data.dark !== "boolean") {
-        return null;
-      }
-      return data;
-    } catch {
-      return null;
-    }
+    // Was a hand-rolled check that only confirmed the top-level keys were
+    // arrays of *some* kind -- it never looked at what was actually inside
+    // them. validateBackup (Zod-based) checks every record's required
+    // fields and types, so a corrupted or hand-edited backup gets rejected
+    // with a specific reason instead of silently loading bad financial data.
+    return validateBackup(raw);
   }
 
-  function confirmRestore(data) {
-    Alert.alert("Replace current data?", "This will overwrite the data currently stored in LAYP.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Restore", style: "destructive", onPress: () => onRestore(data) },
-    ]);
+  function confirmRestore(data, onConfirm = () => onRestore(data)) {
+    confirmAction({
+      title: "Replace current data?",
+      message: "This will overwrite the data currently stored in LAYP.",
+      confirmLabel: "Restore",
+      destructive: true,
+      onConfirm,
+    });
   }
 
   async function importBackupFromFile() {
@@ -142,27 +143,24 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
       const asset = result.assets?.[0];
       if (!asset) return;
       const raw = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
-      const data = parseAndValidateBackup(raw);
-      if (!data) {
-        Alert.alert("Backup not recognized", "That file doesn't look like a complete LAYP backup.");
+      const parsed = parseAndValidateBackup(raw);
+      if (!parsed.ok) {
+        Alert.alert("Backup not recognized", parsed.error);
         return;
       }
-      confirmRestore(data);
+      confirmRestore(parsed.data);
     } catch (e) {
       Alert.alert("Import failed", "Couldn't read that file.");
     }
   }
 
   function restoreBackup() {
-    const data = parseAndValidateBackup(restoreText);
-    if (!data) {
-      Alert.alert("Backup not recognized", "Paste a complete backup created by LAYP.");
+    const parsed = parseAndValidateBackup(restoreText);
+    if (!parsed.ok) {
+      Alert.alert("Backup not recognized", parsed.error);
       return;
     }
-    Alert.alert("Replace current data?", "This will overwrite the data currently stored in LAYP.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Restore", style: "destructive", onPress: () => { onRestore(data); setRestoreText(""); setShowRestore(false); } },
-    ]);
+    confirmRestore(parsed.data, () => { onRestore(parsed.data); setRestoreText(""); setShowRestore(false); });
   }
 
   return (

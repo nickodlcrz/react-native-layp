@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, Modal, StyleSheet, Animated, Easing } from "react-native";
 import { AlertTriangle } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
+import { hapticSuccess, hapticImpact } from "../haptics";
 
 // A single, modern confirmation modal used app-wide instead of RN's stock
 // Alert.alert -- Alert.alert always renders as the platform's own system
@@ -77,7 +78,18 @@ export function ConfirmModalHost() {
                 <Text style={[styles.btnText, { color: theme.text }]}>Cancel</Text>
               </Pressable>
               <Pressable
-                onPress={() => { close(); state.onConfirm?.(); }}
+                onPress={() => {
+                  // Every confirmDelete/confirmAction call in the app funnels
+                  // through here, so this one spot covers "deleting
+                  // something" (destructive) and most of "successfully
+                  // completing an action" (everything else) from the doc's
+                  // haptics wishlist, without needing to remember to add a
+                  // buzz at each individual call site.
+                  if (state.destructive) hapticImpact();
+                  else hapticSuccess();
+                  close();
+                  state.onConfirm?.();
+                }}
                 style={({ pressed }) => [styles.btn, { backgroundColor: accent, opacity: pressed ? 0.85 : 1 }]}
               >
                 <Text style={[styles.btnText, { color: "#fff" }]}>{state.confirmLabel}</Text>

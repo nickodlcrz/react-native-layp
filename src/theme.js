@@ -58,6 +58,24 @@ export const INCOME_CATEGORIES = [
   { id: "other", label: "Other", color: ACCENT.plum },
 ];
 
+// Quick-pick categories for what an expense was actually *for* (food,
+// transportation, etc.) -- distinct from the budget split it's charged
+// against (Needs/Wants/Savings). A split says which bucket of your income
+// paid for something; this says what it was. Stored in the same free-text
+// `expense.label` field ExpenseForm already had, so picking one of these
+// just fills that field instead of requiring the user to type it --
+// custom labels typed by hand still work exactly as before.
+export const SPENDING_LABELS = [
+  { id: "food", label: "Food", color: ACCENT.gold },
+  { id: "transportation", label: "Transportation", color: ACCENT.sky },
+  { id: "school", label: "School", color: ACCENT.plum },
+  { id: "bills", label: "Bills", color: ACCENT.ember },
+  { id: "shopping", label: "Shopping", color: ACCENT.teal },
+  { id: "entertainment", label: "Entertainment", color: ACCENT.leaf },
+  { id: "health", label: "Health", color: ACCENT.ember },
+  { id: "other", label: "Other", color: ACCENT.plum },
+];
+
 export const DEFAULT_SPLITS = {
   "50-30-20": [
     { id: "s0", label: "Needs", percent: 50, color: ACCENT.sky },
@@ -81,8 +99,14 @@ export const DEFAULT_SCHOOL_DEFAULTS = {
   classReminderEnabled: true,
   advanceReminderEnabled: true,
   advanceReminderMinutes: 10,
+  classCheckInEnabled: true,
+  classCheckInMinutes: 60,
 };
 export const ADVANCE_REMINDER_OPTIONS = [5, 10, 15, 30, 60];
+// Options for "Do you have class today?" -- how long before the class
+// itself this lighter heads-up fires. Was previously a fixed 60 minutes;
+// now configurable per subject the same way advance-reminder minutes are.
+export const CHECKIN_REMINDER_OPTIONS = [30, 45, 60, 90, 120];
 export const EVENT_TYPES = [
   { id: "assignment", label: "Assignment" },
   { id: "quiz", label: "Quiz" },

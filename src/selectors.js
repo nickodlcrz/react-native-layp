@@ -89,6 +89,40 @@ export function categoryBreakdown(expenses, splits, refDate = new Date()) {
     .sort((a, b) => b.amount - a.amount);
 }
 
+// Surfaces past expenses worth logging again with one tap instead of
+// retyping the name and amount -- "memory" in the sense of remembering
+// what you tend to spend on, not a separate stored list of its own. Groups
+// by name + exact amount (case-insensitive on the name) so "Jeepney fare,
+// P15" said twice becomes one template, and only returns things that have
+// actually repeated (2+ times); a single one-off expense would just be
+// noise in a "log again" row. Bill-sourced expenses are excluded since
+// those already have their own pay-bill flow.
+export function frequentExpenseTemplates(expenses, limit = 6) {
+  const groups = new Map();
+  for (const e of expenses) {
+    if (e.source === "bill" || !e.name) continue;
+    const key = `${e.name.trim().toLowerCase()}|${Number(e.amount)}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.count += 1;
+      // Keep whichever occurrence was logged most recently as the
+      // template, in case the split/account/label used for it has since
+      // shifted (e.g. the user switched which account covers coffee runs).
+      if ((e.createdAt || 0) >= existing.lastUsed) {
+        existing.lastUsed = e.createdAt || 0;
+        existing.template = e;
+      }
+    } else {
+      groups.set(key, { count: 1, lastUsed: e.createdAt || 0, template: e });
+    }
+  }
+  return [...groups.values()]
+    .filter((g) => g.count >= 2)
+    .sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed)
+    .slice(0, limit)
+    .map((g) => g.template);
+}
+
 // Income vs. expenses totals for each of the last `months` calendar months
 // (oldest first), for the Activity tab's bar chart.
 export function monthlyTrend({ moneyLog, expenses }, months = 6, refDate = new Date()) {
