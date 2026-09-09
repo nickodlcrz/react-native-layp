@@ -7,7 +7,7 @@ import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationC
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import { loadState, saveState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
-import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO } from "./src/utils";
+import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
@@ -133,6 +133,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   const [loans, setLoans] = useState([]); // lent / borrowed tracker
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
   const [transfers, setTransfers] = useState([]); // money moved between accounts -- never counts as income/expense
+  const [recurringIncome, setRecurringIncome] = useState([]); // templates: [{ id, label, category, amount, account, frequency, nextDate }] -- see the catch-up effect below for how these actually post to moneyLog
+  const [spendingLimits, setSpendingLimits] = useState({}); // { [spendingLabel]: monthlyLimitAmount } -- a user-set budget per spending label (Food, Transportation, etc.), separate from the automatic 80%-of-split alert
   const [splits, setSplits] = useState(DEFAULT_SPLITS["50-30-20"].map((s) => ({ ...s })));
   const [dailyBudgetSettings, setDailyBudgetSettings] = useState({ ...DEFAULT_DAILY_BUDGET_SETTINGS });
   const [dailyBudgetLog, setDailyBudgetLog] = useState([]); // record of the user's daily savings decisions (saved/kept/remind) -- informational only, never used to move money on its own
@@ -328,6 +330,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
         setSplits(s.splits || DEFAULT_SPLITS["50-30-20"].map((sp) => ({ ...sp })));
         setAccounts(s.accounts || DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
         setTransfers(s.transfers || []);
+        setRecurringIncome(s.recurringIncome || []);
+        setSpendingLimits(s.spendingLimits || {});
         setDailyBudgetSettings(s.dailyBudgetSettings || { ...DEFAULT_DAILY_BUDGET_SETTINGS });
         setDailyBudgetLog(s.dailyBudgetLog || []);
         setDailyBudgetNotifId(s.dailyBudgetNotifId || null);
@@ -356,9 +360,9 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   useEffect(() => {
     if (!ready) return;
     if (firstLoad.current) { firstLoad.current = false; return; }
-    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses });
+    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits });
     setThemePreference(dark);
-  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses]);
+  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits]);
 
   // Cancellation records only ever need to cover "today" at check time, so
   // trim anything older than a week on load rather than let this list grow
@@ -370,6 +374,42 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     cutoff.setDate(cutoff.getDate() - 7);
     const cutoffKey = toLocalISO(cutoff);
     setCancelledClasses((prev) => prev.filter((c) => c.date >= cutoffKey));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // Recurring income "catches up" rather than running on its own clock --
+  // there's no background execution here, so instead of trying to fire
+  // exactly on schedule, any recurring income template whose nextDate has
+  // arrived gets posted to moneyLog (and its nextDate advanced) the next
+  // time the app is opened. If the app hasn't been opened in a while, this
+  // loops per template rather than only posting one entry, so a weekly
+  // allowance that was due 3 times while the app was untouched shows up as
+  // 3 separate income entries on the dates they were actually due, not one
+  // lump sum or a silently skipped catch-up. Capped at 24 iterations per
+  // template as a safety net against a corrupted/very old nextDate looping
+  // effectively forever.
+  useEffect(() => {
+    if (!ready) return;
+    const today = todayISO();
+    const newEntries = [];
+    setRecurringIncome((prev) => {
+      if (!prev.length) return prev;
+      let changed = false;
+      const updated = prev.map((r) => {
+        let next = r.nextDate;
+        let guard = 0;
+        while (next && next <= today && guard < 24) {
+          newEntries.push({ id: uid(), amount: Number(r.amount), category: r.category || "other", account: r.account, note: r.label, date: next, source: "recurring", recurringId: r.id, createdAt: Date.now() });
+          next = nextRecurringDate(next, r.frequency);
+          guard++;
+        }
+        if (next === r.nextDate) return r;
+        changed = true;
+        return { ...r, nextDate: next };
+      });
+      return changed ? updated : prev;
+    });
+    if (newEntries.length) setMoneyLog((prev) => [...prev, ...newEntries]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
@@ -582,10 +622,12 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     setSubjects(data.subjects || []);
     setScheduleEntries(data.scheduleEntries || []);
     setSchoolDefaults(data.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
+    setRecurringIncome(data.recurringIncome || []);
+    setSpendingLimits(data.spendingLimits || {});
   }, []);
   const backupData = useMemo(
-    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults }),
-    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults]
+    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits }),
+    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits]
   );
 
   function renderTabContent(t) {
@@ -634,6 +676,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             accounts={accounts} setAccounts={setAccounts}
             transfers={transfers} setTransfers={setTransfers}
             goals={goals} setGoals={setGoals}
+            recurringIncome={recurringIncome} setRecurringIncome={setRecurringIncome}
+            spendingLimits={spendingLimits} setSpendingLimits={setSpendingLimits}
             dailyBudgetSettings={dailyBudgetSettings} setDailyBudgetSettings={setDailyBudgetSettings}
             setDailyBudgetLog={setDailyBudgetLog}
             dailyBudgetLog={dailyBudgetLog}

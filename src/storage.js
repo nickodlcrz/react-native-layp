@@ -29,7 +29,7 @@ const DOMAIN_KEYS = [
   "goals", "loans", "splits", "accounts", "transfers", "dark",
   "dailyBudgetSettings", "dailyBudgetLog", "dailyBudgetNotifId",
   "academicPeriods", "subjects", "scheduleEntries", "schoolDefaults",
-  "cancelledClasses",
+  "cancelledClasses", "recurringIncome", "spendingLimits",
 ];
 
 function domainKey(name) {

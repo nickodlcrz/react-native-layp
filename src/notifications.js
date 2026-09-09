@@ -329,6 +329,20 @@ export async function rescheduleDailyBudgetNotification(previousId, settings, co
 // instead of adding yet another copy alongside existing duplicates. Safe
 // to call on every app start -- it's a no-op once there's nothing left to
 // clean up.
+//
+// That alone only stops *future* firings, though -- every orphaned
+// duplicate that was scheduled before this cleanup ever got a chance to
+// run had already been quietly firing every single day at the same
+// repeating trigger time, so by the time the fix landed there could
+// already be a whole stack of near-identical "Savings opportunity"
+// notifications sitting delivered in the notification shade (this is
+// exactly what a pile of same-time duplicates in the shade means: not one
+// notification repeating, but several separate orphaned copies that all
+// fired together). Cancelling the scheduled copies doesn't un-deliver
+// ones that already fired, so this also sweeps anything already
+// *presented* with the same tag and dismisses it -- the app recomputes
+// and reschedules a fresh one right after this runs anyway, so there's
+// nothing worth preserving in the stale delivered copies.
 export async function cleanupDuplicateDailyBudgetNotifications() {
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
@@ -336,6 +350,20 @@ export async function cleanupDuplicateDailyBudgetNotifications() {
     for (const n of dupes) {
       try {
         await Notifications.cancelScheduledNotificationAsync(n.identifier);
+      } catch (e) {
+        // already gone -- fine
+      }
+    }
+  } catch (e) {
+    // best-effort cleanup; a failure here shouldn't block the app
+  }
+
+  try {
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    const presentedDupes = presented.filter((n) => n.request?.content?.data?.type === "dailyBudget");
+    for (const n of presentedDupes) {
+      try {
+        await Notifications.dismissNotificationAsync(n.request.identifier);
       } catch (e) {
         // already gone -- fine
       }

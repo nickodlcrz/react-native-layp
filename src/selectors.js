@@ -13,6 +13,7 @@
 // { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }
 
 import { computeAccountBalance, savingsTotal, loanTotalDue } from "./utils";
+import { SPENDING_LABELS, PALETTE } from "./theme";
 
 export function totalBalance(accounts, ctx) {
   return accounts.reduce((sum, a) => sum + computeAccountBalance(a.id, ctx), 0);
@@ -86,6 +87,37 @@ export function categoryBreakdown(expenses, splits, refDate = new Date()) {
   return splits
     .map((split) => ({ ...split, amount: bySplit[split.id] || 0 }))
     .filter((split) => split.amount > 0)
+    .sort((a, b) => b.amount - a.amount);
+}
+
+// A colour for a spending label consistent across calls: matches one of
+// the curated SPENDING_LABELS colours by name when possible (case-
+// insensitive, since a hand-typed custom label like "Groceries" won't
+// exactly match "Food"), otherwise cycles through the general palette so
+// two different custom labels still render as visually distinct slices.
+function colorForSpendingLabel(label, fallbackIndex) {
+  const known = SPENDING_LABELS.find((l) => l.label.toLowerCase() === label.toLowerCase());
+  if (known) return known.color;
+  return PALETTE[fallbackIndex % PALETTE.length];
+}
+
+// Breaks this month's expenses down by their free-text `label` field
+// (Food, Transportation, a hand-typed custom label, etc.) rather than by
+// budget split -- categoryBreakdown above answers "which slice of my
+// income paid for this", this answers "what was it actually for". Expenses
+// with no label at all are grouped under "Uncategorized" rather than
+// silently dropped, since otherwise a month with a lot of unlabeled
+// spending would look smaller than it really was.
+export function spendingByLabel(expenses, refDate = new Date()) {
+  const inMonth = expenses.filter((e) => isInMonth(e.date, refDate));
+  const byLabel = inMonth.reduce((result, e) => {
+    const label = (e.label || "").trim() || "Uncategorized";
+    result[label] = (result[label] || 0) + Number(e.amount);
+    return result;
+  }, {});
+  return Object.entries(byLabel)
+    .map(([label, amount], i) => ({ id: label, label, amount, color: label === "Uncategorized" ? "#9AA0A6" : colorForSpendingLabel(label, i) }))
+    .filter((entry) => entry.amount > 0)
     .sort((a, b) => b.amount - a.amount);
 }
 

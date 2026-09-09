@@ -27,6 +27,7 @@ function matchPresetName(splits) {
 function BudgetScreen({
   moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, setWeeklySummaries,
   savingsLog, setSavingsLog, loans, setLoans, accounts, setAccounts, transfers, setTransfers, goals, setGoals,
+  recurringIncome, setRecurringIncome, spendingLimits, setSpendingLimits,
   dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog, dailyBudgetLog,
   subTab, setSubTab, showDailyBudget, setShowDailyBudget,
 }) {
@@ -248,6 +249,8 @@ function BudgetScreen({
           moneyLog={moneyLog} setMoneyLog={setMoneyLog}
           weeklySummaries={weeklySummaries} setWeeklySummaries={setWeeklySummaries}
           splits={splits} loans={loans} savingsLog={savingsLog} accounts={accounts} transfers={transfers}
+          recurringIncome={recurringIncome} setRecurringIncome={setRecurringIncome}
+          spendingLimits={spendingLimits} setSpendingLimits={setSpendingLimits}
         />
         </ErrorBoundary>
       ) : subTab === "borrow" ? (

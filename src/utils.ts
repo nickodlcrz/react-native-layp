@@ -1,6 +1,10 @@
 import * as Crypto from "expo-crypto";
+import type {
+  Split, Account, Expense, MoneyLogEntry, SavingsLogEntry, Loan,
+  Transfer, FinancialContext, DailyBudgetReview, ReviewCategory, Goal,
+} from "./types";
 
-export const peso = (n) =>
+export const peso = (n: number | string): string =>
   "\u20B1" + (Number(n) || 0).toLocaleString("en-PH", { maximumFractionDigits: 2 });
 
 // Was Math.random().toString(36).slice(2, 10) -- a 6-character base-36
@@ -13,27 +17,27 @@ export const peso = (n) =>
 // each other. expo-crypto works the same on iOS/Android/web, unlike relying
 // on a global crypto.randomUUID() that may or may not be polyfilled by the
 // JS engine.
-export const uid = () => Crypto.randomUUID();
-export const isPositiveAmount = (value) => Number.isFinite(Number(value)) && Number(value) > 0;
+export const uid = (): string => Crypto.randomUUID();
+export const isPositiveAmount = (value: unknown): boolean => Number.isFinite(Number(value)) && Number(value) > 0;
 
 // IMPORTANT: never use Date.toISOString() for calendar dates. It converts to
 // UTC, which silently shifts the date backward for any timezone ahead of UTC
 // (e.g. Philippines, UTC+8) -- local midnight becomes 4pm the *previous* day
 // in UTC. This formats using the device's local calendar fields instead.
-export function toLocalISO(d) {
+export function toLocalISO(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
-export const todayISO = () => toLocalISO(new Date());
-export const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+export const todayISO = (): string => toLocalISO(new Date());
+export const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
 
-export function daysUntil(dateStr) {
+export function daysUntil(dateStr: string): number {
   const d = new Date(dateStr + "T00:00:00");
   const now = new Date();
   now.setHours(0, 0, 0, 0);
-  return Math.round((d - now) / 86400000);
+  return Math.round((d.getTime() - now.getTime()) / 86400000);
 }
 
 // Advances a due date for a recurring bill -- "weekly" just adds 7 days,
@@ -41,7 +45,7 @@ export function daysUntil(dateStr) {
 // setDate/setMonth rather than naive day-arithmetic so a Jan 31 bill lands
 // on Feb 28 (or 29) instead of overflowing into March; JS's Date normalizes
 // an out-of-range day-of-month for you when you set the month first.
-export function nextRecurringDate(dateStr, frequency) {
+export function nextRecurringDate(dateStr: string, frequency?: "weekly" | "monthly" | null): string {
   const d = new Date(dateStr + "T00:00:00");
   if (frequency === "weekly") {
     d.setDate(d.getDate() + 7);
@@ -56,21 +60,21 @@ export function nextRecurringDate(dateStr, frequency) {
   }
   return toLocalISO(d);
 }
-export function fmtDay(dateStr) {
+export function fmtDay(dateStr: string): string {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" });
 }
-export function fmtDateLong(dateStr) {
+export function fmtDateLong(dateStr?: string | null): string {
   if (!dateStr) return "";
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
 }
-export function fmtTime12(hhmm) {
+export function fmtTime12(hhmm?: string | null): string {
   if (!hhmm) return "";
   let [h, m] = hhmm.split(":").map(Number);
   const ap = h >= 12 ? "PM" : "AM";
   h = h % 12; if (h === 0) h = 12;
   return `${h}:${String(m).padStart(2, "0")} ${ap}`;
 }
-export function getWeekDates(anchor) {
+export function getWeekDates(anchor: string | Date): string[] {
   const d = new Date(anchor);
   const sunday = new Date(d);
   sunday.setDate(d.getDate() - d.getDay());
@@ -82,7 +86,7 @@ export function getWeekDates(anchor) {
 }
 
 // Rebalances all other splits proportionally so the total always stays 100.
-export function normalizeSplits(splits, changedIdx, newVal) {
+export function normalizeSplits(splits: Split[], changedIdx: number, newVal: number): Split[] {
   newVal = clamp(Math.round(newVal), 0, 100);
   const old = splits[changedIdx].percent;
   const delta = newVal - old;
@@ -103,17 +107,17 @@ export function normalizeSplits(splits, changedIdx, newVal) {
   return updated;
 }
 
-export function removeSplitAndRedistribute(splits, id) {
+export function removeSplitAndRedistribute(splits: Split[], id: string): Split[] {
   if (splits.length <= 1) return splits;
   const removing = splits.find((s) => s.id === id);
   const rest = splits.filter((s) => s.id !== id);
   const restTotal = rest.reduce((s, x) => s + x.percent, 0);
-  let updated;
+  let updated: Split[];
   if (restTotal <= 0) {
     const even = Math.floor(100 / rest.length);
     updated = rest.map((s, i) => ({ ...s, percent: i === rest.length - 1 ? 100 - even * (rest.length - 1) : even }));
   } else {
-    updated = rest.map((s) => ({ ...s, percent: Math.round(s.percent + removing.percent * (s.percent / restTotal)) }));
+    updated = rest.map((s) => ({ ...s, percent: Math.round(s.percent + (removing?.percent ?? 0) * (s.percent / restTotal)) }));
   }
   const total = updated.reduce((s, x) => s + x.percent, 0);
   const diff = 100 - total;
@@ -123,10 +127,10 @@ export function removeSplitAndRedistribute(splits, id) {
 
 // --- Borrow tracker math, shared across Budget/Spending/Borrow screens ---
 
-export function loanInterest(loan) {
+export function loanInterest(loan: Loan): number {
   return (Number(loan.principal) || 0) * (Number(loan.interestPercent) || 0) / 100;
 }
-export function loanTotalDue(loan) {
+export function loanTotalDue(loan: Loan): number {
   return Number(loan.principal) + loanInterest(loan);
 }
 
@@ -137,7 +141,7 @@ export function loanTotalDue(loan) {
 // partial payments existed, which has no `payments` array at all). While
 // still unsettled, it's the running total of whatever's been explicitly
 // recorded.
-export function loanTotalPaid(loan) {
+export function loanTotalPaid(loan: Loan): number {
   if (loan.settled) return loanTotalDue(loan);
   return (loan.payments || []).reduce((s, p) => s + Number(p.amount), 0);
 }
@@ -153,11 +157,59 @@ export function loanTotalPaid(loan) {
 // endpoints (paid=0, or paid=full total due), so existing loans -- settled
 // or not, with no payment history at all -- carry the same balance impact
 // they always did.
-export function loanNetAdjustment(loan) {
+export function loanNetAdjustment(loan: Loan): number {
   const paid = loanTotalPaid(loan);
   if (loan.type === "lent") return paid - Number(loan.principal);
   if (loan.type === "borrowed") return Number(loan.principal) - paid;
   return 0;
+}
+
+// A payment can now optionally record which account it was actually paid
+// through/into (payment.account) -- e.g. money borrowed into GoTyme but
+// paid back with Cash. loanNetAdjustment above assumes every payment
+// happened through the loan's own account, which is exactly right for
+// every loan created before this feature (and still the default when a
+// payment doesn't specify one); this generalizes it to spread each
+// payment's effect across whichever account it actually used, while
+// keeping the loan's *own* account's principal effect (the money that
+// moved when the loan was first created) separate from that.
+function effectivePayments(loan: Loan) {
+  const recorded = loan.payments || [];
+  const recordedTotal = recorded.reduce((s, p) => s + Number(p.amount), 0);
+  const totalDue = loanTotalDue(loan);
+  if (loan.settled && recordedTotal < totalDue - 0.005) {
+    // Settled with less explicitly logged than the full amount due --
+    // either an old-style settle from before partial payments existed (no
+    // `payments` array at all), or a remainder that was written off/paid
+    // informally without logging a payment for it. Synthesize the gap as
+    // one more payment through the loan's own account, which reproduces
+    // loanNetAdjustment's historical single-account math exactly for that
+    // case (see the test suite for the worked-out numbers).
+    return [...recorded, { amount: totalDue - recordedTotal, account: loan.account }];
+  }
+  return recorded;
+}
+
+// This loan's effect on one specific account -- the principal itself
+// (money that moved when the loan was created) only counts against
+// `loan.account`; each payment counts against whichever account it
+// specifies (falling back to `loan.account` when it doesn't, which is
+// every payment recorded before this feature existed). Summed across every
+// account a loan touches, this always adds up to the same total change in
+// net worth loanNetAdjustment would give for the loan's own account alone
+// -- this just distributes *where* that change actually landed instead of
+// assuming it was all in one place.
+export function loanAccountEffect(loan: Loan, accountId: string): number {
+  let total = 0;
+  if (loan.account === accountId) {
+    total += loan.type === "lent" ? -Number(loan.principal) : loan.type === "borrowed" ? Number(loan.principal) : 0;
+  }
+  for (const p of effectivePayments(loan)) {
+    const acc = p.account || loan.account;
+    if (acc !== accountId) continue;
+    total += loan.type === "lent" ? Number(p.amount) : loan.type === "borrowed" ? -Number(p.amount) : 0;
+  }
+  return total;
 }
 
 // Savings transfer math: money moved into savings leaves the account it
@@ -165,13 +217,13 @@ export function loanNetAdjustment(loan) {
 // sent to. Kept as its own log (deposit/withdraw entries) rather than
 // folded into moneyLog/expenses, so savings stays visibly separate from
 // day-to-day income and spending.
-export function savingsTotal(savingsLog) {
+export function savingsTotal(savingsLog: SavingsLogEntry[]): number {
   return savingsLog.reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
 }
 
 // Savings unearmarked toward any specific goal -- what's actually free to
 // assign when creating a new goal or topping one up.
-export function unallocatedSavings(savingsLog) {
+export function unallocatedSavings(savingsLog: SavingsLogEntry[]): number {
   return savingsLog
     .filter((x) => !x.goalId)
     .reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
@@ -179,7 +231,7 @@ export function unallocatedSavings(savingsLog) {
 
 // --- Savings goals ---
 
-export function goalCurrentAmount(goalId, savingsLog) {
+export function goalCurrentAmount(goalId: string, savingsLog: SavingsLogEntry[]): number {
   return savingsLog
     .filter((x) => x.goalId === goalId)
     .reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
@@ -188,13 +240,13 @@ export function goalCurrentAmount(goalId, savingsLog) {
 // Approximate months between today and a target date (min 0), used for the
 // "recommended per month" figure -- doesn't need calendar-exact precision,
 // just a reasonable planning estimate.
-export function monthsUntil(dateStr) {
+export function monthsUntil(dateStr?: string | null): number {
   if (!dateStr) return 0;
   const days = daysUntil(dateStr);
   return Math.max(0, days / 30.44);
 }
 
-export function goalProgress(goal, savingsLog) {
+export function goalProgress(goal: Goal, savingsLog: SavingsLogEntry[]) {
   const current = goalCurrentAmount(goal.id, savingsLog);
   const target = Number(goal.targetAmount) || 0;
   const remaining = Math.max(0, target - current);
@@ -210,11 +262,12 @@ export function goalProgress(goal, savingsLog) {
 // the live effect of any lending/borrowing tied to that account, any
 // savings transfers in/out of that account, and any transfers to/from
 // other accounts.
-export function computeAccountBalance(accountId, { moneyLog = [], expenses = [], weeklySummaries = [], loans = [], savingsLog = [], transfers = [] } = {}) {
+export function computeAccountBalance(accountId: string, ctx: Partial<FinancialContext> = {}): number {
+  const { moneyLog = [], expenses = [], weeklySummaries = [], loans = [], savingsLog = [], transfers = [] } = ctx;
   const in_ = moneyLog.filter((m) => m.account === accountId).reduce((s, m) => s + Number(m.amount), 0);
   const out = expenses.filter((e) => e.account === accountId).reduce((s, e) => s + Number(e.amount), 0);
   const outRolled = weeklySummaries.reduce((s, w) => s + (w.byAccount?.[accountId] || 0), 0);
-  const loanAdj = loans.filter((l) => l.account === accountId).reduce((s, l) => s + loanNetAdjustment(l), 0);
+  const loanAdj = loans.reduce((s, l) => s + loanAccountEffect(l, accountId), 0);
   const savingsAdj = savingsLog
     .filter((s) => s.account === accountId)
     .reduce((sum, s) => sum + (s.type === "withdraw" ? Number(s.amount) : -Number(s.amount)), 0);
@@ -240,7 +293,7 @@ export function computeAccountBalance(accountId, { moneyLog = [], expenses = [],
 // Needs/Wants/Savings-specific behavior to presets AND arbitrary custom
 // models (e.g. an added "Other" category just falls back to a plain spend
 // category with no special cross-category logic).
-export function splitKind(split) {
+export function splitKind(split: Pick<Split, "label">): "savings" | "needs" | "wants" | "spend" {
   const label = (split.label || "").toLowerCase();
   if (label.includes("saving")) return "savings";
   if (label.includes("need")) return "needs";
@@ -248,8 +301,19 @@ export function splitKind(split) {
   return "spend";
 }
 
-export function computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }) {
-  const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+interface DailyBudgetReviewInput {
+  splits: Split[];
+  accounts: Account[];
+  moneyLog: MoneyLogEntry[];
+  expenses: Expense[];
+  weeklySummaries?: FinancialContext["weeklySummaries"];
+  loans: Loan[];
+  savingsLog: SavingsLogEntry[];
+  transfers: Transfer[];
+}
+
+export function computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }: DailyBudgetReviewInput): DailyBudgetReview {
+  const ctx: FinancialContext = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
   const currentBalance = accounts.reduce((s, a) => s + computeAccountBalance(a.id, ctx), 0);
   const today = todayISO();
   const todaysExpenses = expenses.filter((e) => e.date === today);
@@ -265,7 +329,7 @@ export function computeDailyBudgetReview({ splits, accounts, moneyLog, expenses,
   // rather than a shrinking, circular target.
   const availableMoney = currentBalance + spentToday + savedToday;
 
-  const categories = splits.map((split) => {
+  const categories: ReviewCategory[] = splits.map((split) => {
     const kind = splitKind(split);
     const recommended = availableMoney * split.percent / 100;
     if (kind === "savings") {
@@ -294,8 +358,8 @@ export function computeDailyBudgetReview({ splits, accounts, moneyLog, expenses,
   // actually safe to spend on Wants -- otherwise the user could spend money
   // that's really still needed for necessities. This is a recommendation,
   // not a restriction: the user can still spend beyond it if they choose.
-  let wantsSafeToSpend = null;
-  let wantsReserveNote = null;
+  let wantsSafeToSpend: number | null = null;
+  let wantsReserveNote: string | null = null;
   if (needs && wants) {
     const reserve = Math.abs(needs.remaining);
     wantsSafeToSpend = Math.max(0, wants.remaining - reserve);
@@ -318,7 +382,7 @@ export function computeDailyBudgetReview({ splits, accounts, moneyLog, expenses,
 
 // A short, neutral status line per category -- guidance, never a pass/fail
 // grade ("On track" / "above today's recommendation", not "good"/"failed").
-export function categoryStatusText(cat) {
+export function categoryStatusText(cat: ReviewCategory): string {
   if (cat.isSavings) {
     if (cat.remaining <= 0) return "Today's savings allocation is fully accounted for.";
     return `${peso(cat.remaining)} available for today's savings allocation.`;
@@ -333,20 +397,20 @@ export function categoryStatusText(cat) {
 // fixed at schedule time -- the app re-derives and reschedules this
 // whenever the underlying financial data changes (see notifications.js),
 // so it stays reasonably current without needing a live background task.
-export function dailyBudgetNotificationContent(review) {
+export function dailyBudgetNotificationContent(review: DailyBudgetReview): { title: string; body: string } {
   if (!review.hasIncome) {
-    return { title: "🌙 Daily budget review", body: "No available budget for today's review yet." };
+    return { title: "\ud83c\udf19 Daily budget review", body: "No available budget for today's review yet." };
   }
   if (review.needs && review.needs.remaining < -0.5) {
-    return { title: "⚠️ Daily budget review", body: "Your Needs budget is almost exhausted." };
+    return { title: "\u26a0\ufe0f Daily budget review", body: "Your Needs budget is almost exhausted." };
   }
   if (review.wants && review.wants.remaining < -0.5) {
-    return { title: "⚠️ Budget review", body: "Your Wants spending is above today's recommended amount." };
+    return { title: "\u26a0\ufe0f Budget review", body: "Your Wants spending is above today's recommended amount." };
   }
   if (review.savings && review.savings.remaining > 0.5) {
-    return { title: "💰 Savings opportunity", body: `You have ${peso(review.savings.remaining)} available that could be added to savings today.` };
+    return { title: "\ud83d\udcb0 Savings opportunity", body: `You have ${peso(review.savings.remaining)} available that could be added to savings today.` };
   }
-  return { title: "🌙 Daily budget review", body: `You have ${peso(Math.max(0, review.remainingToday))} remaining today.` };
+  return { title: "\ud83c\udf19 Daily budget review", body: `You have ${peso(Math.max(0, review.remainingToday))} remaining today.` };
 }
 
 // --- Shared UI helpers ---
@@ -359,7 +423,7 @@ export function dailyBudgetNotificationContent(review) {
 
 // --- Account management, mirroring how budget splits work ---
 
-export function addAccount(accounts, palette) {
+export function addAccount(accounts: Account[], palette: string[]): Account[] {
   const color = palette[accounts.length % palette.length];
   return [...accounts, { id: uid(), label: "New account", color }];
 }
@@ -368,7 +432,7 @@ export function addAccount(accounts, palette) {
 // (they just display with a fallback label) -- only blocked if it's the
 // last remaining account, since the app always needs somewhere for money
 // to live.
-export function removeAccount(accounts, id) {
+export function removeAccount(accounts: Account[], id: string): Account[] {
   if (accounts.length <= 1) return accounts;
   return accounts.filter((a) => a.id !== id);
 }

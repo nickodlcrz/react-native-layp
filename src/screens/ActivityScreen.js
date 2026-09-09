@@ -2,7 +2,7 @@ import React from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso } from "../utils";
-import { categoryBreakdown, monthlyTrend } from "../selectors";
+import { categoryBreakdown, monthlyTrend, spendingByLabel } from "../selectors";
 import PieChart from "../components/PieChart";
 import BarChart from "../components/BarChart";
 import EmptyState from "../components/EmptyState";
@@ -13,6 +13,8 @@ export default function ActivityScreen({ expenses, moneyLog, splits }) {
 
   const categories = categoryBreakdown(expenses, splits, now);
   const monthTotal = categories.reduce((s, c) => s + c.amount, 0);
+  const labels = spendingByLabel(expenses, now);
+  const labelTotal = labels.reduce((s, c) => s + c.amount, 0);
   const trend = monthlyTrend({ moneyLog, expenses }, 6, now);
   const trendMax = Math.max(1, ...trend.map((t) => Math.max(t.income, t.spent)));
 
@@ -35,6 +37,34 @@ export default function ActivityScreen({ expenses, moneyLog, splits }) {
             <View style={{ marginTop: 14, gap: 8 }}>
               {categories.map((c) => {
                 const share = monthTotal ? (c.amount / monthTotal) * 100 : 0;
+                return (
+                  <View key={c.id} style={styles.legendRow}>
+                    <View style={[styles.legendDot, { backgroundColor: c.color }]} />
+                    <Text style={[styles.legendLabel, { color: theme.text }]}>{c.label}</Text>
+                    <Text style={[styles.legendValue, { color: theme.textMuted }]}>{peso(c.amount)} · {share.toFixed(0)}%</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        )}
+      </View>
+
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
+        <Text style={[styles.h2, { color: theme.text }]}>This month by what it was for</Text>
+        {labels.length === 0 ? (
+          <EmptyState text="Add a spending label to an expense to see this breakdown." />
+        ) : (
+          <>
+            <PieChart
+              data={labels.map((c) => ({ label: c.label, value: c.amount, color: c.color }))}
+              centerValue={peso(labelTotal)}
+              centerLabel="spent"
+              theme={theme}
+            />
+            <View style={{ marginTop: 14, gap: 8 }}>
+              {labels.map((c) => {
+                const share = labelTotal ? (c.amount / labelTotal) * 100 : 0;
                 return (
                   <View key={c.id} style={styles.legendRow}>
                     <View style={[styles.legendDot, { backgroundColor: c.color }]} />

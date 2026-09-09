@@ -2,22 +2,43 @@ import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet } from "react-native";
 import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search } from "lucide-react-native";
 import { useTheme, ACCENT, INCOME_CATEGORIES, SPENDING_LABELS } from "../theme";
-import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview } from "../utils";
-import { categoryBreakdown, frequentExpenseTemplates } from "../selectors";
+import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview, nextRecurringDate } from "../utils";
+import { categoryBreakdown, frequentExpenseTemplates, spendingByLabel } from "../selectors";
 import { validate, expenseSchema } from "../validation";
 import { notifyBudgetThreshold } from "../notifications";
+import { hapticSuccess } from "../haptics";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import { confirmDelete, confirmAction } from "../components/ConfirmModal";
 
-export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [] }) {
+export default function SpendingScreen({
+  expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [],
+  recurringIncome = [], setRecurringIncome, spendingLimits = {}, setSpendingLimits,
+}) {
   const { theme } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [showMoneyForm, setShowMoneyForm] = useState(false);
   const [historyOpen, setHistoryOpen] = useState({});
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [limitsEditorOpen, setLimitsEditorOpen] = useState(false);
+
+  // This month's spending per label, matched up against any limit the user
+  // has set for that label -- separate from spendingLimits itself (which
+  // is just "label -> monthly cap"), this is the derived "how close am I"
+  // view the progress bars actually render.
+  const labelSpending = useMemo(() => spendingByLabel(expenses), [expenses]);
+  const limitProgress = useMemo(() => {
+    return Object.entries(spendingLimits)
+      .filter(([, limit]) => isPositiveAmount(limit))
+      .map(([label, limit]) => {
+        const spent = labelSpending.find((l) => l.label.toLowerCase() === label.toLowerCase())?.amount || 0;
+        const percent = Math.min(1, spent / limit);
+        return { label, limit: Number(limit), spent, percent };
+      })
+      .sort((a, b) => b.percent - a.percent);
+  }, [spendingLimits, labelSpending]);
 
   function saveExpense(data) {
     if (editingId) {
@@ -41,6 +62,22 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
           notifyBudgetThreshold(afterCat);
         }
       }
+      // Separately, if this expense's spending label has a user-set
+      // monthly limit, fire a one-time heads-up the moment *that* crosses
+      // 80% -- independent of the automatic budget-split alert above,
+      // since a label limit ("Food: P3,000/month") and a split's daily
+      // recommended amount are two different things the user might be
+      // tracking at once.
+      if (data.label && spendingLimits[data.label]) {
+        const limit = Number(spendingLimits[data.label]);
+        const spentBefore = spendingByLabel(expenses).find((l) => l.label.toLowerCase() === data.label.toLowerCase())?.amount || 0;
+        const spentAfter = spentBefore + Number(data.amount);
+        const beforePct = limit > 0 ? spentBefore / limit : 0;
+        const afterPct = limit > 0 ? spentAfter / limit : 0;
+        if (beforePct < 0.8 && afterPct >= 0.8) {
+          notifyBudgetThreshold({ label: data.label, actual: spentAfter, recommended: limit });
+        }
+      }
       setExpenses((prev) => [...prev, newExpense]);
     }
     setShowForm(false);
@@ -54,7 +91,32 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
     });
   }, [expenses, editingId, setExpenses]);
   const startEdit = useCallback((e) => { if (e.source === "bill") return; setEditingId(e.id); setShowForm(true); }, []);
-  function saveMoney(entry) { setMoneyLog((prev) => [...prev, { id: uid(), ...entry, createdAt: Date.now() }]); setShowMoneyForm(false); }
+  // A `recurring` flag on the entry means "also set up a standing template
+  // for this" -- the income itself still gets logged today like any other
+  // entry (recurringId links it back for reference), and a template is
+  // added so future occurrences post themselves automatically (see the
+  // catch-up effect in App.js) without the user needing to remember to log
+  // it again.
+  function saveMoney({ recurring, ...entry }) {
+    const id = uid();
+    setMoneyLog((prev) => [...prev, { id, ...entry, source: recurring ? "recurring" : undefined, createdAt: Date.now() }]);
+    if (recurring) {
+      setRecurringIncome((prev) => [...prev, {
+        id: uid(), label: entry.note, category: entry.category, amount: entry.amount,
+        account: entry.account, frequency: recurring, nextDate: nextRecurringDate(entry.date, recurring),
+      }]);
+    }
+    setShowMoneyForm(false);
+    hapticSuccess();
+  }
+
+  function removeRecurringIncome(id) {
+    confirmDelete(
+      "Stop this recurring income?",
+      "Past entries it already created stay in your history -- this only stops future ones.",
+      () => setRecurringIncome((prev) => prev.filter((r) => r.id !== id))
+    );
+  }
 
   // "Log again" quick-add -- lets a repeat expense (same coffee, same
   // jeepney fare) be re-logged with one tap and a confirm, instead of
@@ -220,6 +282,82 @@ export default function SpendingScreen({ expenses, setExpenses, moneyLog, setMon
               <Text style={[styles.totalValue, { color: remaining < 0 ? ACCENT.ember : "#fff" }]}>{peso(remaining)}</Text>
             </View>
           </View>
+
+          {!showForm && !showMoneyForm && (
+            <View style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.line }]}>
+              <View style={styles.panelHeaderRow}>
+                <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 0 }]}>Spending limits</Text>
+                <Pressable onPress={() => setLimitsEditorOpen((s) => !s)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT.sky }}>{limitsEditorOpen ? "Done" : "Edit"}</Text>
+                </Pressable>
+              </View>
+              {limitsEditorOpen ? (
+                <View style={{ marginTop: 8, gap: 8 }}>
+                  {SPENDING_LABELS.map((l) => (
+                    <View key={l.id} style={styles.limitEditRow}>
+                      <Text style={[styles.limitEditLabel, { color: theme.text }]}>{l.label}</Text>
+                      <TextInput
+                        value={spendingLimits[l.label] != null ? String(spendingLimits[l.label]) : ""}
+                        onChangeText={(v) => {
+                          const clean = v.replace(/[^0-9.]/g, "");
+                          setSpendingLimits((prev) => {
+                            const next = { ...prev };
+                            if (clean) next[l.label] = clean;
+                            else delete next[l.label];
+                            return next;
+                          });
+                        }}
+                        placeholder="No limit"
+                        keyboardType="decimal-pad"
+                        placeholderTextColor={theme.textMuted}
+                        style={[styles.limitEditInput, { backgroundColor: theme.bg, color: theme.text }]}
+                      />
+                    </View>
+                  ))}
+                </View>
+              ) : limitProgress.length === 0 ? (
+                <Text style={[styles.hint, { color: theme.textMuted, marginTop: 4 }]}>No limits set. Tap Edit to set a monthly cap per label (e.g. Food: P3,000).</Text>
+              ) : (
+                <View style={{ marginTop: 8, gap: 10 }}>
+                  {limitProgress.map((p) => {
+                    const barColor = p.percent >= 1 ? ACCENT.ember : p.percent >= 0.8 ? ACCENT.gold : ACCENT.leaf;
+                    return (
+                      <View key={p.label}>
+                        <View style={styles.limitRow}>
+                          <Text style={[styles.limitLabel, { color: theme.text }]}>{p.label}</Text>
+                          <Text style={[styles.limitAmount, { color: theme.textMuted }]}>{peso(p.spent)} / {peso(p.limit)}</Text>
+                        </View>
+                        <View style={[styles.progressTrack, { backgroundColor: theme.bg }]}>
+                          <View style={[styles.progressFill, { width: `${p.percent * 100}%`, backgroundColor: barColor }]} />
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
+
+          {!showForm && !showMoneyForm && recurringIncome.length > 0 && (
+            <View style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.line }]}>
+              <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Recurring income</Text>
+              <View style={{ gap: 8 }}>
+                {recurringIncome.map((r) => (
+                  <View key={r.id} style={styles.limitRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.limitLabel, { color: theme.text }]}>{r.label || "Income"}</Text>
+                      <Text style={[styles.hint, { color: theme.textMuted }]}>
+                        {peso(r.amount)} · {r.frequency === "monthly" ? "monthly" : "weekly"} · next {fmtDay(r.nextDate)}
+                      </Text>
+                    </View>
+                    <Pressable onPress={() => removeRecurringIncome(r.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Stop this recurring income">
+                      <Trash2 size={15} color={theme.textMuted} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {!showForm && !showMoneyForm && (
             <View style={{ marginBottom: 14 }}>
@@ -459,6 +597,7 @@ function MoneyForm({ accounts, ctx, onSave }) {
   const [category, setCategory] = useState("other");
   const [account, setAccount] = useState(accounts[0].id);
   const [date, setDate] = useState(todayISO());
+  const [recurring, setRecurring] = useState(null);
   const canSave = isPositiveAmount(amount);
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
@@ -480,7 +619,18 @@ function MoneyForm({ accounts, ctx, onSave }) {
         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
-      <Pressable disabled={!canSave} onPress={() => canSave && onSave({ amount: Number(amount), note: note.trim(), category, account, date })} style={[styles.formBtn, { backgroundColor: ACCENT.leaf, opacity: canSave ? 1 : 0.5 }]}>
+      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Repeats</Text>
+      <View style={styles.chipWrap}>
+        <Chip label="One-time" color={ACCENT.teal} active={!recurring} onPress={() => setRecurring(null)} small />
+        <Chip label="Weekly" color={ACCENT.sky} active={recurring === "weekly"} onPress={() => setRecurring("weekly")} small />
+        <Chip label="Monthly" color={ACCENT.plum} active={recurring === "monthly"} onPress={() => setRecurring("monthly")} small />
+      </View>
+      {!!recurring && (
+        <Text style={[styles.hint, { color: theme.textMuted, marginBottom: 4 }]}>
+          This entry logs now; a matching one will post itself automatically every {recurring === "monthly" ? "month" : "week"} after that.
+        </Text>
+      )}
+      <Pressable disabled={!canSave} onPress={() => canSave && onSave({ amount: Number(amount), note: note.trim(), category, account, date, recurring })} style={[styles.formBtn, { backgroundColor: ACCENT.leaf, opacity: canSave ? 1 : 0.5 }]}>
         <Text style={[styles.formBtnText, { color: "#fff" }]}>Add money</Text>
       </Pressable>
     </View>
@@ -502,7 +652,18 @@ const styles = StyleSheet.create({
   chipWrap: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12, gap: 6 },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
   searchInput: { flex: 1, fontSize: 13 },
+  hint: { fontSize: 11, lineHeight: 15 },
   miniLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 },
+  panel: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 14 },
+  panelHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  limitEditRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  limitEditLabel: { fontSize: 12, fontWeight: "600", flex: 1 },
+  limitEditInput: { width: 110, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, fontSize: 12, fontFamily: "monospace" },
+  limitRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  limitLabel: { fontSize: 12, fontWeight: "600" },
+  limitAmount: { fontSize: 11, fontFamily: "monospace" },
+  progressTrack: { height: 5, borderRadius: 3, marginTop: 4, overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: 3 },
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
