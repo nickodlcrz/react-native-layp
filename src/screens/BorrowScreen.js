@@ -18,6 +18,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
   const [editingId, setEditingId] = useState(null);
   const [payingId, setPayingId] = useState(null); // loan currently showing its inline "record payment" input
   const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentAccount, setPaymentAccount] = useState(null); // which account the payment was made/received through -- defaults to the loan's own account when the row opens
 
   async function saveLoan(data) {
     if (editingId) {
@@ -51,16 +52,22 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
   // auto-marked settled (and its reminder notification cancelled) so
   // there's no separate "now go tap settled too" step, but that's just a
   // convenience: the person can always toggle it back open again.
-  const recordPayment = useCallback(async (l) => {
+  //
+  // `account` records which account the money actually moved through --
+  // e.g. a loan borrowed into GoTyme but paid back with Cash -- so
+  // computeAccountBalance (see utils.js's loanAccountEffect) reflects the
+  // real account, not just whichever one the loan was originally tied to.
+  const recordPayment = useCallback(async (l, account) => {
     const amt = Number(paymentAmount);
     if (!isPositiveAmount(amt)) return;
-    const payments = [...(l.payments || []), { id: uid(), amount: amt, date: todayISO(), createdAt: Date.now() }];
+    const payments = [...(l.payments || []), { id: uid(), amount: amt, account: account || l.account, date: todayISO(), createdAt: Date.now() }];
     const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
     const nowSettled = totalPaid >= loanTotalDue(l);
     if (nowSettled && l.notificationId) await cancelTodoNotifications([l.notificationId]);
     setLoans((prev) => prev.map((x) => (x.id === l.id ? { ...x, payments, settled: nowSettled, settledAt: nowSettled ? todayISO() : x.settledAt } : x)));
     setPayingId(null);
     setPaymentAmount("");
+    setPaymentAccount(null);
   }, [paymentAmount, setLoans]);
 
   const remove = useCallback((l) => {
@@ -91,16 +98,19 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
       l={l}
       theme={theme}
       accounts={accounts}
+      ctx={ctx}
       payingId={payingId}
       paymentAmount={payingId === l.id ? paymentAmount : ""}
+      paymentAccount={payingId === l.id ? (paymentAccount || l.account) : null}
       setPayingId={setPayingId}
       setPaymentAmount={setPaymentAmount}
+      setPaymentAccount={setPaymentAccount}
       toggleSettled={toggleSettled}
       startEdit={startEdit}
       remove={remove}
       recordPayment={recordPayment}
     />
-  ), [theme, accounts, payingId, paymentAmount, toggleSettled, startEdit, remove, recordPayment]);
+  ), [theme, accounts, ctx, payingId, paymentAmount, paymentAccount, toggleSettled, startEdit, remove, recordPayment]);
 
   return (
     <FlatList
@@ -168,7 +178,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
 // Extracted and memoized (same pattern as TodoScreen's TodoRow) so editing
 // the add/edit form, typing a payment amount, or toggling one entry doesn't
 // force every other row in the list to re-render.
-const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paymentAmount, setPayingId, setPaymentAmount, toggleSettled, startEdit, remove, recordPayment }) {
+const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId, paymentAmount, paymentAccount, setPayingId, setPaymentAmount, setPaymentAccount, toggleSettled, startEdit, remove, recordPayment }) {
   const dleft = l.dueDate ? daysUntil(l.dueDate) : null;
   const due = loanTotalDue(l);
   const paid = loanTotalPaid(l);
@@ -178,6 +188,14 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paym
   const dueSoon = !l.settled && dleft !== null && dleft >= 0 && dleft <= 2;
   const account = accounts.find((a) => a.id === l.account);
   const borderColor = overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.line;
+  // Paying back money you borrowed takes it OUT of whichever account you
+  // pay with; receiving payment for money you lent puts it INTO whichever
+  // account you receive it in -- opposite directions, same "which account"
+  // question either way.
+  const payAmt = Number(paymentAmount) || 0;
+  const resultingBalance = paymentAccount != null
+    ? computeAccountBalance(paymentAccount, ctx) + (l.type === "lent" ? payAmt : -payAmt)
+    : null;
   return (
     <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -209,7 +227,7 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paym
           )}
         </Pressable>
         {!l.settled && (
-          <Pressable onPress={() => { setPayingId(payingId === l.id ? null : l.id); setPaymentAmount(""); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Record a payment">
+          <Pressable onPress={() => { setPayingId(payingId === l.id ? null : l.id); setPaymentAmount(""); setPaymentAccount(l.account); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Record a payment">
             <Wallet size={15} color={ACCENT.leaf} />
           </Pressable>
         )}
@@ -218,19 +236,32 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paym
       </View>
 
       {payingId === l.id && (
-        <View style={styles.paymentRow}>
-          <TextInput
-            value={paymentAmount}
-            onChangeText={(v) => setPaymentAmount(v.replace(/[^0-9.]/g, ""))}
-            placeholder={`up to ${peso(remaining)}`}
-            placeholderTextColor={theme.textMuted}
-            keyboardType="decimal-pad"
-            autoFocus
-            style={[styles.paymentInput, { backgroundColor: theme.bg, color: theme.text }]}
-          />
-          <Pressable onPress={() => recordPayment(l)} disabled={!isPositiveAmount(paymentAmount)} style={[styles.paymentConfirm, { backgroundColor: ACCENT.leaf, opacity: isPositiveAmount(paymentAmount) ? 1 : 0.5 }]} accessibilityLabel="Confirm payment">
-            <Check size={14} color="#fff" />
-          </Pressable>
+        <View style={{ marginTop: 10 }}>
+          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>{l.type === "lent" ? "Receive into" : "Pay using"}</Text>
+          <View style={styles.chipWrap}>
+            {accounts.map((a) => (
+              <Chip key={a.id} label={a.label} color={a.color} active={paymentAccount === a.id} onPress={() => setPaymentAccount(a.id)} small />
+            ))}
+          </View>
+          <View style={styles.paymentRow}>
+            <TextInput
+              value={paymentAmount}
+              onChangeText={(v) => setPaymentAmount(v.replace(/[^0-9.]/g, ""))}
+              placeholder={`up to ${peso(remaining)}`}
+              placeholderTextColor={theme.textMuted}
+              keyboardType="decimal-pad"
+              autoFocus
+              style={[styles.paymentInput, { backgroundColor: theme.bg, color: theme.text }]}
+            />
+            <Pressable onPress={() => recordPayment(l, paymentAccount)} disabled={!isPositiveAmount(paymentAmount)} style={[styles.paymentConfirm, { backgroundColor: ACCENT.leaf, opacity: isPositiveAmount(paymentAmount) ? 1 : 0.5 }]} accessibilityLabel="Confirm payment">
+              <Check size={14} color="#fff" />
+            </Pressable>
+          </View>
+          {isPositiveAmount(paymentAmount) && resultingBalance != null && (
+            <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 6 }]}>
+              {peso(resultingBalance)} this will be your balance
+            </Text>
+          )}
         </View>
       )}
 
@@ -290,9 +321,14 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
         <View style={[styles.previewBox, { backgroundColor: theme.bg }]}>
           <Text style={[styles.previewText, { color: theme.textMuted }]}>Total due: <Text style={{ color: theme.text, fontWeight: "700" }}>{peso(principalNum * (1 + (Number(interestPercent) || 0) / 100))}</Text></Text>
           {!initial && (
-            <Text style={[styles.previewText, { color: theme.textMuted }]}>
-              {type === "lent" ? `Will deduct ${peso(principalNum)} from` : `Will add ${peso(principalNum)} to`} {accounts.find((a) => a.id === account)?.label} now
-            </Text>
+            <>
+              <Text style={[styles.previewText, { color: theme.textMuted }]}>
+                {type === "lent" ? `Will deduct ${peso(principalNum)} from` : `Will add ${peso(principalNum)} to`} {accounts.find((a) => a.id === account)?.label} now
+              </Text>
+              <Text style={[styles.previewText, { color: theme.textMuted }]}>
+                {peso(accountBalance + (type === "lent" ? -principalNum : principalNum))} this will be your balance
+              </Text>
+            </>
           )}
         </View>
       ) : null}

@@ -661,6 +661,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             schoolDefaults={schoolDefaults} setSchoolDefaults={setSchoolDefaults}
             todos={todos} setTodos={setTodos}
             onGoToTodoForSubject={goToTodoForSubject}
+            cancelledClasses={cancelledClasses}
+            onSuspendClass={handleSuspendClass}
           />
         );
       case "budget":

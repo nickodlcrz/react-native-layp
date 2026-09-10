@@ -1,0 +1,759 @@
+diff --git a/App.js b/App.js
+index c08388d..b228818 100644
+--- a/App.js
++++ b/App.js
+@@ -661,6 +661,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+             schoolDefaults={schoolDefaults} setSchoolDefaults={setSchoolDefaults}
+             todos={todos} setTodos={setTodos}
+             onGoToTodoForSubject={goToTodoForSubject}
++            cancelledClasses={cancelledClasses}
++            onSuspendClass={handleSuspendClass}
+           />
+         );
+       case "budget":
+diff --git a/src/screens/BorrowScreen.js b/src/screens/BorrowScreen.js
+index 727400f..927d266 100644
+--- a/src/screens/BorrowScreen.js
++++ b/src/screens/BorrowScreen.js
+@@ -18,6 +18,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+   const [editingId, setEditingId] = useState(null);
+   const [payingId, setPayingId] = useState(null); // loan currently showing its inline "record payment" input
+   const [paymentAmount, setPaymentAmount] = useState("");
++  const [paymentAccount, setPaymentAccount] = useState(null); // which account the payment was made/received through -- defaults to the loan's own account when the row opens
+ 
+   async function saveLoan(data) {
+     if (editingId) {
+@@ -51,16 +52,22 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+   // auto-marked settled (and its reminder notification cancelled) so
+   // there's no separate "now go tap settled too" step, but that's just a
+   // convenience: the person can always toggle it back open again.
+-  const recordPayment = useCallback(async (l) => {
++  //
++  // `account` records which account the money actually moved through --
++  // e.g. a loan borrowed into GoTyme but paid back with Cash -- so
++  // computeAccountBalance (see utils.js's loanAccountEffect) reflects the
++  // real account, not just whichever one the loan was originally tied to.
++  const recordPayment = useCallback(async (l, account) => {
+     const amt = Number(paymentAmount);
+     if (!isPositiveAmount(amt)) return;
+-    const payments = [...(l.payments || []), { id: uid(), amount: amt, date: todayISO(), createdAt: Date.now() }];
++    const payments = [...(l.payments || []), { id: uid(), amount: amt, account: account || l.account, date: todayISO(), createdAt: Date.now() }];
+     const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+     const nowSettled = totalPaid >= loanTotalDue(l);
+     if (nowSettled && l.notificationId) await cancelTodoNotifications([l.notificationId]);
+     setLoans((prev) => prev.map((x) => (x.id === l.id ? { ...x, payments, settled: nowSettled, settledAt: nowSettled ? todayISO() : x.settledAt } : x)));
+     setPayingId(null);
+     setPaymentAmount("");
++    setPaymentAccount(null);
+   }, [paymentAmount, setLoans]);
+ 
+   const remove = useCallback((l) => {
+@@ -91,16 +98,19 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+       l={l}
+       theme={theme}
+       accounts={accounts}
++      ctx={ctx}
+       payingId={payingId}
+       paymentAmount={payingId === l.id ? paymentAmount : ""}
++      paymentAccount={payingId === l.id ? (paymentAccount || l.account) : null}
+       setPayingId={setPayingId}
+       setPaymentAmount={setPaymentAmount}
++      setPaymentAccount={setPaymentAccount}
+       toggleSettled={toggleSettled}
+       startEdit={startEdit}
+       remove={remove}
+       recordPayment={recordPayment}
+     />
+-  ), [theme, accounts, payingId, paymentAmount, toggleSettled, startEdit, remove, recordPayment]);
++  ), [theme, accounts, ctx, payingId, paymentAmount, paymentAccount, toggleSettled, startEdit, remove, recordPayment]);
+ 
+   return (
+     <FlatList
+@@ -168,7 +178,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+ // Extracted and memoized (same pattern as TodoScreen's TodoRow) so editing
+ // the add/edit form, typing a payment amount, or toggling one entry doesn't
+ // force every other row in the list to re-render.
+-const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paymentAmount, setPayingId, setPaymentAmount, toggleSettled, startEdit, remove, recordPayment }) {
++const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId, paymentAmount, paymentAccount, setPayingId, setPaymentAmount, setPaymentAccount, toggleSettled, startEdit, remove, recordPayment }) {
+   const dleft = l.dueDate ? daysUntil(l.dueDate) : null;
+   const due = loanTotalDue(l);
+   const paid = loanTotalPaid(l);
+@@ -178,6 +188,14 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paym
+   const dueSoon = !l.settled && dleft !== null && dleft >= 0 && dleft <= 2;
+   const account = accounts.find((a) => a.id === l.account);
+   const borderColor = overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.line;
++  // Paying back money you borrowed takes it OUT of whichever account you
++  // pay with; receiving payment for money you lent puts it INTO whichever
++  // account you receive it in -- opposite directions, same "which account"
++  // question either way.
++  const payAmt = Number(paymentAmount) || 0;
++  const resultingBalance = paymentAccount != null
++    ? computeAccountBalance(paymentAccount, ctx) + (l.type === "lent" ? payAmt : -payAmt)
++    : null;
+   return (
+     <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
+       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+@@ -209,7 +227,7 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paym
+           )}
+         </Pressable>
+         {!l.settled && (
+-          <Pressable onPress={() => { setPayingId(payingId === l.id ? null : l.id); setPaymentAmount(""); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Record a payment">
++          <Pressable onPress={() => { setPayingId(payingId === l.id ? null : l.id); setPaymentAmount(""); setPaymentAccount(l.account); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Record a payment">
+             <Wallet size={15} color={ACCENT.leaf} />
+           </Pressable>
+         )}
+@@ -218,19 +236,32 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, payingId, paym
+       </View>
+ 
+       {payingId === l.id && (
+-        <View style={styles.paymentRow}>
+-          <TextInput
+-            value={paymentAmount}
+-            onChangeText={(v) => setPaymentAmount(v.replace(/[^0-9.]/g, ""))}
+-            placeholder={`up to ${peso(remaining)}`}
+-            placeholderTextColor={theme.textMuted}
+-            keyboardType="decimal-pad"
+-            autoFocus
+-            style={[styles.paymentInput, { backgroundColor: theme.bg, color: theme.text }]}
+-          />
+-          <Pressable onPress={() => recordPayment(l)} disabled={!isPositiveAmount(paymentAmount)} style={[styles.paymentConfirm, { backgroundColor: ACCENT.leaf, opacity: isPositiveAmount(paymentAmount) ? 1 : 0.5 }]} accessibilityLabel="Confirm payment">
+-            <Check size={14} color="#fff" />
+-          </Pressable>
++        <View style={{ marginTop: 10 }}>
++          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>{l.type === "lent" ? "Receive into" : "Pay using"}</Text>
++          <View style={styles.chipWrap}>
++            {accounts.map((a) => (
++              <Chip key={a.id} label={a.label} color={a.color} active={paymentAccount === a.id} onPress={() => setPaymentAccount(a.id)} small />
++            ))}
++          </View>
++          <View style={styles.paymentRow}>
++            <TextInput
++              value={paymentAmount}
++              onChangeText={(v) => setPaymentAmount(v.replace(/[^0-9.]/g, ""))}
++              placeholder={`up to ${peso(remaining)}`}
++              placeholderTextColor={theme.textMuted}
++              keyboardType="decimal-pad"
++              autoFocus
++              style={[styles.paymentInput, { backgroundColor: theme.bg, color: theme.text }]}
++            />
++            <Pressable onPress={() => recordPayment(l, paymentAccount)} disabled={!isPositiveAmount(paymentAmount)} style={[styles.paymentConfirm, { backgroundColor: ACCENT.leaf, opacity: isPositiveAmount(paymentAmount) ? 1 : 0.5 }]} accessibilityLabel="Confirm payment">
++              <Check size={14} color="#fff" />
++            </Pressable>
++          </View>
++          {isPositiveAmount(paymentAmount) && resultingBalance != null && (
++            <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 6 }]}>
++              {peso(resultingBalance)} this will be your balance
++            </Text>
++          )}
+         </View>
+       )}
+ 
+@@ -290,9 +321,14 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
+         <View style={[styles.previewBox, { backgroundColor: theme.bg }]}>
+           <Text style={[styles.previewText, { color: theme.textMuted }]}>Total due: <Text style={{ color: theme.text, fontWeight: "700" }}>{peso(principalNum * (1 + (Number(interestPercent) || 0) / 100))}</Text></Text>
+           {!initial && (
+-            <Text style={[styles.previewText, { color: theme.textMuted }]}>
+-              {type === "lent" ? `Will deduct ${peso(principalNum)} from` : `Will add ${peso(principalNum)} to`} {accounts.find((a) => a.id === account)?.label} now
+-            </Text>
++            <>
++              <Text style={[styles.previewText, { color: theme.textMuted }]}>
++                {type === "lent" ? `Will deduct ${peso(principalNum)} from` : `Will add ${peso(principalNum)} to`} {accounts.find((a) => a.id === account)?.label} now
++              </Text>
++              <Text style={[styles.previewText, { color: theme.textMuted }]}>
++                {peso(accountBalance + (type === "lent" ? -principalNum : principalNum))} this will be your balance
++              </Text>
++            </>
+           )}
+         </View>
+       ) : null}
+diff --git a/src/screens/SchoolScreen.js b/src/screens/SchoolScreen.js
+index f63e876..3dc0314 100644
+--- a/src/screens/SchoolScreen.js
++++ b/src/screens/SchoolScreen.js
+@@ -2,17 +2,17 @@ import React, { useMemo, useState } from "react";
+ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Switch, Alert } from "react-native";
+ import {
+   GraduationCap, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
+-  Bell, BellOff, MapPin, User, Clock, BookOpen, CircleCheck,
++  Bell, BellOff, MapPin, User, Clock, BookOpen, CircleCheck, Ban,
+ } from "lucide-react-native";
+ import { useTheme, ACCENT, WEEKDAYS, ADVANCE_REMINDER_OPTIONS, CHECKIN_REMINDER_OPTIONS } from "../theme";
+-import { uid, fmtTime12, fmtDateLong, daysUntil } from "../utils";
++import { uid, fmtTime12, fmtDateLong, daysUntil, todayISO } from "../utils";
+ import {
+   newAcademicPeriod, makePeriodActive, getActivePeriod, copyPeriodSchedule,
+   subjectsForPeriod, entriesForSubject, todayExpoWeekday, blocksForWeekday,
+   getCurrentAndNextClass, minutesRemaining,
+ } from "../school";
+ import { rescheduleSubjectNotifications, cancelSubjectNotifications } from "../notifications";
+-import { confirmDelete } from "../components/ConfirmModal";
++import { confirmDelete, confirmAction } from "../components/ConfirmModal";
+ import Chip from "../components/Chip";
+ import EmptyState from "../components/EmptyState";
+ import TimePicker from "../components/TimePicker";
+@@ -20,6 +20,7 @@ import TimePicker from "../components/TimePicker";
+ function SchoolScreen({
+   periods, setPeriods, subjects, setSubjects, entries, setEntries,
+   schoolDefaults, setSchoolDefaults, todos, setTodos, onGoToTodoForSubject,
++  cancelledClasses = [], onSuspendClass,
+ }) {
+   const { theme } = useTheme();
+   const activePeriod = getActivePeriod(periods);
+@@ -44,6 +45,22 @@ function SchoolScreen({
+   const activeSubjectIds = activeSubjects.map((s) => s.id);
+   const activeEntries = useMemo(() => entries.filter((e) => activeSubjectIds.includes(e.subjectId)), [entries, activeSubjectIds]);
+   const currentNext = activePeriod ? getCurrentAndNextClass(activeSubjects, activeEntries) : { current: null, next: null };
++  // Every one of today's meetings for the active period, not just
++  // current/next -- so a "Cancel class" button can be offered for each one
++  // (e.g. the person missed the alarm/notification entirely and wants to
++  // mark it suspended after the fact, or wants to cancel one later today
++  // ahead of time).
++  const todaysBlocks = activePeriod ? blocksForWeekday(activeSubjects, activeEntries, todayExpoWeekday()) : [];
++  const isCancelledToday = (entryId) => cancelledClasses.some((c) => c.date === todayISO() && c.entryId === entryId);
++  function requestSuspend(block) {
++    confirmAction({
++      title: "Cancel this class?",
++      message: `${block.subject.code} — ${block.subject.description} won't send its reminder again today. This only affects today.`,
++      confirmLabel: "Cancel class",
++      destructive: true,
++      onConfirm: () => onSuspendClass?.(block),
++    });
++  }
+ 
+   const editingSubject = editingSubjectId ? subjects.find((s) => s.id === editingSubjectId) : null;
+   const editingPrimaryEntry = editingSubject ? entriesForSubject(entries, editingSubject.id)[0] : null;
+@@ -244,22 +261,49 @@ function SchoolScreen({
+         />
+       )}
+ 
+-      {/* Today's Classes -- always active-period, real time, same as Home widget */}
++      {/* Today's Classes -- always active-period, real time, same as Home widget.
++          Lists every meeting today (not just current/next) so each one can be
++          marked cancelled -- covers missing the alarm/notification entirely. */}
+       <View style={[styles.nowCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+         <Text style={[styles.nowLabel, { color: theme.textMuted }]}>TODAY</Text>
+         {!activePeriod ? (
+           <Text style={[styles.nowEmpty, { color: theme.textMuted }]}>No active schedule set.</Text>
+-        ) : currentNext.current ? (
+-          <ClassLine dotColor={ACCENT.leaf} tag="NOW" subject={currentNext.current.subject} entry={currentNext.current.entry} theme={theme} sub={`${minutesRemaining(currentNext.current)} minutes remaining`} />
+-        ) : currentNext.next && currentNext.nextDaysAhead === 0 ? (
+-          <ClassLine dotColor={ACCENT.gold} tag="NEXT" subject={currentNext.next.subject} entry={currentNext.next.entry} theme={theme} />
+-        ) : (
++        ) : todaysBlocks.length === 0 ? (
+           <Text style={[styles.nowEmpty, { color: theme.textMuted }]}>No classes scheduled today.</Text>
+-        )}
+-        {currentNext.current && currentNext.next && currentNext.nextDaysAhead === 0 && (
+-          <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.line }}>
+-            <ClassLine dotColor={ACCENT.gold} tag="NEXT" subject={currentNext.next.subject} entry={currentNext.next.entry} theme={theme} />
+-          </View>
++        ) : (
++          todaysBlocks.map((block, i) => {
++            const cancelled = isCancelledToday(block.entry.id);
++            const isNow = currentNext.current?.entry.id === block.entry.id;
++            const isNext = !isNow && currentNext.next?.entry.id === block.entry.id && currentNext.nextDaysAhead === 0;
++            const tag = cancelled ? "SUSPENDED" : isNow ? "NOW" : isNext ? "NEXT" : "TODAY";
++            const dotColor = cancelled ? ACCENT.ember : isNow ? ACCENT.leaf : isNext ? ACCENT.gold : theme.textMuted;
++            return (
++              <View key={block.entry.id} style={i > 0 ? { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.line } : undefined}>
++                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
++                  <View style={{ flex: 1 }}>
++                    <ClassLine
++                      dotColor={dotColor}
++                      tag={tag}
++                      subject={block.subject}
++                      entry={block.entry}
++                      theme={theme}
++                      sub={!cancelled && isNow ? `${minutesRemaining(block)} minutes remaining` : null}
++                    />
++                  </View>
++                  {!cancelled && (
++                    <Pressable
++                      onPress={() => requestSuspend(block)}
++                      style={[styles.cancelClassBtn, { backgroundColor: theme.bg }]}
++                      accessibilityLabel={`Cancel ${block.subject.code} today`}
++                    >
++                      <Ban size={12} color={ACCENT.ember} />
++                      <Text style={[styles.cancelClassBtnText, { color: ACCENT.ember }]}>Cancel</Text>
++                    </Pressable>
++                  )}
++                </View>
++              </View>
++            );
++          })
+         )}
+       </View>
+ 
+@@ -756,6 +800,8 @@ const styles = StyleSheet.create({
+   nowTag: { fontSize: 10, fontWeight: "800", letterSpacing: 0.4 },
+   nowDesc: { fontSize: 13, fontWeight: "700", marginTop: 2 },
+   nowTime: { fontSize: 11, marginTop: 2, fontFamily: "monospace" },
++  cancelClassBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 },
++  cancelClassBtnText: { fontSize: 9.5, fontWeight: "700" },
+   defaultsToggle: { marginBottom: 4 },
+   defaultsToggleText: { fontSize: 10, fontWeight: "700" },
+   toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
+diff --git a/src/screens/SpendingScreen.js b/src/screens/SpendingScreen.js
+index 7c82c8c..3e596ea 100644
+--- a/src/screens/SpendingScreen.js
++++ b/src/screens/SpendingScreen.js
+@@ -572,7 +572,7 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
+         })}
+       </View>
+       <Text style={[styles.metaText, { color: exceedsBalance ? ACCENT.ember : theme.textMuted, marginBottom: 8 }]}>
+-        {peso(available)} available in this account
++        {peso(available - (isPositiveAmount(amount) ? amountNum : 0))} this will be your balance
+       </Text>
+       <View style={{ marginBottom: 12 }}>
+         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
+@@ -599,6 +599,7 @@ function MoneyForm({ accounts, ctx, onSave }) {
+   const [date, setDate] = useState(todayISO());
+   const [recurring, setRecurring] = useState(null);
+   const canSave = isPositiveAmount(amount);
++  const currentBalance = ctx ? computeAccountBalance(account, ctx) : null;
+   return (
+     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+       <Text style={[styles.formTitle, { color: theme.text }]}>Money received / added</Text>
+@@ -614,6 +615,11 @@ function MoneyForm({ accounts, ctx, onSave }) {
+           return <Chip key={a.id} label={bal != null ? `${a.label} - ${peso(bal)}` : a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />;
+         })}
+       </View>
++      {currentBalance != null && (
++        <Text style={[styles.metaText, { color: theme.textMuted, marginBottom: 8 }]}>
++          {peso(currentBalance + (isPositiveAmount(amount) ? Number(amount) : 0))} this will be your balance
++        </Text>
++      )}
+       <View style={{ marginBottom: 12 }}>
+         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
+         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+diff --git a/src/screens/TodoScreen.js b/src/screens/TodoScreen.js
+index 9815653..e08a5fc 100644
+--- a/src/screens/TodoScreen.js
++++ b/src/screens/TodoScreen.js
+@@ -1,8 +1,8 @@
+ import React, { useCallback, useMemo, useRef, useState } from "react";
+-import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Linking, Platform, Switch, Animated, LayoutAnimation, UIManager } from "react-native";
++import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, Animated, LayoutAnimation, UIManager } from "react-native";
+ import {
+-  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, LayoutList, LayoutGrid, CalendarDays,
+-  ChevronLeft, ChevronRight, AlertTriangle, ChevronDown, ChevronUp, Settings, Bell, BellOff, AlarmClock,
++  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays,
++  ChevronLeft, ChevronRight, AlertTriangle, Bell, BellOff, AlarmClock,
+ } from "lucide-react-native";
+ import { useTheme, ACCENT, CATEGORIES } from "../theme";
+ import { uid, todayISO, daysUntil, fmtDay, fmtTime12, getWeekDates } from "../utils";
+@@ -16,6 +16,17 @@ import { hapticSuccess } from "../haptics";
+ import { confirmDelete } from "../components/ConfirmModal";
+ import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
+ 
++// A task's work status, independent of "completed" -- completed/checked
++// off is what moves a task to the Finished tab; status is a lighter-weight
++// note on how far along it is while still active (e.g. a school task you
++// haven't started vs. one you're partway through). New tasks always start
++// at "Not started" -- the person only ever moves it forward themselves.
++const STATUS_OPTIONS = [
++  { id: "not_started", label: "Not started", color: "#9AA0A6" },
++  { id: "to_pass", label: "To pass", color: ACCENT.gold },
++  { id: "wip", label: "Work in progress", color: ACCENT.sky },
++];
++
+ // Old-architecture Android needs this opt-in for LayoutAnimation to do
+ // anything at all (New Architecture/Fabric has it on by default, and this
+ // is a harmless no-op there) -- without it, the "finished" list reshuffling
+@@ -25,23 +36,15 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
+   UIManager.setLayoutAnimationEnabledExperimental(true);
+ }
+ 
+-const LAYOUT_OPTIONS = [
+-  { id: "list", icon: List, label: "List" },
+-  { id: "detailed", icon: LayoutList, label: "Detailed" },
+-  { id: "cards", icon: LayoutGrid, label: "Cards" },
+-];
+-
+ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject }) {
+   const { theme } = useTheme();
+   const [showForm, setShowForm] = useState(false);
+   const [editingId, setEditingId] = useState(null);
+   const [filter, setFilter] = useState("all");
+   const [view, setView] = useState("list");
+-  const [layout, setLayout] = useState("list");
+   const [statusView, setStatusView] = useState("active");
+   const [weekAnchor, setWeekAnchor] = useState(new Date());
+   const [selectedDay, setSelectedDay] = useState(null);
+-  const [expandedId, setExpandedId] = useState(null);
+   const [pendingSubjectId, setPendingSubjectId] = useState(null);
+ 
+   // Coming from Subject Detail's "+ Add task" -- open the form pre-linked to
+@@ -155,29 +158,20 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
+   const renderItem = useCallback(({ item: t }) => (
+     <TodoRow
+       t={t}
+-      layout={layout}
+       subject={t.subjectId ? subjectsById[t.subjectId] : null}
+-      isExpanded={expandedId === t.id}
+       onToggle={toggle}
+       onEdit={startEdit}
+       onRemove={remove}
+-      onExpand={setExpandedId}
+       onToggleSubtask={toggleSubtask}
+     />
+-  ), [layout, subjectsById, expandedId, toggle, startEdit, remove, toggleSubtask]);
++  ), [subjectsById, toggle, startEdit, remove, toggleSubtask]);
+ 
+   return (
+     <FlatList
+-      // FlatList can't change numColumns on the fly -- it has to be told
+-      // via a fresh `key` so it fully re-lays-out instead of silently
+-      // ignoring the change (a documented RN limitation, not a bug here).
+-      key={layout}
+       style={{ flex: 1 }}
+       contentContainerStyle={{ paddingBottom: 12 }}
+       data={filtered}
+       keyExtractor={(t) => t.id}
+-      numColumns={layout === "cards" ? 2 : 1}
+-      columnWrapperStyle={layout === "cards" ? { gap: 10 } : undefined}
+       renderItem={renderItem}
+       // Keeps memory/CPU bounded on long task lists by only mounting cells
+       // near the viewport instead of the whole list at once.
+@@ -214,19 +208,6 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
+             <Chip label={`Finished (${todos.filter((t) => t.completed).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
+           </View>
+ 
+-          <View style={[styles.layoutToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
+-            {LAYOUT_OPTIONS.map((opt) => {
+-              const Icon = opt.icon;
+-              const active = layout === opt.id;
+-              return (
+-                <Pressable key={opt.id} onPress={() => setLayout(opt.id)} style={[styles.layoutBtn, active && { backgroundColor: theme.accentDark }]} accessibilityLabel={`${opt.label} view`}>
+-                  <Icon size={13} color={active ? "#fff" : theme.textMuted} />
+-                  <Text style={[styles.layoutBtnText, { color: active ? "#fff" : theme.textMuted }]}>{opt.label}</Text>
+-                </Pressable>
+-              );
+-            })}
+-          </View>
+-
+           {schoolConflicts.length > 0 && statusView === "active" && (
+             <View style={[styles.warnBanner, { backgroundColor: ACCENT.ember + "20" }]}>
+               <AlertTriangle size={14} color={ACCENT.ember} style={{ marginTop: 2 }} />
+@@ -267,15 +248,6 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
+             {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={filter === c.id} onPress={() => setFilter(c.id)} />)}
+           </ScrollView>
+ 
+-          {statusView === "active" && Platform.OS === "android" && (
+-            <Pressable onPress={() => Linking.openSettings()} style={[styles.miuiHint, { backgroundColor: theme.card, borderColor: theme.line }]}>
+-              <Settings size={13} color={theme.textMuted} />
+-              <Text style={[styles.miuiHintText, { color: theme.textMuted }]}>
+-                Reminders not going off? MIUI (Redmi/Xiaomi) kills background apps by default -- tap here, then allow Autostart and set Battery saver to "No restrictions" for LAYP.
+-              </Text>
+-            </Pressable>
+-          )}
+-
+           {showForm && (
+             <TodoForm
+               initial={editingTodo}
+@@ -329,90 +301,10 @@ function useTaskCompletion(t, onToggle) {
+   return { displayCompleted: t.completed || optimisticDone, popScale, handleToggle };
+ }
+ 
+-const TodoRow = React.memo(function TodoRow({ t, layout, subject, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
+-  if (layout === "cards") return <TodoCard t={t} subject={subject} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} />;
+-  if (layout === "detailed") return <TodoRowDetailed t={t} subject={subject} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} onToggleSubtask={onToggleSubtask} />;
+-  return <TodoRowList t={t} subject={subject} isExpanded={isExpanded} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} onExpand={onExpand} onToggleSubtask={onToggleSubtask} />;
+-});
+-
+-// --- List layout: the original compact row, collapsible subtasks ---
+-function TodoRowList({ t, subject, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
+-  const { theme } = useTheme();
+-  const cat = CATEGORIES.find((c) => c.id === t.category);
+-  const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
+-  const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
+-  const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
+-  const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
+-  const flagged = isOverdue || isUrgentSchool;
+-  const subtasks = t.subtasks || [];
+-  const subDone = subtasks.filter((s) => s.done).length;
+-
+-  return (
+-    <View style={[
+-      styles.row,
+-      {
+-        backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
+-        borderColor: flagged ? ACCENT.ember : theme.line,
+-        borderWidth: flagged ? 1.5 : 1,
+-        opacity: displayCompleted ? 0.6 : 1,
+-      },
+-    ]}>
+-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+-        <Pressable onPress={handleToggle}>
+-          <Animated.View style={{ transform: [{ scale: popScale }] }}>
+-            {displayCompleted ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
+-          </Animated.View>
+-        </Pressable>
+-        <Pressable style={{ flex: 1 }} onPress={() => !displayCompleted && onEdit(t)}>
+-          <Text style={[styles.rowTitle, { color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: displayCompleted ? "line-through" : "none" }]}>{t.title}</Text>
+-          <View style={styles.rowMeta}>
+-            <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
+-              <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
+-            </View>
+-            {subject && (
+-              <Text style={[styles.metaText, { color: theme.textMuted }]} numberOfLines={1}>{subject.code} · {subject.description}</Text>
+-            )}
+-            {t.dueDate ? (
+-              <Text style={[styles.metaText, { color: flagged || dleft < 0 ? ACCENT.ember : theme.textMuted }]}>
+-                {dleft === 0 ? "Due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}
+-                {t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""}
+-              </Text>
+-            ) : (
+-              <Text style={[styles.metaText, { color: theme.textMuted }]}>No due date</Text>
+-            )}
+-            {t.reminderEnabled !== false && (
+-              <Bell size={10} color={theme.textMuted} />
+-            )}
+-            {t.alarmEnabled && t.dueTime && (
+-              <AlarmClock size={10} color={ACCENT.rust || ACCENT.gold} />
+-            )}
+-            {subtasks.length > 0 && (
+-              <Pressable onPress={() => onExpand(isExpanded ? null : t.id)} style={{ flexDirection: "row", alignItems: "center", gap: 2 }} accessibilityLabel={isExpanded ? "Collapse subtasks" : "Expand subtasks"}>
+-                <Text style={{ fontSize: 9, fontWeight: "600", color: theme.textMuted }}>{subDone}/{subtasks.length}</Text>
+-                {isExpanded ? <ChevronUp size={10} color={theme.textMuted} /> : <ChevronDown size={10} color={theme.textMuted} />}
+-              </Pressable>
+-            )}
+-          </View>
+-        </Pressable>
+-        {!displayCompleted && <Pressable onPress={() => onEdit(t)} style={{ marginRight: 4 }} accessibilityLabel="Edit task"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+-        <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete task"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+-      </View>
+-      {isExpanded && subtasks.length > 0 && (
+-        <View style={{ marginTop: 8, paddingLeft: 30, gap: 6 }}>
+-          {subtasks.map((s) => (
+-            <Pressable key={s.id} onPress={() => onToggleSubtask(t.id, s.id)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+-              {s.done ? <CheckCircle2 size={14} color={ACCENT.leaf} /> : <Circle size={14} color={theme.textMuted} />}
+-              <Text style={{ fontSize: 11, color: theme.text, textDecorationLine: s.done ? "line-through" : "none" }}>{s.title}</Text>
+-            </Pressable>
+-          ))}
+-        </View>
+-      )}
+-    </View>
+-  );
+-}
+-
+ // --- Detailed layout: everything visible up front, no expand needed ---
+-function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubtask }) {
++// Memoized so editing the form, switching tabs, or toggling one row
++// doesn't force every other row to re-render.
++const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRemove, onToggleSubtask }) {
+   const { theme } = useTheme();
+   const cat = CATEGORIES.find((c) => c.id === t.category);
+   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
+@@ -452,6 +344,14 @@ function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubta
+             <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
+               <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
+             </View>
++            {(() => {
++              const statusOpt = STATUS_OPTIONS.find((s) => s.id === t.status) || STATUS_OPTIONS[0];
++              return (
++                <View style={[styles.tag, { backgroundColor: statusOpt.color + "22" }]}>
++                  <Text style={[styles.tagText, { color: statusOpt.color }]}>{statusOpt.label}</Text>
++                </View>
++              );
++            })()}
+             {t.reminderEnabled !== false ? (
+               <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                 <Bell size={10} color={theme.textMuted} />
+@@ -475,6 +375,10 @@ function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubta
+             <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{subject.code} · {subject.description}</Text>
+           )}
+ 
++          {t.description ? (
++            <Text style={[styles.descriptionText, { color: theme.text }]}>{t.description}</Text>
++          ) : null}
++
+           <Text style={[styles.metaText, { color: flagged ? ACCENT.ember : theme.textMuted, marginTop: 4, fontWeight: "700" }]}>
+             {t.dueDate
+               ? `Due ${fmtDay(t.dueDate)}${t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""} · ${dleft === 0 ? "today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}`
+@@ -498,59 +402,14 @@ function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubta
+       </View>
+     </View>
+   );
+-}
+-
+-// --- Card layout: a two-column grid, compact visual scanning ---
+-function TodoCard({ t, subject, onToggle, onEdit, onRemove }) {
+-  const { theme } = useTheme();
+-  const cat = CATEGORIES.find((c) => c.id === t.category);
+-  const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
+-  const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
+-  const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
+-  const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
+-  const flagged = isOverdue || isUrgentSchool;
+-
+-  return (
+-    <Pressable
+-      onPress={() => !displayCompleted && onEdit(t)}
+-      onLongPress={() => onRemove(t.id)}
+-      style={[
+-        styles.card,
+-        {
+-          backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
+-          borderColor: flagged ? ACCENT.ember : theme.line,
+-          borderWidth: flagged ? 1.5 : 1,
+-          opacity: displayCompleted ? 0.6 : 1,
+-        },
+-      ]}
+-    >
+-      <View style={[styles.cardAccent, { backgroundColor: cat?.color || theme.line }]} />
+-      <View style={styles.cardTopRow}>
+-        <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
+-          <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
+-        </View>
+-        <Pressable onPress={handleToggle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+-          <Animated.View style={{ transform: [{ scale: popScale }] }}>
+-            {displayCompleted ? <CheckCircle2 size={18} color={ACCENT.leaf} /> : <Circle size={18} color={theme.textMuted} />}
+-          </Animated.View>
+-        </Pressable>
+-      </View>
+-      <Text numberOfLines={3} style={[styles.cardTitle, { color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: displayCompleted ? "line-through" : "none" }]}>
+-        {t.title}
+-      </Text>
+-      {subject && <Text numberOfLines={1} style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{subject.code}</Text>}
+-      <Text style={[styles.metaText, { color: flagged ? ACCENT.ember : theme.textMuted, marginTop: "auto", paddingTop: 8 }]}>
+-        {t.dueDate ? (dleft === 0 ? "Due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`) : "No due date"}
+-      </Text>
+-    </Pressable>
+-  );
+-}
+-
++});
+ 
+ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = null }) {
+   const { theme } = useTheme();
+   const [title, setTitle] = useState(initial?.title || "");
++  const [description, setDescription] = useState(initial?.description || "");
+   const [category, setCategory] = useState(initial?.category || "school");
++  const [status, setStatus] = useState(initial?.status || "not_started");
+   const [subjectId, setSubjectId] = useState(initial?.subjectId || presetSubjectId || null);
+   const [hasDueDate, setHasDueDate] = useState(initial ? !!initial.dueDate : true);
+   const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
+@@ -599,10 +458,25 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId =
+   return (
+     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+       <TextInput value={title} onChangeText={setTitle} placeholder="What do you need to do?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
++      <TextInput
++        value={description}
++        onChangeText={setDescription}
++        placeholder="Add more detail (optional)"
++        placeholderTextColor={theme.textMuted}
++        multiline
++        style={[styles.descriptionInput, { color: theme.text, backgroundColor: theme.bg }]}
++      />
+       <View style={styles.chipWrap}>
+         {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={category === c.id} onPress={() => { setCategory(c.id); if (c.id !== "school") setSubjectId(null); }} small />)}
+       </View>
+ 
++      <Text style={[styles.label, { color: theme.textMuted }]}>Status</Text>
++      <View style={styles.chipWrap}>
++        {STATUS_OPTIONS.map((s) => (
++          <Chip key={s.id} label={s.label} color={s.color} active={status === s.id} onPress={() => setStatus(s.id)} small />
++        ))}
++      </View>
++
+       {category === "school" && subjects.length > 0 && (
+         <View style={{ marginBottom: 12 }}>
+           <Text style={[styles.label, { color: theme.textMuted }]}>Subject (optional)</Text>
+@@ -696,7 +570,7 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId =
+             <Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text>
+           </Pressable>
+         )}
+-        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ title: title.trim(), category, subjectId: category === "school" ? subjectId : null, dueDate: hasDueDate ? dueDate : null, dueTime: hasDueDate && hasDueTime ? dueTime : null, alarmEnabled: hasDueDate && hasDueTime ? alarmEnabled : false, reminderEnabled, notify, subtasks })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
++        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ title: title.trim(), description: description.trim(), category, status, subjectId: category === "school" ? subjectId : null, dueDate: hasDueDate ? dueDate : null, dueTime: hasDueDate && hasDueTime ? dueTime : null, alarmEnabled: hasDueDate && hasDueTime ? alarmEnabled : false, reminderEnabled, notify, subtasks })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
+           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add task"}</Text>
+         </Pressable>
+       </View>
+@@ -705,17 +579,10 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId =
+ }
+ 
+ const styles = StyleSheet.create({
+-  layoutToggle: { flexDirection: "row", borderWidth: 1, borderRadius: 12, padding: 3, marginBottom: 12, gap: 3 },
+-  layoutBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 7, borderRadius: 9 },
+-  layoutBtnText: { fontSize: 10.5, fontWeight: "700" },
+   detailedRow: { borderRadius: 16, padding: 14, marginBottom: 10 },
+   detailedMetaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" },
+   subProgressTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
+   subProgressFill: { height: 4, borderRadius: 2 },
+-  card: { flex: 1, borderRadius: 16, padding: 12, marginBottom: 10, minHeight: 118, overflow: "hidden" },
+-  cardAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
+-  cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4, marginBottom: 8 },
+-  cardTitle: { fontSize: 12.5, fontWeight: "700", lineHeight: 16 },
+   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+   h1: { fontSize: 20, fontWeight: "700" },
+   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+@@ -746,14 +613,12 @@ const styles = StyleSheet.create({
+   formActions: { flexDirection: "row", gap: 8 },
+   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
+   formBtnText: { fontSize: 12, fontWeight: "700" },
+-  row: { borderRadius: 16, padding: 12, marginBottom: 8 },
+   rowTitle: { fontSize: 13, fontWeight: "600" },
+-  rowMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2, flexWrap: "wrap" },
+   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+   tagText: { fontSize: 9, fontWeight: "700" },
+   metaText: { fontSize: 10, fontFamily: "monospace" },
+-  miuiHint: { flexDirection: "row", gap: 8, borderWidth: 1, borderRadius: 14, padding: 10, marginBottom: 12, alignItems: "flex-start" },
+-  miuiHintText: { fontSize: 10, flex: 1, lineHeight: 14 },
++  descriptionText: { fontSize: 12, lineHeight: 17, marginTop: 6 },
++  descriptionInput: { fontSize: 12, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12, minHeight: 70, textAlignVertical: "top" },
+ });
+ 
+ // Memoized: these screens now stay permanently mounted (see App.js) so
+diff --git a/src/selectors.js b/src/selectors.js
+index dfd2733..8835577 100644
+--- a/src/selectors.js
++++ b/src/selectors.js
+@@ -122,24 +122,28 @@ export function spendingByLabel(expenses, refDate = new Date()) {
+ }
+ 
+ // Surfaces past expenses worth logging again with one tap instead of
+-// retyping the name and amount -- "memory" in the sense of remembering
+-// what you tend to spend on, not a separate stored list of its own. Groups
+-// by name + exact amount (case-insensitive on the name) so "Jeepney fare,
+-// P15" said twice becomes one template, and only returns things that have
+-// actually repeated (2+ times); a single one-off expense would just be
+-// noise in a "log again" row. Bill-sourced expenses are excluded since
+-// those already have their own pay-bill flow.
+-export function frequentExpenseTemplates(expenses, limit = 6) {
++// retyping the name and amount every time -- "memory" in the sense of
++// remembering what you tend to spend on, not a separate stored list of its
++// own. Groups by name alone (case-insensitive) rather than name + exact
++// amount, so "Jeepney fare" at P15 one day and P18 the next is still
++// recognized as the same thing worth remembering. A name only has to be
++// logged ONCE to show up here from then on (previously required 2+
++// repeats, which meant the very first time you typed something it was
++// never saved for next time -- exactly the "I have to type it over and
++// over again" complaint this fixes). Bill-sourced expenses are excluded
++// since those already have their own pay-bill flow.
++export function frequentExpenseTemplates(expenses, limit = 8) {
+   const groups = new Map();
+   for (const e of expenses) {
+     if (e.source === "bill" || !e.name) continue;
+-    const key = `${e.name.trim().toLowerCase()}|${Number(e.amount)}`;
++    const key = e.name.trim().toLowerCase();
+     const existing = groups.get(key);
+     if (existing) {
+       existing.count += 1;
+       // Keep whichever occurrence was logged most recently as the
+-      // template, in case the split/account/label used for it has since
+-      // shifted (e.g. the user switched which account covers coffee runs).
++      // template, in case the amount/split/account/label used for it has
++      // since shifted (e.g. the user switched which account covers coffee
++      // runs, or the fare went up).
+       if ((e.createdAt || 0) >= existing.lastUsed) {
+         existing.lastUsed = e.createdAt || 0;
+         existing.template = e;
+@@ -149,8 +153,7 @@ export function frequentExpenseTemplates(expenses, limit = 6) {
+     }
+   }
+   return [...groups.values()]
+-    .filter((g) => g.count >= 2)
+-    .sort((a, b) => b.count - a.count || b.lastUsed - a.lastUsed)
++    .sort((a, b) => b.lastUsed - a.lastUsed || b.count - a.count)
+     .slice(0, limit)
+     .map((g) => g.template);
+ }

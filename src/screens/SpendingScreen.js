@@ -572,7 +572,7 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
         })}
       </View>
       <Text style={[styles.metaText, { color: exceedsBalance ? ACCENT.ember : theme.textMuted, marginBottom: 8 }]}>
-        {peso(available)} available in this account
+        {peso(available - (isPositiveAmount(amount) ? amountNum : 0))} this will be your balance
       </Text>
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
@@ -599,6 +599,7 @@ function MoneyForm({ accounts, ctx, onSave }) {
   const [date, setDate] = useState(todayISO());
   const [recurring, setRecurring] = useState(null);
   const canSave = isPositiveAmount(amount);
+  const currentBalance = ctx ? computeAccountBalance(account, ctx) : null;
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <Text style={[styles.formTitle, { color: theme.text }]}>Money received / added</Text>
@@ -614,6 +615,11 @@ function MoneyForm({ accounts, ctx, onSave }) {
           return <Chip key={a.id} label={bal != null ? `${a.label} - ${peso(bal)}` : a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />;
         })}
       </View>
+      {currentBalance != null && (
+        <Text style={[styles.metaText, { color: theme.textMuted, marginBottom: 8 }]}>
+          {peso(currentBalance + (isPositiveAmount(amount) ? Number(amount) : 0))} this will be your balance
+        </Text>
+      )}
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />

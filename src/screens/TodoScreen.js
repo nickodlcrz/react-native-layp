@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Linking, Platform, Switch, Animated, LayoutAnimation, UIManager } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, Animated, LayoutAnimation, UIManager } from "react-native";
 import {
-  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, LayoutList, LayoutGrid, CalendarDays,
-  ChevronLeft, ChevronRight, AlertTriangle, ChevronDown, ChevronUp, Settings, Bell, BellOff, AlarmClock,
+  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays,
+  ChevronLeft, ChevronRight, AlertTriangle, Bell, BellOff, AlarmClock,
 } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { uid, todayISO, daysUntil, fmtDay, fmtTime12, getWeekDates } from "../utils";
@@ -16,6 +16,17 @@ import { hapticSuccess } from "../haptics";
 import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 
+// A task's work status, independent of "completed" -- completed/checked
+// off is what moves a task to the Finished tab; status is a lighter-weight
+// note on how far along it is while still active (e.g. a school task you
+// haven't started vs. one you're partway through). New tasks always start
+// at "Not started" -- the person only ever moves it forward themselves.
+const STATUS_OPTIONS = [
+  { id: "not_started", label: "Not started", color: "#9AA0A6" },
+  { id: "to_pass", label: "To pass", color: ACCENT.gold },
+  { id: "wip", label: "Work in progress", color: ACCENT.sky },
+];
+
 // Old-architecture Android needs this opt-in for LayoutAnimation to do
 // anything at all (New Architecture/Fabric has it on by default, and this
 // is a harmless no-op there) -- without it, the "finished" list reshuffling
@@ -25,23 +36,15 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const LAYOUT_OPTIONS = [
-  { id: "list", icon: List, label: "List" },
-  { id: "detailed", icon: LayoutList, label: "Detailed" },
-  { id: "cards", icon: LayoutGrid, label: "Cards" },
-];
-
 function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject }) {
   const { theme } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState("list");
-  const [layout, setLayout] = useState("list");
   const [statusView, setStatusView] = useState("active");
   const [weekAnchor, setWeekAnchor] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
-  const [expandedId, setExpandedId] = useState(null);
   const [pendingSubjectId, setPendingSubjectId] = useState(null);
 
   // Coming from Subject Detail's "+ Add task" -- open the form pre-linked to
@@ -155,29 +158,20 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
   const renderItem = useCallback(({ item: t }) => (
     <TodoRow
       t={t}
-      layout={layout}
       subject={t.subjectId ? subjectsById[t.subjectId] : null}
-      isExpanded={expandedId === t.id}
       onToggle={toggle}
       onEdit={startEdit}
       onRemove={remove}
-      onExpand={setExpandedId}
       onToggleSubtask={toggleSubtask}
     />
-  ), [layout, subjectsById, expandedId, toggle, startEdit, remove, toggleSubtask]);
+  ), [subjectsById, toggle, startEdit, remove, toggleSubtask]);
 
   return (
     <FlatList
-      // FlatList can't change numColumns on the fly -- it has to be told
-      // via a fresh `key` so it fully re-lays-out instead of silently
-      // ignoring the change (a documented RN limitation, not a bug here).
-      key={layout}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
       data={filtered}
       keyExtractor={(t) => t.id}
-      numColumns={layout === "cards" ? 2 : 1}
-      columnWrapperStyle={layout === "cards" ? { gap: 10 } : undefined}
       renderItem={renderItem}
       // Keeps memory/CPU bounded on long task lists by only mounting cells
       // near the viewport instead of the whole list at once.
@@ -212,19 +206,6 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
           <View style={styles.chipRow}>
             <Chip label="Active" active={statusView === "active"} onPress={() => setStatusView("active")} small />
             <Chip label={`Finished (${todos.filter((t) => t.completed).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
-          </View>
-
-          <View style={[styles.layoutToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
-            {LAYOUT_OPTIONS.map((opt) => {
-              const Icon = opt.icon;
-              const active = layout === opt.id;
-              return (
-                <Pressable key={opt.id} onPress={() => setLayout(opt.id)} style={[styles.layoutBtn, active && { backgroundColor: theme.accentDark }]} accessibilityLabel={`${opt.label} view`}>
-                  <Icon size={13} color={active ? "#fff" : theme.textMuted} />
-                  <Text style={[styles.layoutBtnText, { color: active ? "#fff" : theme.textMuted }]}>{opt.label}</Text>
-                </Pressable>
-              );
-            })}
           </View>
 
           {schoolConflicts.length > 0 && statusView === "active" && (
@@ -266,15 +247,6 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
             <Chip label="All" active={filter === "all"} onPress={() => setFilter("all")} />
             {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={filter === c.id} onPress={() => setFilter(c.id)} />)}
           </ScrollView>
-
-          {statusView === "active" && Platform.OS === "android" && (
-            <Pressable onPress={() => Linking.openSettings()} style={[styles.miuiHint, { backgroundColor: theme.card, borderColor: theme.line }]}>
-              <Settings size={13} color={theme.textMuted} />
-              <Text style={[styles.miuiHintText, { color: theme.textMuted }]}>
-                Reminders not going off? MIUI (Redmi/Xiaomi) kills background apps by default -- tap here, then allow Autostart and set Battery saver to "No restrictions" for LAYP.
-              </Text>
-            </Pressable>
-          )}
 
           {showForm && (
             <TodoForm
@@ -329,90 +301,10 @@ function useTaskCompletion(t, onToggle) {
   return { displayCompleted: t.completed || optimisticDone, popScale, handleToggle };
 }
 
-const TodoRow = React.memo(function TodoRow({ t, layout, subject, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
-  if (layout === "cards") return <TodoCard t={t} subject={subject} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} />;
-  if (layout === "detailed") return <TodoRowDetailed t={t} subject={subject} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} onToggleSubtask={onToggleSubtask} />;
-  return <TodoRowList t={t} subject={subject} isExpanded={isExpanded} onToggle={onToggle} onEdit={onEdit} onRemove={onRemove} onExpand={onExpand} onToggleSubtask={onToggleSubtask} />;
-});
-
-// --- List layout: the original compact row, collapsible subtasks ---
-function TodoRowList({ t, subject, isExpanded, onToggle, onEdit, onRemove, onExpand, onToggleSubtask }) {
-  const { theme } = useTheme();
-  const cat = CATEGORIES.find((c) => c.id === t.category);
-  const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
-  const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
-  const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
-  const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
-  const flagged = isOverdue || isUrgentSchool;
-  const subtasks = t.subtasks || [];
-  const subDone = subtasks.filter((s) => s.done).length;
-
-  return (
-    <View style={[
-      styles.row,
-      {
-        backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
-        borderColor: flagged ? ACCENT.ember : theme.line,
-        borderWidth: flagged ? 1.5 : 1,
-        opacity: displayCompleted ? 0.6 : 1,
-      },
-    ]}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-        <Pressable onPress={handleToggle}>
-          <Animated.View style={{ transform: [{ scale: popScale }] }}>
-            {displayCompleted ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
-          </Animated.View>
-        </Pressable>
-        <Pressable style={{ flex: 1 }} onPress={() => !displayCompleted && onEdit(t)}>
-          <Text style={[styles.rowTitle, { color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: displayCompleted ? "line-through" : "none" }]}>{t.title}</Text>
-          <View style={styles.rowMeta}>
-            <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
-              <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
-            </View>
-            {subject && (
-              <Text style={[styles.metaText, { color: theme.textMuted }]} numberOfLines={1}>{subject.code} · {subject.description}</Text>
-            )}
-            {t.dueDate ? (
-              <Text style={[styles.metaText, { color: flagged || dleft < 0 ? ACCENT.ember : theme.textMuted }]}>
-                {dleft === 0 ? "Due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}
-                {t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""}
-              </Text>
-            ) : (
-              <Text style={[styles.metaText, { color: theme.textMuted }]}>No due date</Text>
-            )}
-            {t.reminderEnabled !== false && (
-              <Bell size={10} color={theme.textMuted} />
-            )}
-            {t.alarmEnabled && t.dueTime && (
-              <AlarmClock size={10} color={ACCENT.rust || ACCENT.gold} />
-            )}
-            {subtasks.length > 0 && (
-              <Pressable onPress={() => onExpand(isExpanded ? null : t.id)} style={{ flexDirection: "row", alignItems: "center", gap: 2 }} accessibilityLabel={isExpanded ? "Collapse subtasks" : "Expand subtasks"}>
-                <Text style={{ fontSize: 9, fontWeight: "600", color: theme.textMuted }}>{subDone}/{subtasks.length}</Text>
-                {isExpanded ? <ChevronUp size={10} color={theme.textMuted} /> : <ChevronDown size={10} color={theme.textMuted} />}
-              </Pressable>
-            )}
-          </View>
-        </Pressable>
-        {!displayCompleted && <Pressable onPress={() => onEdit(t)} style={{ marginRight: 4 }} accessibilityLabel="Edit task"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-        <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete task"><Trash2 size={15} color={theme.textMuted} /></Pressable>
-      </View>
-      {isExpanded && subtasks.length > 0 && (
-        <View style={{ marginTop: 8, paddingLeft: 30, gap: 6 }}>
-          {subtasks.map((s) => (
-            <Pressable key={s.id} onPress={() => onToggleSubtask(t.id, s.id)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {s.done ? <CheckCircle2 size={14} color={ACCENT.leaf} /> : <Circle size={14} color={theme.textMuted} />}
-              <Text style={{ fontSize: 11, color: theme.text, textDecorationLine: s.done ? "line-through" : "none" }}>{s.title}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-    </View>
-  );
-}
-
 // --- Detailed layout: everything visible up front, no expand needed ---
-function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubtask }) {
+// Memoized so editing the form, switching tabs, or toggling one row
+// doesn't force every other row to re-render.
+const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRemove, onToggleSubtask }) {
   const { theme } = useTheme();
   const cat = CATEGORIES.find((c) => c.id === t.category);
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
@@ -452,6 +344,14 @@ function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubta
             <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
               <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
             </View>
+            {(() => {
+              const statusOpt = STATUS_OPTIONS.find((s) => s.id === t.status) || STATUS_OPTIONS[0];
+              return (
+                <View style={[styles.tag, { backgroundColor: statusOpt.color + "22" }]}>
+                  <Text style={[styles.tagText, { color: statusOpt.color }]}>{statusOpt.label}</Text>
+                </View>
+              );
+            })()}
             {t.reminderEnabled !== false ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
                 <Bell size={10} color={theme.textMuted} />
@@ -474,6 +374,10 @@ function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubta
           {subject && (
             <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{subject.code} · {subject.description}</Text>
           )}
+
+          {t.description ? (
+            <Text style={[styles.descriptionText, { color: theme.text }]}>{t.description}</Text>
+          ) : null}
 
           <Text style={[styles.metaText, { color: flagged ? ACCENT.ember : theme.textMuted, marginTop: 4, fontWeight: "700" }]}>
             {t.dueDate
@@ -498,59 +402,14 @@ function TodoRowDetailed({ t, subject, onToggle, onEdit, onRemove, onToggleSubta
       </View>
     </View>
   );
-}
-
-// --- Card layout: a two-column grid, compact visual scanning ---
-function TodoCard({ t, subject, onToggle, onEdit, onRemove }) {
-  const { theme } = useTheme();
-  const cat = CATEGORIES.find((c) => c.id === t.category);
-  const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
-  const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
-  const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
-  const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
-  const flagged = isOverdue || isUrgentSchool;
-
-  return (
-    <Pressable
-      onPress={() => !displayCompleted && onEdit(t)}
-      onLongPress={() => onRemove(t.id)}
-      style={[
-        styles.card,
-        {
-          backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
-          borderColor: flagged ? ACCENT.ember : theme.line,
-          borderWidth: flagged ? 1.5 : 1,
-          opacity: displayCompleted ? 0.6 : 1,
-        },
-      ]}
-    >
-      <View style={[styles.cardAccent, { backgroundColor: cat?.color || theme.line }]} />
-      <View style={styles.cardTopRow}>
-        <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
-          <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
-        </View>
-        <Pressable onPress={handleToggle} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Animated.View style={{ transform: [{ scale: popScale }] }}>
-            {displayCompleted ? <CheckCircle2 size={18} color={ACCENT.leaf} /> : <Circle size={18} color={theme.textMuted} />}
-          </Animated.View>
-        </Pressable>
-      </View>
-      <Text numberOfLines={3} style={[styles.cardTitle, { color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: displayCompleted ? "line-through" : "none" }]}>
-        {t.title}
-      </Text>
-      {subject && <Text numberOfLines={1} style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{subject.code}</Text>}
-      <Text style={[styles.metaText, { color: flagged ? ACCENT.ember : theme.textMuted, marginTop: "auto", paddingTop: 8 }]}>
-        {t.dueDate ? (dleft === 0 ? "Due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`) : "No due date"}
-      </Text>
-    </Pressable>
-  );
-}
-
+});
 
 function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = null }) {
   const { theme } = useTheme();
   const [title, setTitle] = useState(initial?.title || "");
+  const [description, setDescription] = useState(initial?.description || "");
   const [category, setCategory] = useState(initial?.category || "school");
+  const [status, setStatus] = useState(initial?.status || "not_started");
   const [subjectId, setSubjectId] = useState(initial?.subjectId || presetSubjectId || null);
   const [hasDueDate, setHasDueDate] = useState(initial ? !!initial.dueDate : true);
   const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
@@ -599,8 +458,23 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
   return (
     <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
       <TextInput value={title} onChangeText={setTitle} placeholder="What do you need to do?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+      <TextInput
+        value={description}
+        onChangeText={setDescription}
+        placeholder="Add more detail (optional)"
+        placeholderTextColor={theme.textMuted}
+        multiline
+        style={[styles.descriptionInput, { color: theme.text, backgroundColor: theme.bg }]}
+      />
       <View style={styles.chipWrap}>
         {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={category === c.id} onPress={() => { setCategory(c.id); if (c.id !== "school") setSubjectId(null); }} small />)}
+      </View>
+
+      <Text style={[styles.label, { color: theme.textMuted }]}>Status</Text>
+      <View style={styles.chipWrap}>
+        {STATUS_OPTIONS.map((s) => (
+          <Chip key={s.id} label={s.label} color={s.color} active={status === s.id} onPress={() => setStatus(s.id)} small />
+        ))}
       </View>
 
       {category === "school" && subjects.length > 0 && (
@@ -696,7 +570,7 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
             <Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text>
           </Pressable>
         )}
-        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ title: title.trim(), category, subjectId: category === "school" ? subjectId : null, dueDate: hasDueDate ? dueDate : null, dueTime: hasDueDate && hasDueTime ? dueTime : null, alarmEnabled: hasDueDate && hasDueTime ? alarmEnabled : false, reminderEnabled, notify, subtasks })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
+        <Pressable disabled={!canSave} onPress={() => canSave && onSave({ title: title.trim(), description: description.trim(), category, status, subjectId: category === "school" ? subjectId : null, dueDate: hasDueDate ? dueDate : null, dueTime: hasDueDate && hasDueTime ? dueTime : null, alarmEnabled: hasDueDate && hasDueTime ? alarmEnabled : false, reminderEnabled, notify, subtasks })} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add task"}</Text>
         </Pressable>
       </View>
@@ -705,17 +579,10 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
 }
 
 const styles = StyleSheet.create({
-  layoutToggle: { flexDirection: "row", borderWidth: 1, borderRadius: 12, padding: 3, marginBottom: 12, gap: 3 },
-  layoutBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 7, borderRadius: 9 },
-  layoutBtnText: { fontSize: 10.5, fontWeight: "700" },
   detailedRow: { borderRadius: 16, padding: 14, marginBottom: 10 },
   detailedMetaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" },
   subProgressTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
   subProgressFill: { height: 4, borderRadius: 2 },
-  card: { flex: 1, borderRadius: 16, padding: 12, marginBottom: 10, minHeight: 118, overflow: "hidden" },
-  cardAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
-  cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 4, marginBottom: 8 },
-  cardTitle: { fontSize: 12.5, fontWeight: "700", lineHeight: 16 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   h1: { fontSize: 20, fontWeight: "700" },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -746,14 +613,12 @@ const styles = StyleSheet.create({
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
-  row: { borderRadius: 16, padding: 12, marginBottom: 8 },
   rowTitle: { fontSize: 13, fontWeight: "600" },
-  rowMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2, flexWrap: "wrap" },
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   tagText: { fontSize: 9, fontWeight: "700" },
   metaText: { fontSize: 10, fontFamily: "monospace" },
-  miuiHint: { flexDirection: "row", gap: 8, borderWidth: 1, borderRadius: 14, padding: 10, marginBottom: 12, alignItems: "flex-start" },
-  miuiHintText: { fontSize: 10, flex: 1, lineHeight: 14 },
+  descriptionText: { fontSize: 12, lineHeight: 17, marginTop: 6 },
+  descriptionInput: { fontSize: 12, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12, minHeight: 70, textAlignVertical: "top" },
 });
 
 // Memoized: these screens now stay permanently mounted (see App.js) so

@@ -2,17 +2,17 @@ import React, { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Switch, Alert } from "react-native";
 import {
   GraduationCap, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
-  Bell, BellOff, MapPin, User, Clock, BookOpen, CircleCheck,
+  Bell, BellOff, MapPin, User, Clock, BookOpen, CircleCheck, Ban,
 } from "lucide-react-native";
 import { useTheme, ACCENT, WEEKDAYS, ADVANCE_REMINDER_OPTIONS, CHECKIN_REMINDER_OPTIONS } from "../theme";
-import { uid, fmtTime12, fmtDateLong, daysUntil } from "../utils";
+import { uid, fmtTime12, fmtDateLong, daysUntil, todayISO } from "../utils";
 import {
   newAcademicPeriod, makePeriodActive, getActivePeriod, copyPeriodSchedule,
   subjectsForPeriod, entriesForSubject, todayExpoWeekday, blocksForWeekday,
   getCurrentAndNextClass, minutesRemaining,
 } from "../school";
 import { rescheduleSubjectNotifications, cancelSubjectNotifications } from "../notifications";
-import { confirmDelete } from "../components/ConfirmModal";
+import { confirmDelete, confirmAction } from "../components/ConfirmModal";
 import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
@@ -20,6 +20,7 @@ import TimePicker from "../components/TimePicker";
 function SchoolScreen({
   periods, setPeriods, subjects, setSubjects, entries, setEntries,
   schoolDefaults, setSchoolDefaults, todos, setTodos, onGoToTodoForSubject,
+  cancelledClasses = [], onSuspendClass,
 }) {
   const { theme } = useTheme();
   const activePeriod = getActivePeriod(periods);
@@ -44,6 +45,22 @@ function SchoolScreen({
   const activeSubjectIds = activeSubjects.map((s) => s.id);
   const activeEntries = useMemo(() => entries.filter((e) => activeSubjectIds.includes(e.subjectId)), [entries, activeSubjectIds]);
   const currentNext = activePeriod ? getCurrentAndNextClass(activeSubjects, activeEntries) : { current: null, next: null };
+  // Every one of today's meetings for the active period, not just
+  // current/next -- so a "Cancel class" button can be offered for each one
+  // (e.g. the person missed the alarm/notification entirely and wants to
+  // mark it suspended after the fact, or wants to cancel one later today
+  // ahead of time).
+  const todaysBlocks = activePeriod ? blocksForWeekday(activeSubjects, activeEntries, todayExpoWeekday()) : [];
+  const isCancelledToday = (entryId) => cancelledClasses.some((c) => c.date === todayISO() && c.entryId === entryId);
+  function requestSuspend(block) {
+    confirmAction({
+      title: "Cancel this class?",
+      message: `${block.subject.code} — ${block.subject.description} won't send its reminder again today. This only affects today.`,
+      confirmLabel: "Cancel class",
+      destructive: true,
+      onConfirm: () => onSuspendClass?.(block),
+    });
+  }
 
   const editingSubject = editingSubjectId ? subjects.find((s) => s.id === editingSubjectId) : null;
   const editingPrimaryEntry = editingSubject ? entriesForSubject(entries, editingSubject.id)[0] : null;
@@ -244,22 +261,49 @@ function SchoolScreen({
         />
       )}
 
-      {/* Today's Classes -- always active-period, real time, same as Home widget */}
+      {/* Today's Classes -- always active-period, real time, same as Home widget.
+          Lists every meeting today (not just current/next) so each one can be
+          marked cancelled -- covers missing the alarm/notification entirely. */}
       <View style={[styles.nowCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
         <Text style={[styles.nowLabel, { color: theme.textMuted }]}>TODAY</Text>
         {!activePeriod ? (
           <Text style={[styles.nowEmpty, { color: theme.textMuted }]}>No active schedule set.</Text>
-        ) : currentNext.current ? (
-          <ClassLine dotColor={ACCENT.leaf} tag="NOW" subject={currentNext.current.subject} entry={currentNext.current.entry} theme={theme} sub={`${minutesRemaining(currentNext.current)} minutes remaining`} />
-        ) : currentNext.next && currentNext.nextDaysAhead === 0 ? (
-          <ClassLine dotColor={ACCENT.gold} tag="NEXT" subject={currentNext.next.subject} entry={currentNext.next.entry} theme={theme} />
-        ) : (
+        ) : todaysBlocks.length === 0 ? (
           <Text style={[styles.nowEmpty, { color: theme.textMuted }]}>No classes scheduled today.</Text>
-        )}
-        {currentNext.current && currentNext.next && currentNext.nextDaysAhead === 0 && (
-          <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.line }}>
-            <ClassLine dotColor={ACCENT.gold} tag="NEXT" subject={currentNext.next.subject} entry={currentNext.next.entry} theme={theme} />
-          </View>
+        ) : (
+          todaysBlocks.map((block, i) => {
+            const cancelled = isCancelledToday(block.entry.id);
+            const isNow = currentNext.current?.entry.id === block.entry.id;
+            const isNext = !isNow && currentNext.next?.entry.id === block.entry.id && currentNext.nextDaysAhead === 0;
+            const tag = cancelled ? "SUSPENDED" : isNow ? "NOW" : isNext ? "NEXT" : "TODAY";
+            const dotColor = cancelled ? ACCENT.ember : isNow ? ACCENT.leaf : isNext ? ACCENT.gold : theme.textMuted;
+            return (
+              <View key={block.entry.id} style={i > 0 ? { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.line } : undefined}>
+                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <ClassLine
+                      dotColor={dotColor}
+                      tag={tag}
+                      subject={block.subject}
+                      entry={block.entry}
+                      theme={theme}
+                      sub={!cancelled && isNow ? `${minutesRemaining(block)} minutes remaining` : null}
+                    />
+                  </View>
+                  {!cancelled && (
+                    <Pressable
+                      onPress={() => requestSuspend(block)}
+                      style={[styles.cancelClassBtn, { backgroundColor: theme.bg }]}
+                      accessibilityLabel={`Cancel ${block.subject.code} today`}
+                    >
+                      <Ban size={12} color={ACCENT.ember} />
+                      <Text style={[styles.cancelClassBtnText, { color: ACCENT.ember }]}>Cancel</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            );
+          })
         )}
       </View>
 
@@ -756,6 +800,8 @@ const styles = StyleSheet.create({
   nowTag: { fontSize: 10, fontWeight: "800", letterSpacing: 0.4 },
   nowDesc: { fontSize: 13, fontWeight: "700", marginTop: 2 },
   nowTime: { fontSize: 11, marginTop: 2, fontFamily: "monospace" },
+  cancelClassBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 },
+  cancelClassBtnText: { fontSize: 9.5, fontWeight: "700" },
   defaultsToggle: { marginBottom: 4 },
   defaultsToggleText: { fontSize: 10, fontWeight: "700" },
   toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },
