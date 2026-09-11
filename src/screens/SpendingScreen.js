@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, StyleSheet } from "react-native";
+import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
 import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search } from "lucide-react-native";
 import { useTheme, ACCENT, INCOME_CATEGORIES, SPENDING_LABELS } from "../theme";
-import { peso, uid, todayISO, fmtDay, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview, nextRecurringDate } from "../utils";
+import { peso, uid, todayISO, fmtDay, fmtDaySmart, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview, nextRecurringDate } from "../utils";
 import { categoryBreakdown, frequentExpenseTemplates, spendingByLabel } from "../selectors";
 import { validate, expenseSchema } from "../validation";
 import { notifyBudgetThreshold } from "../notifications";
@@ -23,6 +23,7 @@ export default function SpendingScreen({
   const [historyOpen, setHistoryOpen] = useState({});
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [limitsEditorOpen, setLimitsEditorOpen] = useState(false);
+  const [comparisonExpanded, setComparisonExpanded] = useState(false);
 
   // This month's spending per label, matched up against any limit the user
   // has set for that label -- separate from spendingLimits itself (which
@@ -166,6 +167,15 @@ export default function SpendingScreen({
   // Capped to a window with a "show more" step instead.
   const [historyLimit, setHistoryLimit] = useState(20);
   const pastDates = allPastDates.slice(0, historyLimit);
+  // One consistent list of day-groups -- today included as just the most
+  // recent entry rather than a separately-styled section -- so "Recent
+  // Spending" reads as one continuous, uniformly-formatted list instead of
+  // a "Today" block followed by a differently-shaped "History" block.
+  const recentDays = useMemo(() => {
+    const days = pastDates.map((d) => ({ date: d, expenses: expensesByDate[d] || [], isToday: false }));
+    if (todayExpenses.length > 0) days.unshift({ date: today, expenses: todayExpenses, isToday: true });
+    return days;
+  }, [pastDates, expensesByDate, todayExpenses, today]);
 
   // Search/filter -- matches name or label (case-insensitive substring),
   // optionally narrowed further to one spending label. Active whenever
@@ -190,7 +200,10 @@ export default function SpendingScreen({
 
   const now = new Date();
   const monthTotal = expenses.filter((e) => { const d = new Date(e.date + "T00:00:00"); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).reduce((s, e) => s + Number(e.amount), 0);
-  const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+  const ctx = useMemo(
+    () => ({ moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }),
+    [moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers]
+  );
   // True remaining cash across both accounts, including the effect of
   // money currently lent out or borrowed -- not just income minus spending.
   const remaining = accounts.reduce((s, account) => s + computeAccountBalance(account.id, ctx), 0);
@@ -205,35 +218,64 @@ export default function SpendingScreen({
     };
     const previousTotal = expenses.filter((expense) => isIn(expense.date, previous)).reduce((sum, expense) => sum + Number(expense.amount), 0);
     const categories = categoryBreakdown(expenses, splits, current);
-    return { categories, previousTotal };
+    const monthLabel = current.toLocaleDateString("en-PH", { month: "long" });
+    const previousMonthLabel = previous.toLocaleDateString("en-PH", { month: "long" });
+    return { categories, previousTotal, monthLabel, previousMonthLabel };
   }, [expenses, splits, now]);
 
   // Income & outcome ledger: every money-in and money-out event, including
   // lending/borrowing movements (computed live, not stored separately), newest first.
-  const loanLedgerEntries = loans.flatMap((l) => {
-    const entries = [];
-    const createdEntry = {
-      id: l.id + "-created", createdAt: l.createdAt, date: l.dueDate, account: l.account,
-      amount: l.principal,
-      kind: l.type === "lent" ? "out" : "in",
-      name: l.type === "lent" ? `Lent to ${l.person}` : `Borrowed from ${l.person}`,
-    };
-    entries.push(createdEntry);
-    if (l.settled) {
-      entries.push({
-        id: l.id + "-settled", createdAt: new Date(l.settledAt + "T12:00:00").getTime(), date: l.settledAt, account: l.account,
-        amount: loanTotalDue(l),
-        kind: l.type === "lent" ? "in" : "out",
-        name: l.type === "lent" ? `${l.person} repaid you` : `You repaid ${l.person}`,
-      });
+  const ledger = useMemo(() => {
+    const loanLedgerEntries = loans.flatMap((l) => {
+      const entries = [];
+      const createdEntry = {
+        id: l.id + "-created", createdAt: l.createdAt, date: l.dueDate, account: l.account,
+        amount: l.principal,
+        kind: l.type === "lent" ? "out" : "in",
+        name: l.type === "lent" ? `Lent to ${l.person}` : `Borrowed from ${l.person}`,
+      };
+      entries.push(createdEntry);
+      if (l.settled) {
+        entries.push({
+          id: l.id + "-settled", createdAt: new Date(l.settledAt + "T12:00:00").getTime(), date: l.settledAt, account: l.account,
+          amount: loanTotalDue(l),
+          kind: l.type === "lent" ? "in" : "out",
+          name: l.type === "lent" ? `${l.person} repaid you` : `You repaid ${l.person}`,
+        });
+      }
+      return entries;
+    });
+    return [
+      ...moneyLog.map((m) => ({ ...m, kind: "in" })),
+      ...expenses.map((e) => ({ ...e, kind: "out" })),
+      ...loanLedgerEntries,
+    ].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }, [moneyLog, expenses, loans]);
+  const ledgerTotals = useMemo(() => {
+    let income = 0, outcome = 0;
+    for (const item of ledger) {
+      if (item.kind === "in") income += Number(item.amount);
+      else outcome += Number(item.amount);
     }
-    return entries;
-  });
-  const ledger = [
-    ...moneyLog.map((m) => ({ ...m, kind: "in" })),
-    ...expenses.map((e) => ({ ...e, kind: "out" })),
-    ...loanLedgerEntries,
-  ].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return { income, outcome };
+  }, [ledger]);
+
+  const renderLedgerItem = useCallback(({ item }) => (
+    <View style={[styles.ledgerRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+      {item.kind === "in" ? <ArrowDownCircle size={16} color={ACCENT.leaf} /> : <ArrowUpCircle size={16} color={ACCENT.ember} />}
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.ledgerTitle, { color: theme.text }]}>{item.name || item.note || "Money added"}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <Text style={[styles.ledgerDate, { color: theme.textMuted }]}>{fmtDay(item.date)}{item.account ? ` - ${accounts.find((a) => a.id === item.account)?.label || item.account}` : ""}</Text>
+          {item.kind === "in" && item.category && (() => {
+            const cat = INCOME_CATEGORIES.find((c) => c.id === item.category);
+            return cat ? <View style={[styles.tag, { backgroundColor: cat.color + "22" }]}><Text style={[styles.tagText, { color: cat.color }]}>{cat.label}</Text></View> : null;
+          })()}
+        </View>
+      </View>
+      <Text style={[styles.ledgerAmount, { color: item.kind === "in" ? ACCENT.leaf : ACCENT.ember }]}>{item.kind === "in" ? "+" : "-"}{peso(item.amount)}</Text>
+    </View>
+  ), [theme, accounts]);
 
   return (
     <FlatList
@@ -241,22 +283,11 @@ export default function SpendingScreen({
       contentContainerStyle={{ paddingBottom: 12 }}
       data={ledgerOpen ? ledger : []}
       keyExtractor={(item) => item.id}
-      renderItem={({ item }) => (
-        <View style={[styles.ledgerRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          {item.kind === "in" ? <ArrowDownCircle size={16} color={ACCENT.leaf} /> : <ArrowUpCircle size={16} color={ACCENT.ember} />}
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.ledgerTitle, { color: theme.text }]}>{item.name || item.note || "Money added"}</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-              <Text style={[styles.ledgerDate, { color: theme.textMuted }]}>{fmtDay(item.date)}{item.account ? ` - ${accounts.find((a) => a.id === item.account)?.label || item.account}` : ""}</Text>
-              {item.kind === "in" && item.category && (() => {
-                const cat = INCOME_CATEGORIES.find((c) => c.id === item.category);
-                return cat ? <View style={[styles.tag, { backgroundColor: cat.color + "22" }]}><Text style={[styles.tagText, { color: cat.color }]}>{cat.label}</Text></View> : null;
-              })()}
-            </View>
-          </View>
-          <Text style={[styles.ledgerAmount, { color: item.kind === "in" ? ACCENT.leaf : ACCENT.ember }]}>{item.kind === "in" ? "+" : "-"}{peso(item.amount)}</Text>
-        </View>
-      )}
+      renderItem={renderLedgerItem}
+      initialNumToRender={14}
+      maxToRenderPerBatch={10}
+      windowSize={7}
+      removeClippedSubviews={Platform.OS === "android"}
       ListEmptyComponent={ledgerOpen ? <EmptyState text="Nothing logged yet." /> : null}
       ListHeaderComponent={
         <>
@@ -272,15 +303,48 @@ export default function SpendingScreen({
             </View>
           </View>
 
-          <View style={[styles.totalCard, { backgroundColor: theme.accentDark }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.totalLabel, { color: ACCENT.gold }]}>Spent this month</Text>
-              <Text style={styles.totalValue}>{peso(monthTotal)}</Text>
+          <View style={[styles.summaryCard, { backgroundColor: theme.accentDark }]}>
+            <Text style={[styles.summaryMonthLabel, { color: ACCENT.gold }]}>{analytics.monthLabel} Spending</Text>
+            <Text style={styles.summaryTotal}>{peso(monthTotal)}</Text>
+            <Text style={[styles.summaryCaption, { color: "#ffffffb0" }]}>Total spent this month</Text>
+
+            <View style={styles.summaryBudgetRow}>
+              <Text style={[styles.summaryBudgetLabel, { color: "#ffffff99" }]}>Budget left</Text>
+              <Text style={[styles.summaryBudgetValue, { color: remaining < 0 ? ACCENT.ember : "#fff" }]}>{peso(remaining)}</Text>
             </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={[styles.totalLabel, { color: "#ffffff99" }]}>Budget left</Text>
-              <Text style={[styles.totalValue, { color: remaining < 0 ? ACCENT.ember : "#fff" }]}>{peso(remaining)}</Text>
-            </View>
+
+            {analytics.categories.length > 0 ? (
+              <View style={styles.summaryBreakdown}>
+                {analytics.categories.map((category) => {
+                  const share = monthTotal ? (category.amount / monthTotal) * 100 : 0;
+                  return (
+                    <View key={category.id} style={styles.categoryRow}>
+                      <View style={styles.categoryTopRow}>
+                        <Text style={[styles.categoryLabel, { color: "#fff" }]}>{category.label}</Text>
+                        <Text style={[styles.categoryAmount, { color: "#ffffffb0" }]}>{peso(category.amount)} · {share.toFixed(0)}%</Text>
+                      </View>
+                      <View style={[styles.categoryTrack, { backgroundColor: "#ffffff26" }]}><View style={[styles.categoryFill, { width: `${share}%`, backgroundColor: category.color }]} /></View>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={[styles.summaryEmptyHint, { color: "#ffffffb0" }]}>Add an expense to see your category breakdown.</Text>
+            )}
+
+            {analytics.previousTotal > 0 && (
+              <Pressable onPress={() => setComparisonExpanded((s) => !s)} style={styles.summaryComparisonRow}>
+                <Text style={[styles.summaryComparisonText, { color: monthTotal <= analytics.previousTotal ? ACCENT.leaf : ACCENT.gold }]}>
+                  {monthTotal <= analytics.previousTotal ? "↓" : "↑"} {Math.abs(((monthTotal - analytics.previousTotal) / analytics.previousTotal) * 100).toFixed(1)}% vs {analytics.previousMonthLabel}
+                </Text>
+                {comparisonExpanded ? <ChevronUp size={12} color="#ffffffb0" /> : <ChevronDown size={12} color="#ffffffb0" />}
+              </Pressable>
+            )}
+            {comparisonExpanded && analytics.previousTotal > 0 && (
+              <Text style={[styles.summaryComparisonDetail, { color: "#ffffffb0" }]}>
+                {analytics.monthLabel}: {peso(monthTotal)} · {analytics.previousMonthLabel}: {peso(analytics.previousTotal)}
+              </Text>
+            )}
           </View>
 
           {!showForm && !showMoneyForm && (
@@ -409,31 +473,27 @@ export default function SpendingScreen({
                 </View>
               )}
             </View>
-          ) : (
-            <>
-              <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Today</Text>
-              {todayExpenses.length === 0 ? <EmptyState text="Nothing logged today." /> : (
-                <View style={{ gap: 8, marginBottom: 16 }}>
-                  {todayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={startEdit} onRemove={remove} />)}
-                </View>
-              )}
-            </>
-          )}
-
-          {!isFiltering && (pastDates.length > 0 || weeklySummaries.length > 0) && (
+          ) : (recentDays.length > 0 || weeklySummaries.length > 0) && (
             <View style={{ marginBottom: 16 }}>
-              <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>History</Text>
+              <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Recent Spending</Text>
               <View style={{ gap: 8 }}>
-                {pastDates.map((d) => {
-                  const dayExpenses = expensesByDate[d] || [];
+                {recentDays.length === 0 && <EmptyState text="Nothing logged yet." />}
+                {recentDays.map(({ date: d, expenses: dayExpenses, isToday }) => {
                   const dayTotal = dayExpenses.reduce((s, e) => s + Number(e.amount), 0);
-                  const open = !!historyOpen[d];
+                  // Today defaults open (so what you just logged is visible
+                  // right away) until the person deliberately collapses it;
+                  // every other day defaults closed. Either way, once
+                  // they've tapped a day once, their choice sticks.
+                  const open = historyOpen[d] !== undefined ? !!historyOpen[d] : isToday;
                   return (
                     <View key={d} style={[styles.historyGroup, { backgroundColor: theme.card, borderColor: theme.line }]}>
                       <Pressable onPress={() => setHistoryOpen((prev) => ({ ...prev, [d]: !open }))} style={styles.historyHeader} accessibilityLabel={open ? `Collapse ${fmtDateLong(d)}` : `Expand ${fmtDateLong(d)}`}>
-                        <Text style={[styles.historyDate, { color: theme.text }]}>{fmtDateLong(d)}</Text>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <View style={styles.historyHeaderTopRow}>
+                          <Text style={[styles.historyDate, { color: theme.text }]}>{isToday ? "Today" : fmtDaySmart(d)}</Text>
                           <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(dayTotal)}</Text>
+                        </View>
+                        <View style={styles.historyHeaderBottomRow}>
+                          <Text style={[styles.historyCount, { color: theme.textMuted }]}>{dayExpenses.length} transaction{dayExpenses.length === 1 ? "" : "s"}</Text>
                           {open ? <ChevronUp size={13} color={theme.textMuted} /> : <ChevronDown size={13} color={theme.textMuted} />}
                         </View>
                       </Pressable>
@@ -465,39 +525,24 @@ export default function SpendingScreen({
                   </View>
                 ))}
               </View>
-              <Text style={[styles.rollupNote, { color: theme.textMuted }]}>Daily logs older than 7 days are automatically summarized into a weekly total like this, and the individual entries are removed.</Text>
+              <Text style={[styles.rollupNote, { color: theme.textMuted }]}>ⓘ Older transactions are automatically grouped into weekly summaries.</Text>
             </View>
           )}
 
-          <Pressable onPress={() => setLedgerOpen((o) => !o)} style={styles.ledgerHeader} accessibilityLabel={ledgerOpen ? "Collapse income and outcome history" : "Expand income and outcome history"}>
-            <Text style={[styles.h2, { color: theme.text }]}>Income & outcome history</Text>
+          <Pressable onPress={() => setLedgerOpen((o) => !o)} style={styles.ledgerHeader} accessibilityLabel={ledgerOpen ? "Collapse income and outcome" : "Expand income and outcome"}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.h2, { color: theme.text }]}>Income & Outcome</Text>
+              <Text style={[styles.ledgerSubtitle, { color: theme.textMuted }]}>View your financial history</Text>
+            </View>
             {ledgerOpen ? <ChevronUp size={15} color={theme.textMuted} /> : <ChevronDown size={15} color={theme.textMuted} />}
           </Pressable>
-        </>
-      }
-      ListFooterComponent={
-        <View style={[styles.analyticsCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <Text style={[styles.analyticsTitle, { color: theme.text }]}>This month’s spending</Text>
-          {analytics.categories.length === 0 ? (
-            <Text style={[styles.analyticsHint, { color: theme.textMuted }]}>Add an expense to see your category breakdown.</Text>
-          ) : analytics.categories.map((category) => {
-            const share = monthTotal ? (category.amount / monthTotal) * 100 : 0;
-            return (
-              <View key={category.id} style={styles.categoryRow}>
-                <View style={styles.categoryTopRow}>
-                  <Text style={[styles.categoryLabel, { color: theme.text }]}>{category.label}</Text>
-                  <Text style={[styles.categoryAmount, { color: theme.textMuted }]}>{peso(category.amount)} · {share.toFixed(0)}%</Text>
-                </View>
-                <View style={[styles.categoryTrack, { backgroundColor: theme.bg }]}><View style={[styles.categoryFill, { width: `${share}%`, backgroundColor: category.color }]} /></View>
-              </View>
-            );
-          })}
-          {analytics.previousTotal > 0 && (
-            <Text style={[styles.analyticsHint, { color: monthTotal <= analytics.previousTotal ? ACCENT.leaf : ACCENT.ember }]}>
-              {monthTotal <= analytics.previousTotal ? "↓" : "↑"} {Math.abs(((monthTotal - analytics.previousTotal) / analytics.previousTotal) * 100).toFixed(1)}% versus last month
-            </Text>
+          {!ledgerOpen && (
+            <View style={styles.ledgerPreviewRow}>
+              <Text style={[styles.ledgerPreviewText, { color: ACCENT.leaf }]}>Income {peso(ledgerTotals.income)}</Text>
+              <Text style={[styles.ledgerPreviewText, { color: ACCENT.ember }]}>Outcome {peso(ledgerTotals.outcome)}</Text>
+            </View>
           )}
-        </View>
+        </>
       }
     />
   );
@@ -522,8 +567,8 @@ const ExpenseRow = React.memo(function ExpenseRow({ e, splits, accounts, onEdit,
         </View>
       </Pressable>
       <Text style={[styles.amount, { color: ACCENT.ember }]}>-{peso(e.amount)}</Text>
-      {e.source !== "bill" && <Pressable onPress={() => onEdit(e)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit expense"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-      <Pressable onPress={() => onRemove(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+      {e.source !== "bill" && <Pressable onPress={() => onEdit(e)} style={{ marginRight: 2 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit expense"><Pencil size={12} color={theme.textMuted} /></Pressable>}
+      <Pressable onPress={() => onRemove(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={13} color={theme.textMuted} /></Pressable>
     </View>
   );
 });
@@ -648,9 +693,23 @@ const styles = StyleSheet.create({
   h1: { fontSize: 20, fontWeight: "700" },
   h2: { fontSize: 15, fontWeight: "700" },
   roundBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  totalCard: { flexDirection: "row", justifyContent: "space-between", borderRadius: 16, padding: 16, marginBottom: 16 },
-  totalLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase" },
-  totalValue: { fontSize: 20, fontWeight: "700", color: "#fff", marginTop: 4, fontFamily: "monospace" },
+  // Hero card: the total-spent figure leads at a much larger size than
+  // anything else on the page, per the "show total spending first, make
+  // it the biggest number" request -- everything else here (budget left,
+  // the Wants/Needs breakdown, the month-over-month line) is intentionally
+  // smaller/secondary so the total stays the one thing that jumps out.
+  summaryCard: { borderRadius: 16, padding: 16, marginBottom: 16 },
+  summaryMonthLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.3 },
+  summaryTotal: { fontSize: 34, fontWeight: "800", color: "#fff", marginTop: 2, fontFamily: "monospace" },
+  summaryCaption: { fontSize: 11, marginTop: 2, marginBottom: 12 },
+  summaryBudgetRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTopWidth: 1, borderTopColor: "#ffffff1f", marginBottom: 12 },
+  summaryBudgetLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
+  summaryBudgetValue: { fontSize: 13, fontWeight: "700", fontFamily: "monospace" },
+  summaryBreakdown: { paddingTop: 2, marginBottom: 4 },
+  summaryEmptyHint: { fontSize: 10.5, marginBottom: 4 },
+  summaryComparisonRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 },
+  summaryComparisonText: { fontSize: 11, fontWeight: "700" },
+  summaryComparisonDetail: { fontSize: 10, marginTop: 4, fontFamily: "monospace" },
   formCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12 },
   formTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
   input: { fontSize: 13, fontWeight: "500", marginBottom: 8, paddingVertical: 4 },
@@ -673,20 +732,31 @@ const styles = StyleSheet.create({
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
-  row: { flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 16, padding: 12 },
+  // Slightly tighter than before (was padding: 12, gap: 10) -- a modest
+  // ~15% cut to let more transactions fit on screen without feeling cramped.
+  row: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 16, padding: 10 },
   rowTitle: { fontSize: 13, fontWeight: "600" },
   customLabel: { fontSize: 10, fontStyle: "italic", marginTop: 1 },
   tag: { alignSelf: "flex-start", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   tagText: { fontSize: 9, fontWeight: "700" },
   amount: { fontSize: 13, fontWeight: "600", fontFamily: "monospace" },
   historyGroup: { borderWidth: 1, borderRadius: 16, overflow: "hidden" },
-  historyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10 },
+  // Two stacked rows -- date+amount on top, transaction count+chevron
+  // below -- instead of the count living nowhere and the chevron crowding
+  // the amount on one line.
+  historyHeader: { paddingHorizontal: 12, paddingVertical: 10, gap: 4 },
+  historyHeaderTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  historyHeaderBottomRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   historyDate: { fontSize: 12, fontWeight: "600" },
   historyTotal: { fontSize: 11, fontWeight: "600", fontFamily: "monospace" },
+  historyCount: { fontSize: 10 },
   weekSummaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
   weekSummarySub: { fontSize: 9, marginTop: 2 },
-  rollupNote: { fontSize: 9, marginTop: 8, lineHeight: 13 },
-  ledgerHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8, marginTop: 4 },
+  rollupNote: { fontSize: 9, marginTop: 8, lineHeight: 13, opacity: 0.85 },
+  ledgerHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4, marginTop: 4 },
+  ledgerSubtitle: { fontSize: 10, marginTop: 1 },
+  ledgerPreviewRow: { flexDirection: "row", gap: 14, marginBottom: 8 },
+  ledgerPreviewText: { fontSize: 11, fontWeight: "700" },
   ledgerRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 6 },
   ledgerTitle: { fontSize: 12, fontWeight: "600" },
   ledgerDate: { fontSize: 9, marginTop: 1, fontFamily: "monospace" },
@@ -694,9 +764,6 @@ const styles = StyleSheet.create({
   warning: { fontSize: 10, marginBottom: 10 },
   metaText: { fontSize: 10.5, fontWeight: "600" },
   fieldError: { color: ACCENT.ember, fontSize: 10.5, marginTop: -6, marginBottom: 8, fontWeight: "600" },
-  analyticsCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginTop: 16 },
-  analyticsTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
-  analyticsHint: { fontSize: 10, marginTop: 10, lineHeight: 14 },
   categoryRow: { marginBottom: 10 },
   categoryTopRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
   categoryLabel: { fontSize: 11, fontWeight: "600" },

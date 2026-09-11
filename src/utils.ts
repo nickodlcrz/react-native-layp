@@ -63,6 +63,14 @@ export function nextRecurringDate(dateStr: string, frequency?: "weekly" | "month
 export function fmtDay(dateStr: string): string {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric" });
 }
+// "Sep 9" for the current year, "Dec 30, 2025" once the year has actually
+// changed -- the year is implied the rest of the time, so spelling it out
+// on every single row (fmtDateLong) is just repeated noise.
+export function fmtDaySmart(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const isCurrentYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-PH", isCurrentYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+}
 export function fmtDateLong(dateStr?: string | null): string {
   if (!dateStr) return "";
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });

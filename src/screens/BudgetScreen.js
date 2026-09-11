@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, addAccount as pushAccount, isPositiveAmount, nextRecurringDate } from "../utils";
 import Chip from "../components/Chip";
+import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import { validate, billSchema } from "../validation";
@@ -201,7 +202,10 @@ function BudgetScreen({
 
   const rolledTotal = weeklySummaries.reduce((s, w) => s + w.total, 0);
   const totalSpent = expenses.reduce((s, e) => s + Number(e.amount), 0) + rolledTotal;
-  const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+  const ctx = useMemo(
+    () => ({ moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }),
+    [moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers]
+  );
   // True remaining cash = sum of both accounts, which already factors in
   // money currently lent out (unavailable) and money currently borrowed
   // (available) -- not just plain income minus spending.
@@ -234,13 +238,17 @@ function BudgetScreen({
     // no-op safety net there rather than the primary fix.
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
     <View style={{ flex: 1 }}>
-      <View style={styles.subNavRow}>
-        <Chip label="Overview" active={subTab === "overview"} onPress={() => setSubTab("overview")} small />
-        <Chip label="Goals" active={subTab === "goals"} onPress={() => setSubTab("goals")} small />
-        <Chip label="Activity" active={subTab === "activity"} onPress={() => setSubTab("activity")} small />
-        <Chip label="Spending" active={subTab === "spending"} onPress={() => setSubTab("spending")} small />
-        <Chip label="Borrow" active={subTab === "borrow"} onPress={() => setSubTab("borrow")} small />
-      </View>
+      <SegmentedTabs
+        options={[
+          { key: "overview", label: "Overview" },
+          { key: "goals", label: "Goals" },
+          { key: "activity", label: "Activity" },
+          { key: "spending", label: "Spending" },
+          { key: "borrow", label: "Borrow" },
+        ]}
+        value={subTab}
+        onChange={setSubTab}
+      />
 
       {subTab === "spending" ? (
         <ErrorBoundary resetKey={subTab}>
@@ -686,7 +694,6 @@ function TransferForm({ accounts, ctx, onSave }) {
 
 const styles = StyleSheet.create({
   fieldError: { color: ACCENT.ember, fontSize: 10.5, marginTop: -6, marginBottom: 8, fontWeight: "600" },
-  subNavRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   dailyBudgetCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
   dailyBudgetIcon: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   dailyBudgetTitle: { fontSize: 13, fontWeight: "700" },

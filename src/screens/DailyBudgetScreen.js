@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import Slider from "@react-native-community/slider";
 import { ArrowLeft, Plus, Trash2, Check, Bell } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
 import { peso, uid, todayISO, fmtDay, normalizeSplits, removeSplitAndRedistribute, computeDailyBudgetReview, categoryStatusText, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
+import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
 import { hapticSuccess } from "../haptics";
@@ -29,7 +30,10 @@ export default function DailyBudgetScreen({
   const [customAmount, setCustomAmount] = useState("");
   const [saveAccount, setSaveAccount] = useState(accounts[0]?.id);
 
-  const review = computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers });
+  const review = useMemo(
+    () => computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }),
+    [splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers]
+  );
   const totalPercent = splits.reduce((s, x) => s + x.percent, 0);
   const modelName = matchPresetName(splits);
 
@@ -93,10 +97,14 @@ export default function DailyBudgetScreen({
         <View style={{ width: 30 }} />
       </View>
 
-      <View style={styles.chipRow}>
-        <Chip label="Today's review" active={view === "review"} onPress={() => setView("review")} small />
-        <Chip label="Model & reminder" active={view === "settings"} onPress={() => setView("settings")} small />
-      </View>
+      <SegmentedTabs
+        options={[
+          { key: "review", label: "Today's review" },
+          { key: "settings", label: "Model & reminder" },
+        ]}
+        value={view}
+        onChange={setView}
+      />
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
         {view === "review" ? (

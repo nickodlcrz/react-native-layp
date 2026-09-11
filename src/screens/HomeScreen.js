@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
 import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
@@ -10,7 +10,10 @@ import EmptyState from "../components/EmptyState";
 
 function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos }) {
   const { theme } = useTheme();
-  const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+  const ctx = useMemo(
+    () => ({ moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }),
+    [moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers]
+  );
 
   const activePeriod = getActivePeriod(periods);
   const activeSubjects = subjectsForPeriod(subjects, activePeriod?.id);

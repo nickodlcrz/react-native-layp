@@ -1,9 +1,10 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
 import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
+import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import { validate, loanSchema } from "../validation";
@@ -91,7 +92,10 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
   const interestPaid = loans.filter((l) => l.type === "borrowed" && l.settled).reduce((s, l) => s + loanInterest(l), 0);
   const editingLoan = editingId ? loans.find((l) => l.id === editingId) : null;
 
-  const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+  const ctx = useMemo(
+    () => ({ moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }),
+    [moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers]
+  );
 
   const renderItem = useCallback(({ item: l }) => (
     <LoanRow
@@ -162,10 +166,14 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
             </View>
           </View>
 
-          <View style={styles.chipRow}>
-            <Chip label="Active" active={statusView === "active"} onPress={() => setStatusView("active")} small />
-            <Chip label={`Settled (${loans.filter((l) => l.type === typeView && l.settled).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
-          </View>
+          <SegmentedTabs
+            options={[
+              { key: "active", label: "Active" },
+              { key: "done", label: `Settled (${loans.filter((l) => l.type === typeView && l.settled).length})` },
+            ]}
+            value={statusView}
+            onChange={setStatusView}
+          />
 
           {showForm && <LoanForm key={editingId || typeView} initial={editingLoan} type={typeView} ctx={ctx} accounts={accounts} onSave={saveLoan} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
         </>
@@ -356,7 +364,6 @@ const styles = StyleSheet.create({
   heroSub: { fontSize: 10, color: "#ffffff99", marginTop: 2 },
   heroDivider: { height: 1, backgroundColor: "#ffffff22", marginVertical: 10 },
   heroFootnote: { fontSize: 10, color: "#ffffffcc", fontWeight: "600" },
-  chipRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   formCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12 },
   input: { fontSize: 13, fontWeight: "500", marginBottom: 10, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   amountInput: { fontSize: 13, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontFamily: "monospace" },

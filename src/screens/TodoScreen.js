@@ -7,6 +7,7 @@ import {
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { uid, todayISO, daysUntil, fmtDay, fmtTime12, getWeekDates } from "../utils";
 import Chip from "../components/Chip";
+import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import TimePicker from "../components/TimePicker";
@@ -16,16 +17,34 @@ import { hapticSuccess } from "../haptics";
 import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 
-// A task's work status, independent of "completed" -- completed/checked
-// off is what moves a task to the Finished tab; status is a lighter-weight
-// note on how far along it is while still active (e.g. a school task you
-// haven't started vs. one you're partway through). New tasks always start
-// at "Not started" -- the person only ever moves it forward themselves.
+// A task's work status now doubles as the checkbox's progression: tapping
+// the circle steps a task forward through these stages in order, and the
+// final tap marks it completed (which is still tracked separately via
+// `completed`/`completedAt`, same as before -- status only covers the
+// active stages). New tasks always start at "Not starting yet"; the person
+// only ever moves it forward themselves, one tap at a time.
 const STATUS_OPTIONS = [
-  { id: "not_started", label: "Not started", color: "#9AA0A6" },
-  { id: "to_pass", label: "To pass", color: ACCENT.gold },
-  { id: "wip", label: "Work in progress", color: ACCENT.sky },
+  { id: "not_started", label: "Not starting yet", color: "#9AA0A6", progress: 0 },
+  { id: "wip", label: "Work in progress", color: ACCENT.sky, progress: 0.34 },
+  { id: "to_pass", label: "To pass", color: ACCENT.ember, progress: 0.67 },
 ];
+const STATUS_ORDER = STATUS_OPTIONS.map((s) => s.id);
+
+// "To pass" is deliberately red/urgent by default, but once the deadline
+// has actually arrived (due today or overdue) red stops being useful
+// information -- it's not a warning anymore, it's just where things stand
+// -- so it switches to green as a "this is the one to act on now" cue
+// instead of restating the alarm.
+function statusColor(status, dueTodayOrOverdue) {
+  const opt = STATUS_OPTIONS.find((s) => s.id === status) || STATUS_OPTIONS[0];
+  if (status === "to_pass" && dueTodayOrOverdue) return ACCENT.leaf;
+  return opt.color;
+}
+function statusProgress(t) {
+  if (t.completed) return 1;
+  const opt = STATUS_OPTIONS.find((s) => s.id === t.status) || STATUS_OPTIONS[0];
+  return opt.progress;
+}
 
 // Old-architecture Android needs this opt-in for LayoutAnimation to do
 // anything at all (New Architecture/Fabric has it on by default, and this
@@ -113,18 +132,31 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
   const toggle = useCallback(async (id) => {
     const t = todos.find((x) => x.id === id);
     if (!t) return;
-    const nowCompleted = !t.completed;
-    if (nowCompleted) {
-      await cancelTodoNotifications(t.notificationIds);
-      await cancelTodoAlarm(t.id);
-      hapticSuccess();
+    if (t.completed) {
+      // Reopening a finished task -- just un-complete it and leave status
+      // as-is (it'll almost always be "to_pass", the stage right before
+      // completion), no ceremony needed for undoing.
+      setTodos((prev) => prev.map((x) => (x.id === id ? { ...x, completed: false, completedAt: null } : x)));
+      return;
     }
+    const rawIndex = STATUS_ORDER.indexOf(t.status);
+    const stageIndex = rawIndex === -1 ? 0 : rawIndex;
+    const isFinalStage = stageIndex === STATUS_ORDER.length - 1;
+    if (!isFinalStage) {
+      // Just bumping the status forward -- task stays right where it is
+      // in the Active list.
+      setTodos((prev) => prev.map((x) => (x.id === id ? { ...x, status: STATUS_ORDER[stageIndex + 1] } : x)));
+      return;
+    }
+    await cancelTodoNotifications(t.notificationIds);
+    await cancelTodoAlarm(t.id);
+    hapticSuccess();
     // Animates the row's departure from (or return to) the currently
     // filtered list -- without this, a task dropping out of Active the
     // instant it's checked off would just jump/pop rather than settle
     // smoothly, since the FlatList has no idea a removal is "expected".
     LayoutAnimation.configureNext(LayoutAnimation.create(250, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
-    setTodos((prev) => prev.map((x) => (x.id === id ? { ...x, completed: nowCompleted, completedAt: nowCompleted ? new Date().toISOString() : null } : x)));
+    setTodos((prev) => prev.map((x) => (x.id === id ? { ...x, completed: true, completedAt: new Date().toISOString() } : x)));
   }, [todos, setTodos]);
 
   const remove = useCallback(async (id) => {
@@ -203,10 +235,14 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
             </View>
           </View>
 
-          <View style={styles.chipRow}>
-            <Chip label="Active" active={statusView === "active"} onPress={() => setStatusView("active")} small />
-            <Chip label={`Finished (${todos.filter((t) => t.completed).length})`} active={statusView === "done"} onPress={() => setStatusView("done")} small />
-          </View>
+          <SegmentedTabs
+            options={[
+              { key: "active", label: "Active" },
+              { key: "done", label: `Finished (${todos.filter((t) => t.completed).length})` },
+            ]}
+            value={statusView}
+            onChange={setStatusView}
+          />
 
           {schoolConflicts.length > 0 && statusView === "active" && (
             <View style={[styles.warnBanner, { backgroundColor: ACCENT.ember + "20" }]}>
@@ -282,9 +318,23 @@ function useTaskCompletion(t, onToggle) {
 
   React.useEffect(() => () => { if (timeoutRef.current) clearTimeout(timeoutRef.current); }, []);
 
+  const rawIndex = STATUS_ORDER.indexOf(t.status);
+  const stageIndex = rawIndex === -1 ? 0 : rawIndex;
+  const isFinalStage = stageIndex === STATUS_ORDER.length - 1;
+
   function handleToggle() {
     if (completingRef.current) return;
     if (t.completed) { onToggle(t.id); return; }
+    if (!isFinalStage) {
+      // Just bumping the status forward -- a quick pop, committed right
+      // away, since the task stays put in the Active list either way.
+      Animated.sequence([
+        Animated.spring(popScale, { toValue: 1.25, useNativeDriver: true, friction: 4, tension: 220 }),
+        Animated.spring(popScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 220 }),
+      ]).start();
+      onToggle(t.id);
+      return;
+    }
     completingRef.current = true;
     setOptimisticDone(true);
     Animated.sequence([
@@ -301,6 +351,16 @@ function useTaskCompletion(t, onToggle) {
   return { displayCompleted: t.completed || optimisticDone, popScale, handleToggle };
 }
 
+// Animates the status progress bar smoothly to its new fraction whenever
+// status/completed changes, instead of snapping straight there.
+function useAnimatedProgress(fraction) {
+  const anim = useRef(new Animated.Value(fraction)).current;
+  React.useEffect(() => {
+    Animated.timing(anim, { toValue: fraction, duration: 350, useNativeDriver: false }).start();
+  }, [fraction]);
+  return anim;
+}
+
 // --- Detailed layout: everything visible up front, no expand needed ---
 // Memoized so editing the form, switching tabs, or toggling one row
 // doesn't force every other row to re-render.
@@ -310,10 +370,13 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
   const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
   const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
+  const dueTodayOrOverdue = !displayCompleted && dleft !== null && dleft <= 0;
   const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
   const flagged = isOverdue || isUrgentSchool;
   const subtasks = t.subtasks || [];
   const subDone = subtasks.filter((s) => s.done).length;
+  const effectiveStatusColor = statusColor(t.status, dueTodayOrOverdue);
+  const progressAnim = useAnimatedProgress(statusProgress(t));
 
   return (
     <View style={[
@@ -328,7 +391,7 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
         <Pressable onPress={handleToggle} style={{ marginTop: 2 }}>
           <Animated.View style={{ transform: [{ scale: popScale }] }}>
-            {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={theme.textMuted} />}
+            {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
           </Animated.View>
         </Pressable>
         <View style={{ flex: 1 }}>
@@ -344,14 +407,13 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
             <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
               <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
             </View>
-            {(() => {
-              const statusOpt = STATUS_OPTIONS.find((s) => s.id === t.status) || STATUS_OPTIONS[0];
-              return (
-                <View style={[styles.tag, { backgroundColor: statusOpt.color + "22" }]}>
-                  <Text style={[styles.tagText, { color: statusOpt.color }]}>{statusOpt.label}</Text>
-                </View>
-              );
-            })()}
+            {!displayCompleted && (
+              <View style={[styles.tag, { backgroundColor: effectiveStatusColor + "22" }]}>
+                <Text style={[styles.tagText, { color: effectiveStatusColor }]}>
+                  {(STATUS_OPTIONS.find((s) => s.id === t.status) || STATUS_OPTIONS[0]).label}
+                </Text>
+              </View>
+            )}
             {t.reminderEnabled !== false ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
                 <Bell size={10} color={theme.textMuted} />
@@ -369,6 +431,18 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
                 <Text style={[styles.metaText, { color: ACCENT.rust || ACCENT.gold }]}>Alarm set</Text>
               </View>
             )}
+          </View>
+
+          <View style={[styles.statusProgressTrack, { backgroundColor: theme.bg }]}>
+            <Animated.View
+              style={[
+                styles.statusProgressFill,
+                {
+                  backgroundColor: displayCompleted ? ACCENT.leaf : effectiveStatusColor,
+                  width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
+                },
+              ]}
+            />
           </View>
 
           {subject && (
@@ -583,13 +657,14 @@ const styles = StyleSheet.create({
   detailedMetaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" },
   subProgressTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
   subProgressFill: { height: 4, borderRadius: 2 },
+  statusProgressTrack: { height: 5, borderRadius: 3, overflow: "hidden", marginTop: 8 },
+  statusProgressFill: { height: 5, borderRadius: 3 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   h1: { fontSize: 20, fontWeight: "700" },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   viewToggle: { flexDirection: "row", borderWidth: 1, borderRadius: 999, padding: 2 },
   toggleBtn: { padding: 6, borderRadius: 999 },
   roundBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
-  chipRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
   warnBanner: { flexDirection: "row", gap: 8, borderRadius: 16, padding: 12, marginBottom: 12 },
   warnText: { fontSize: 11, flex: 1 },
   weekCard: { borderWidth: 1, borderRadius: 16, padding: 12, marginBottom: 12 },

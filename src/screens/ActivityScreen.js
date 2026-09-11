@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, ScrollView, StyleSheet } from "react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso } from "../utils";
@@ -9,14 +9,17 @@ import EmptyState from "../components/EmptyState";
 
 export default function ActivityScreen({ expenses, moneyLog, splits }) {
   const { theme } = useTheme();
-  const now = new Date();
+  const now = useMemo(() => new Date(), []);
 
-  const categories = categoryBreakdown(expenses, splits, now);
-  const monthTotal = categories.reduce((s, c) => s + c.amount, 0);
-  const labels = spendingByLabel(expenses, now);
-  const labelTotal = labels.reduce((s, c) => s + c.amount, 0);
-  const trend = monthlyTrend({ moneyLog, expenses }, 6, now);
-  const trendMax = Math.max(1, ...trend.map((t) => Math.max(t.income, t.spent)));
+  const { categories, monthTotal, labels, labelTotal, trend, trendMax } = useMemo(() => {
+    const categories = categoryBreakdown(expenses, splits, now);
+    const monthTotal = categories.reduce((s, c) => s + c.amount, 0);
+    const labels = spendingByLabel(expenses, now);
+    const labelTotal = labels.reduce((s, c) => s + c.amount, 0);
+    const trend = monthlyTrend({ moneyLog, expenses }, 6, now);
+    const trendMax = Math.max(1, ...trend.map((t) => Math.max(t.income, t.spent)));
+    return { categories, monthTotal, labels, labelTotal, trend, trendMax };
+  }, [expenses, moneyLog, splits, now]);
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }}>
