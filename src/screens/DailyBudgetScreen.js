@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import Slider from "@react-native-community/slider";
-import { ArrowLeft, Plus, Trash2, Check, Bell } from "lucide-react-native";
+import { ArrowLeft, Plus, Trash2, Check, Bell, PiggyBank } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
 import { peso, uid, todayISO, fmtDay, normalizeSplits, removeSplitAndRedistribute, computeDailyBudgetReview, categoryStatusText, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
@@ -148,7 +148,7 @@ function ReviewView({ review, theme, modelName, showCustom, setShowCustom, custo
     return (
       <>
         <HeroCard review={review} modelName={modelName} theme={theme} />
-        <EmptyState text="No available budget for today's review." />
+        <EmptyState icon={PiggyBank} text="No available budget for today's review." />
       </>
     );
   }
@@ -242,7 +242,7 @@ function ReviewView({ review, theme, modelName, showCustom, setShowCustom, custo
                     style={[styles.customInput, { backgroundColor: theme.bg, color: theme.text }]}
                     autoFocus
                   />
-                  <Pressable onPress={onSaveCustom} style={[styles.customConfirm, { backgroundColor: ACCENT.leaf }]}>
+                  <Pressable onPress={onSaveCustom} style={[styles.customConfirm, { backgroundColor: ACCENT.leaf }]} accessibilityLabel="Confirm custom amount">
                     <Check size={14} color="#fff" />
                   </Pressable>
                 </View>
@@ -299,7 +299,7 @@ function SettingsView({ theme, splits, totalPercent, applyPreset, addSplit, remo
               <Text style={[styles.splitPercent, { color: s.color }]}>{s.percent}%</Text>
               {splits.length > 1 && (
                 <Pressable onPress={() => removeSplit(s.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={`Remove ${s.label} category`}>
-                  <Trash2 size={12} color={theme.textMuted} />
+                  <Trash2 size={14} color={theme.textMuted} />
                 </Pressable>
               )}
             </View>

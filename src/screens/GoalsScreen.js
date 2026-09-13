@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
-import { Plus, X, Pencil, Trash2 } from "lucide-react-native";
+import { Plus, X, Pencil, Trash2, PiggyBank } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, uid, fmtDay, goalProgress, unallocatedSavings } from "../utils";
 import { validate, goalSchema } from "../validation";
@@ -51,7 +51,7 @@ export default function GoalsScreen({ goals, setGoals, savingsLog }) {
       )}
 
       {active.length === 0 ? (
-        <EmptyState text="No savings goals yet." />
+        <EmptyState icon={PiggyBank} text="No savings goals yet." />
       ) : (
         <View style={{ gap: 8 }}>
           {active.map((g) => {
@@ -62,8 +62,8 @@ export default function GoalsScreen({ goals, setGoals, savingsLog }) {
                 <View style={styles.goalHeaderRow}>
                   <Text style={[styles.goalName, { color: theme.text }]}>{g.name}</Text>
                   <View style={{ flexDirection: "row", gap: 8 }}>
-                    <Pressable onPress={() => startEdit(g)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit goal"><Pencil size={13} color={theme.textMuted} /></Pressable>
-                    <Pressable onPress={() => removeGoal(g)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete goal"><Trash2 size={13} color={theme.textMuted} /></Pressable>
+                    <Pressable onPress={() => startEdit(g)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit goal"><Pencil size={14} color={theme.textMuted} /></Pressable>
+                    <Pressable onPress={() => removeGoal(g)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete goal"><Trash2 size={14} color={theme.textMuted} /></Pressable>
                   </View>
                 </View>
                 <Text style={[styles.goalAmounts, { color: theme.textMuted }]}>{peso(prog.current)} / {peso(prog.target)}</Text>
@@ -125,7 +125,7 @@ function GoalForm({ initial, onSave, onCancel }) {
 }
 
 const styles = StyleSheet.create({
-  h1: { fontSize: 20, fontWeight: "800" },
+  h1: { fontSize: 20, fontWeight: "700" },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   roundBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   hint: { fontSize: 11, marginBottom: 14, lineHeight: 15 },

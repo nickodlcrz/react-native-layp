@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
-import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search } from "lucide-react-native";
+import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search, Filter } from "lucide-react-native";
 import { useTheme, ACCENT, INCOME_CATEGORIES, SPENDING_LABELS } from "../theme";
 import { peso, uid, todayISO, fmtDay, fmtDaySmart, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview, nextRecurringDate } from "../utils";
 import { categoryBreakdown, frequentExpenseTemplates, spendingByLabel } from "../selectors";
@@ -184,6 +184,7 @@ export default function SpendingScreen({
   // months back without paging through History first.
   const [searchQuery, setSearchQuery] = useState("");
   const [filterLabel, setFilterLabel] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
   const isFiltering = searchQuery.trim().length > 0 || !!filterLabel;
   const searchResults = useMemo(() => {
     if (!isFiltering) return [];
@@ -288,7 +289,7 @@ export default function SpendingScreen({
       maxToRenderPerBatch={10}
       windowSize={7}
       removeClippedSubviews={Platform.OS === "android"}
-      ListEmptyComponent={ledgerOpen ? <EmptyState text="Nothing logged yet." /> : null}
+      ListEmptyComponent={ledgerOpen ? <EmptyState icon={Receipt} text="Nothing logged yet." /> : null}
       ListHeaderComponent={
         <>
           <View style={styles.headerRow}>
@@ -415,7 +416,7 @@ export default function SpendingScreen({
                       </Text>
                     </View>
                     <Pressable onPress={() => removeRecurringIncome(r.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Stop this recurring income">
-                      <Trash2 size={15} color={theme.textMuted} />
+                      <Trash2 size={14} color={theme.textMuted} />
                     </Pressable>
                   </View>
                 ))}
@@ -439,12 +440,27 @@ export default function SpendingScreen({
                     <X size={14} color={theme.textMuted} />
                   </Pressable>
                 )}
+                <Pressable
+                  onPress={() => setFilterOpen((s) => !s)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={[styles.filterBtn, { backgroundColor: filterLabel || filterOpen ? theme.neutralDark : "transparent" }]}
+                  accessibilityLabel={filterOpen ? "Hide category filter" : "Filter by category"}
+                >
+                  <Filter size={13} color={filterLabel || filterOpen ? "#fff" : theme.textMuted} />
+                  {filterLabel && <Text style={styles.filterBtnText}>{filterLabel}</Text>}
+                </Pressable>
               </View>
-              <View style={[styles.chipWrap, { marginTop: 8, marginBottom: 0 }]}>
-                {SPENDING_LABELS.map((l) => (
-                  <Chip key={l.id} label={l.label} color={l.color} small active={filterLabel === l.label} onPress={() => setFilterLabel((cur) => (cur === l.label ? null : l.label))} />
-                ))}
-              </View>
+              {/* Category filter row -- tucked behind the Filter button
+                  instead of always shown, so the search bar isn't followed
+                  by a permanent wall of 8 chips on every visit to this
+                  screen. */}
+              {filterOpen && (
+                <View style={[styles.chipWrap, { marginTop: 8, marginBottom: 0 }]}>
+                  {SPENDING_LABELS.map((l) => (
+                    <Chip key={l.id} label={l.label} color={l.color} small active={filterLabel === l.label} onPress={() => setFilterLabel((cur) => (cur === l.label ? null : l.label))} />
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -467,8 +483,8 @@ export default function SpendingScreen({
               <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>
                 {searchResults.length} result{searchResults.length === 1 ? "" : "s"}
               </Text>
-              {searchResults.length === 0 ? <EmptyState text="No matching expenses." /> : (
-                <View style={{ gap: 8 }}>
+              {searchResults.length === 0 ? <EmptyState icon={Search} text="No matching expenses." /> : (
+                <View style={{ gap: 10 }}>
                   {searchResults.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} onEdit={startEdit} onRemove={remove} />)}
                 </View>
               )}
@@ -477,7 +493,7 @@ export default function SpendingScreen({
             <View style={{ marginBottom: 16 }}>
               <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Recent Spending</Text>
               <View style={{ gap: 8 }}>
-                {recentDays.length === 0 && <EmptyState text="Nothing logged yet." />}
+                {recentDays.length === 0 && <EmptyState icon={Receipt} text="Nothing logged yet." />}
                 {recentDays.map(({ date: d, expenses: dayExpenses, isToday }) => {
                   const dayTotal = dayExpenses.reduce((s, e) => s + Number(e.amount), 0);
                   // Today defaults open (so what you just logged is visible
@@ -498,7 +514,7 @@ export default function SpendingScreen({
                         </View>
                       </Pressable>
                       {open && (
-                        <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 8 }}>
+                        <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 10 }}>
                           {dayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} compact onEdit={startEdit} onRemove={remove} />)}
                         </View>
                       )}
@@ -567,8 +583,8 @@ const ExpenseRow = React.memo(function ExpenseRow({ e, splits, accounts, onEdit,
         </View>
       </Pressable>
       <Text style={[styles.amount, { color: ACCENT.ember }]}>-{peso(e.amount)}</Text>
-      {e.source !== "bill" && <Pressable onPress={() => onEdit(e)} style={{ marginRight: 2 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit expense"><Pencil size={12} color={theme.textMuted} /></Pressable>}
-      <Pressable onPress={() => onRemove(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={13} color={theme.textMuted} /></Pressable>
+      {e.source !== "bill" && <Pressable onPress={() => onEdit(e)} style={{ marginRight: 2 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit expense"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+      <Pressable onPress={() => onRemove(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={14} color={theme.textMuted} /></Pressable>
     </View>
   );
 });
@@ -717,6 +733,8 @@ const styles = StyleSheet.create({
   chipWrap: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12, gap: 6 },
   searchRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
   searchInput: { flex: 1, fontSize: 13 },
+  filterBtn: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 5 },
+  filterBtnText: { fontSize: 10, fontWeight: "700", color: "#fff", maxWidth: 70 },
   hint: { fontSize: 11, lineHeight: 15 },
   miniLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 },
   panel: { borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 14 },
@@ -734,12 +752,12 @@ const styles = StyleSheet.create({
   formBtnText: { fontSize: 12, fontWeight: "700" },
   // Slightly tighter than before (was padding: 12, gap: 10) -- a modest
   // ~15% cut to let more transactions fit on screen without feeling cramped.
-  row: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 16, padding: 10 },
-  rowTitle: { fontSize: 13, fontWeight: "600" },
+  row: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 16, padding: 13 },
+  rowTitle: { fontSize: 14, fontWeight: "600" },
   customLabel: { fontSize: 10, fontStyle: "italic", marginTop: 1 },
   tag: { alignSelf: "flex-start", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   tagText: { fontSize: 9, fontWeight: "700" },
-  amount: { fontSize: 13, fontWeight: "600", fontFamily: "monospace" },
+  amount: { fontSize: 15, fontWeight: "800", fontFamily: "monospace", textAlign: "right" },
   historyGroup: { borderWidth: 1, borderRadius: 16, overflow: "hidden" },
   // Two stacked rows -- date+amount on top, transaction count+chevron
   // below -- instead of the count living nowhere and the chevron crowding

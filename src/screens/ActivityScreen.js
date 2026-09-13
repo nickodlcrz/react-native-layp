@@ -6,6 +6,7 @@ import { categoryBreakdown, monthlyTrend, spendingByLabel } from "../selectors";
 import PieChart from "../components/PieChart";
 import BarChart from "../components/BarChart";
 import EmptyState from "../components/EmptyState";
+import { PieChart as PieChartIcon } from "lucide-react-native";
 
 export default function ActivityScreen({ expenses, moneyLog, splits }) {
   const { theme } = useTheme();
@@ -28,7 +29,7 @@ export default function ActivityScreen({ expenses, moneyLog, splits }) {
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
         <Text style={[styles.h2, { color: theme.text }]}>This month by category</Text>
         {categories.length === 0 ? (
-          <EmptyState text="Add an expense to see your category breakdown." />
+          <EmptyState icon={PieChartIcon} text="Add an expense to see your category breakdown." />
         ) : (
           <>
             <PieChart
@@ -56,13 +57,16 @@ export default function ActivityScreen({ expenses, moneyLog, splits }) {
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
         <Text style={[styles.h2, { color: theme.text }]}>This month by what it was for</Text>
         {labels.length === 0 ? (
-          <EmptyState text="Add a spending label to an expense to see this breakdown." />
+          <EmptyState icon={PieChartIcon} text="Add a spending label to an expense to see this breakdown." />
         ) : (
           <>
+            {/* No centerLabel here -- the section header above already
+                says "by what it was for", and the first chart already
+                spelled out "spent" once; repeating it on every donut just
+                added noise. */}
             <PieChart
               data={labels.map((c) => ({ label: c.label, value: c.amount, color: c.color }))}
               centerValue={peso(labelTotal)}
-              centerLabel="spent"
               theme={theme}
             />
             <View style={{ marginTop: 14, gap: 8 }}>
@@ -114,7 +118,7 @@ export default function ActivityScreen({ expenses, moneyLog, splits }) {
 }
 
 const styles = StyleSheet.create({
-  h1: { fontSize: 20, fontWeight: "800", marginBottom: 12 },
+  h1: { fontSize: 20, fontWeight: "700", marginBottom: 12 },
   h2: { fontSize: 13, fontWeight: "700", marginBottom: 12 },
   card: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 14 },
   legendRow: { flexDirection: "row", alignItems: "center", gap: 8 },

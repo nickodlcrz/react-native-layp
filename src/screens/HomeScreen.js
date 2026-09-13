@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
-import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle } from "lucide-react-native";
+import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
 import { totalBalance, netWorth as selectNetWorth, safeToSpend as selectSafeToSpend, monthlySummary, billCoverageByAccount } from "../selectors";
@@ -23,10 +23,13 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   const showTodaysClasses = !!activePeriod && activeSubjects.length > 0;
 
+  // Capped at 3 on the Overview (per the card-hierarchy pass -- this is a
+  // glanceable preview, not the full list; View all tasks goes to the
+  // real Todo screen for everything else).
   const upcomingTasks = todos
     .filter((t) => !t.completed)
     .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"))
-    .slice(0, 5);
+    .slice(0, 3);
 
   const totalMoney = totalBalance(accounts, ctx);
 
@@ -71,43 +74,23 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
         </View>
       </View>
 
-      {/* Today's Classes -- every class meeting today, not just current/next */}
-      {showTodaysClasses && (
-        <Pressable onPress={onViewSchedule} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="View full class schedule">
-          <View style={styles.schoolHeader}>
-            <GraduationCap size={14} color={ACCENT.sky} />
-            <Text style={[styles.schoolTitle, { color: theme.text }]}>Today's Classes</Text>
-          </View>
-          {todaysClasses.length === 0 ? (
-            <Text style={[styles.schoolEmpty, { color: theme.textMuted }]}>No classes scheduled today.</Text>
-          ) : (
-            <View style={{ gap: 10 }}>
-              {todaysClasses.map((block, i) => {
-                const isCancelled = cancelledClasses.some((c) => c.date === todayISO() && c.entryId === block.entry.id);
-                const isNow = nowMin >= block.startMin && nowMin < block.endMin;
-                const isDone = nowMin >= block.endMin;
-                return (
-                  <View key={block.entry.id} style={[i > 0 && { paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.line }]}>
-                    <SchoolLine
-                      dotColor={isCancelled ? ACCENT.ember : isNow ? ACCENT.leaf : isDone ? theme.textMuted : ACCENT.gold}
-                      tag={isCancelled ? "SUSPENDED" : isNow ? "NOW" : isDone ? "DONE" : "UPCOMING"}
-                      block={block} theme={theme}
-                      sub={isCancelled ? null : isNow ? `${minutesRemaining(block)} minutes remaining` : null}
-                      faded={isDone || isCancelled}
-                    />
-                  </View>
-                );
-              })}
-            </View>
-          )}
-          <View style={styles.schoolFooter}>
-            <Text style={[styles.schoolFooterText, { color: ACCENT.sky }]}>View full schedule</Text>
-            <ChevronRight size={12} color={ACCENT.sky} />
-          </View>
-        </Pressable>
-      )}
+      {/* Safe to spend -- the card hierarchy puts this right under Total
+          money and gives it the app's blue as a solid surface, the same
+          "hero" treatment as Total money above, so it's the most visible
+          number on the screen after your balance. */}
+      <View style={[styles.safeCard, { backgroundColor: ACCENT.sky }]}>
+        <View style={styles.safeLabelRow}>
+          <Wallet size={12} color="#ffffffcc" />
+          <Text style={styles.safeLabel}>SAFE TO SPEND</Text>
+        </View>
+        <AnimatedNumber value={safeToSpend} formatter={peso} style={styles.safeValue} />
+        <Text style={styles.safeSub}>
+          {daysLeftInMonth > 0 ? `\u2248 ${peso(perDay)}/day for the rest of the month` : "end of month"}
+        </Text>
+        <Text style={styles.estimateNote}>Estimate only, not financial advice -- total money minus unpaid bills.</Text>
+      </View>
 
-      {/* Upcoming tasks -- soonest-due unfinished todos across all categories */}
+      {/* Upcoming tasks -- soonest-due unfinished todos across all categories, capped at 3 */}
       <Pressable onPress={onViewTodos} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="View all tasks">
         <View style={styles.schoolHeader}>
           <ListTodo size={14} color={ACCENT.gold} />
@@ -125,9 +108,15 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
                 <View key={t.id} style={[{ flexDirection: "row", alignItems: "center", gap: 8 }, i > 0 && { paddingTop: 9, borderTopWidth: 1, borderTopColor: theme.line }]}>
                   <Circle size={13} color={cat?.color || theme.textMuted} />
                   <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={1}>{t.title}</Text>
-                  <Text style={[styles.taskDue, { color: overdue ? ACCENT.ember : theme.textMuted }]}>
-                    {dleft === null ? "" : overdue ? `${Math.abs(dleft)}d overdue` : dleft === 0 ? "Today" : `${dleft}d`}
-                  </Text>
+                  {overdue ? (
+                    <View style={styles.overduePill}>
+                      <Text style={[styles.overduePillText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.taskDue, { color: theme.textMuted }]}>
+                      {dleft === null ? "" : dleft === 0 ? "Today" : `${dleft}d`}
+                    </Text>
+                  )}
                 </View>
               );
             })}
@@ -139,6 +128,43 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
         </View>
       </Pressable>
 
+      {/* Today's Classes -- compact horizontal strip (was a full detailed
+          card; the per-block detail now lives on the School tab, this is
+          just a glanceable "what's today" strip). */}
+      {showTodaysClasses && (
+        <Pressable onPress={onViewSchedule} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="View full class schedule">
+          <View style={styles.schoolHeader}>
+            <GraduationCap size={14} color={ACCENT.sky} />
+            <Text style={[styles.schoolTitle, { color: theme.text }]}>Today's Classes</Text>
+          </View>
+          {todaysClasses.length === 0 ? (
+            <Text style={[styles.schoolEmpty, { color: theme.textMuted }]}>No classes scheduled today.</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {todaysClasses.map((block) => {
+                const isCancelled = cancelledClasses.some((c) => c.date === todayISO() && c.entryId === block.entry.id);
+                const isNow = nowMin >= block.startMin && nowMin < block.endMin;
+                const isDone = nowMin >= block.endMin;
+                const dotColor = isCancelled ? ACCENT.ember : isNow ? ACCENT.leaf : isDone ? theme.textMuted : ACCENT.gold;
+                return (
+                  <View key={block.entry.id} style={[styles.classStrip, { backgroundColor: theme.bg, opacity: isDone || isCancelled ? 0.5 : 1 }]}>
+                    <View style={styles.classStripTopRow}>
+                      <View style={[styles.schoolDot, { backgroundColor: dotColor, marginTop: 0 }]} />
+                      <Text style={[styles.classStripCode, { color: theme.text }]} numberOfLines={1}>{block.subject.code}</Text>
+                    </View>
+                    <Text style={[styles.classStripTime, { color: theme.textMuted }]}>{fmtTime12(block.entry.startTime)}</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          )}
+          <View style={styles.schoolFooter}>
+            <Text style={[styles.schoolFooterText, { color: ACCENT.sky }]}>View full schedule</Text>
+            <ChevronRight size={12} color={ACCENT.sky} />
+          </View>
+        </Pressable>
+      )}
+
       {/* Monthly overview */}
       <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>{monthLabel}</Text>
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
@@ -146,57 +172,6 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
         <MonthRow icon={TrendingDown} color={ACCENT.ember} label="Spent" value={monthSpent} theme={theme} />
         <MonthRow icon={PiggyBank} color={ACCENT.sky} label="Saved" value={monthSaved} theme={theme} last />
       </View>
-
-      {/* Safe to spend */}
-      <View style={[styles.safeCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-        <Text style={[styles.safeLabel, { color: theme.textMuted }]}>SAFE TO SPEND</Text>
-        <AnimatedNumber value={safeToSpend} formatter={peso} style={[styles.safeValue, { color: theme.text }]} />
-        <Text style={[styles.safeSub, { color: theme.textMuted }]}>
-          {daysLeftInMonth > 0 ? `\u2248 ${peso(perDay)}/day for the rest of the month` : "end of month"}
-        </Text>
-        <Text style={[styles.estimateNote, { color: theme.textMuted }]}>Estimate only, not financial advice -- total money minus unpaid bills.</Text>
-      </View>
-
-      {/* Upcoming bills */}
-      <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 4 }]}>UPCOMING BILLS</Text>
-      {upcomingBills.length === 0 ? (
-        <EmptyState text="No unpaid bills." />
-      ) : (
-        <View style={{ gap: 8, marginBottom: 4 }}>
-          {upcomingBills.map((b) => {
-            const dleft = daysUntil(b.dueDate);
-            return (
-              <View key={b.id} style={[styles.billRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                <Receipt size={15} color={ACCENT.gold} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.billName, { color: theme.text }]}>{b.name}</Text>
-                  <Text style={[styles.billDue, { color: dleft < 0 ? ACCENT.ember : theme.textMuted }]}>
-                    {dleft === 0 ? "Due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `Due in ${dleft}d`}
-                  </Text>
-                </View>
-                <Text style={[styles.billAmount, { color: theme.text }]}>{peso(b.amount)}</Text>
-              </View>
-            );
-          })}
-        </View>
-      )}
-
-      {billCoverage.length > 0 && (
-        <View style={[styles.coverageCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <Text style={[styles.coverageTitle, { color: theme.text }]}>Bill funding check</Text>
-          <Text style={[styles.coverageHint, { color: theme.textMuted }]}>Money left in each bill account after unpaid bills.</Text>
-          {billCoverage.map((account) => {
-            const short = account.remaining < 0;
-            return (
-              <View key={account.id} style={styles.coverageRow}>
-                {short ? <AlertTriangle size={14} color={ACCENT.ember} /> : <CircleCheck size={14} color={ACCENT.leaf} />}
-                <Text style={[styles.coverageAccount, { color: theme.text }]}>{account.label}</Text>
-                <Text style={[styles.coverageAmount, { color: short ? ACCENT.ember : ACCENT.leaf }]}>{short ? `${peso(Math.abs(account.remaining))} short` : `${peso(account.remaining)} free`}</Text>
-              </View>
-            );
-          })}
-        </View>
-      )}
 
       {featuredGoal && (
         <View style={[styles.goalPreviewCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
@@ -234,21 +209,57 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
           <Text style={[styles.miniValueSub, { color: ACCENT.ember }]}>-{peso(iOwe)}</Text>
         </View>
       </View>
-    </ScrollView>
-  );
-}
 
-function SchoolLine({ dotColor, tag, block, theme, sub, faded }) {
-  return (
-    <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, opacity: faded ? 0.5 : 1 }}>
-      <View style={[styles.schoolDot, { backgroundColor: dotColor }]} />
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.schoolTag, { color: dotColor }]}>{tag} — {block.subject.code}</Text>
-        <Text style={[styles.schoolDesc, { color: theme.text }]}>{block.subject.description}</Text>
-        <Text style={[styles.schoolTime, { color: theme.textMuted }]}>{fmtTime12(block.entry.startTime)} – {fmtTime12(block.entry.endTime)}</Text>
-        {sub && <Text style={[styles.schoolTime, { color: theme.textMuted }]}>{sub}</Text>}
-      </View>
-    </View>
+      {/* Bills -- moved to the bottom of Overview per the card-hierarchy
+          pass: the money totals, tasks, and classes above are the
+          glanceable "how am I doing today" cards, bills are the
+          "something to action later" section. */}
+      <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 4 }]}>UPCOMING BILLS</Text>
+      {upcomingBills.length === 0 ? (
+        <EmptyState icon={Receipt} text="No unpaid bills." />
+      ) : (
+        <View style={{ gap: 8, marginBottom: 4 }}>
+          {upcomingBills.map((b) => {
+            const dleft = daysUntil(b.dueDate);
+            return (
+              <View key={b.id} style={[styles.billRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                <Receipt size={15} color={ACCENT.gold} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.billName, { color: theme.text }]}>{b.name}</Text>
+                  {dleft < 0 ? (
+                    <View style={[styles.overduePill, { marginTop: 2 }]}>
+                      <Text style={[styles.overduePillText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.billDue, { color: theme.textMuted }]}>
+                      {dleft === 0 ? "Due today" : `Due in ${dleft}d`}
+                    </Text>
+                  )}
+                </View>
+                <Text style={[styles.billAmount, { color: theme.text }]}>{peso(b.amount)}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      {billCoverage.length > 0 && (
+        <View style={[styles.coverageCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <Text style={[styles.coverageTitle, { color: theme.text }]}>Bill funding check</Text>
+          <Text style={[styles.coverageHint, { color: theme.textMuted }]}>Money left in each bill account after unpaid bills.</Text>
+          {billCoverage.map((account) => {
+            const short = account.remaining < 0;
+            return (
+              <View key={account.id} style={styles.coverageRow}>
+                {short ? <AlertTriangle size={14} color={ACCENT.ember} /> : <CircleCheck size={14} color={ACCENT.leaf} />}
+                <Text style={[styles.coverageAccount, { color: theme.text }]}>{account.label}</Text>
+                <Text style={[styles.coverageAmount, { color: short ? ACCENT.ember : ACCENT.leaf }]}>{short ? `${peso(Math.abs(account.remaining))} short` : `${peso(account.remaining)} free`}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
@@ -290,11 +301,20 @@ const styles = StyleSheet.create({
   monthIconWrap: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   monthLabel: { flex: 1, fontSize: 12, fontWeight: "600" },
   monthValue: { fontSize: 13, fontWeight: "700", fontFamily: "monospace" },
-  safeCard: { borderWidth: 1, borderRadius: 20, padding: 18, marginBottom: 16, alignItems: "center" },
-  safeLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
-  safeValue: { fontSize: 30, fontWeight: "800", fontFamily: "monospace", marginTop: 6 },
-  safeSub: { fontSize: 11, marginTop: 4 },
-  estimateNote: { fontSize: 9, marginTop: 10, textAlign: "center", lineHeight: 13 },
+  // Solid app-blue surface, same "hero" weight as the Total money card
+  // above it -- this is meant to be the single most visible card on the
+  // Overview after your balance, so it gets a filled color instead of a
+  // muted card + border like the rest of the screen.
+  safeCard: { borderRadius: 20, padding: 18, marginBottom: 16, alignItems: "center" },
+  safeLabelRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  safeLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5, color: "#ffffffcc" },
+  safeValue: { fontSize: 32, fontWeight: "800", fontFamily: "monospace", marginTop: 6, color: "#fff" },
+  safeSub: { fontSize: 11, marginTop: 4, color: "#ffffffe0" },
+  estimateNote: { fontSize: 9, marginTop: 10, textAlign: "center", lineHeight: 13, color: "#ffffffb0" },
+  classStrip: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, minWidth: 84 },
+  classStripTopRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  classStripCode: { fontSize: 11.5, fontWeight: "700", flexShrink: 1 },
+  classStripTime: { fontSize: 9.5, marginTop: 3, fontFamily: "monospace" },
   billRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10 },
   billName: { fontSize: 12, fontWeight: "600" },
   billDue: { fontSize: 10, fontFamily: "monospace", marginTop: 1 },
@@ -324,6 +344,8 @@ const styles = StyleSheet.create({
   miniValueSub: { fontSize: 11, fontWeight: "700", fontFamily: "monospace" },
   taskTitle: { flex: 1, fontSize: 12, fontWeight: "600" },
   taskDue: { fontSize: 10, fontFamily: "monospace" },
+  overduePill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: ACCENT.ember + "22" },
+  overduePillText: { fontSize: 9.5, fontWeight: "700", fontFamily: "monospace" },
 });
 
 // Memoized: these screens now stay permanently mounted (see App.js) so

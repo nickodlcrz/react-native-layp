@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
-import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell } from "lucide-react-native";
+import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Receipt } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, addAccount as pushAccount, isPositiveAmount, nextRecurringDate } from "../utils";
 import Chip from "../components/Chip";
@@ -374,7 +374,7 @@ function BudgetScreen({
             <Text style={[styles.accountEditBalance, { color: theme.textMuted }]}>{peso(computeAccountBalance(a.id, ctx))}</Text>
             {accounts.length > 1 && (
               <Pressable onPress={() => removeAccount(a.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={`Delete ${a.label} account`}>
-                <Trash2 size={13} color={theme.textMuted} />
+                <Trash2 size={14} color={theme.textMuted} />
               </Pressable>
             )}
           </View>
@@ -382,7 +382,7 @@ function BudgetScreen({
         <Text style={[styles.accountHint, { color: theme.textMuted }]}>Add as many named accounts as you use -- GCash, Maya, Wallet, Bank, etc. Tap a name to rename it.</Text>
       </View>
 
-      <Pressable onPress={() => setShowDailyBudget(true)} style={[styles.dailyBudgetCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+      <Pressable onPress={() => setShowDailyBudget(true)} style={[styles.dailyBudgetCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="Open Daily Budget">
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <View style={[styles.dailyBudgetIcon, { backgroundColor: ACCENT.gold + "22" }]}>
             <Bell size={16} color={ACCENT.gold} />
@@ -435,7 +435,7 @@ function BudgetScreen({
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <Text style={[styles.smallRowAmount, { color: isWithdraw ? ACCENT.ember : ACCENT.leaf }]}>{isWithdraw ? "-" : "+"}{peso(s.amount)}</Text>
-                <Pressable onPress={() => confirmDelete("Delete this entry?", "This savings entry will be removed for good.", () => setSavingsLog((prev) => prev.filter((x) => x.id !== s.id)))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete savings entry"><Trash2 size={13} color={theme.textMuted} /></Pressable>
+                <Pressable onPress={() => confirmDelete("Delete this entry?", "This savings entry will be removed for good.", () => setSavingsLog((prev) => prev.filter((x) => x.id !== s.id)))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete savings entry"><Trash2 size={14} color={theme.textMuted} /></Pressable>
               </View>
             </View>
           );
@@ -457,7 +457,7 @@ function BudgetScreen({
       {showBillForm && <BillForm splits={splits} accounts={accounts} initial={editingBill} onSave={saveBill} onCancel={() => { setShowBillForm(false); setEditingBillId(null); }} />}
 
       {(billStatusView === "unpaid" ? unpaidBills : paidBills).length === 0 ? (
-        <EmptyState text={billStatusView === "unpaid" ? "No bills tracked yet." : "No paid bills yet."} />
+        <EmptyState icon={Receipt} text={billStatusView === "unpaid" ? "No bills tracked yet." : "No paid bills yet."} />
       ) : (
         (billStatusView === "unpaid" ? unpaidBills : paidBills).map((b) => {
           const dleft = daysUntil(b.dueDate);
@@ -473,13 +473,18 @@ function BudgetScreen({
               <Pressable style={{ flex: 1 }} onPress={() => !b.paid && startEditBill(b)}>
                 <Text style={[styles.rowTitle, { color: theme.text }]}>{b.name}</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <Text style={[styles.metaText, { color: dleft < 0 && !b.paid ? ACCENT.ember : theme.textMuted }]}>
+                  <Text style={[styles.metaText, { color: theme.textMuted }]}>
                     {b.paid
                       ? `${peso(b.amount)} - paid ${fmtDay(b.paidAt)}`
                       : isPartial
                       ? `${peso(remaining)} left of ${peso(b.amount)}`
-                      : `${peso(b.amount)} - ${dleft === 0 ? "due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}`}
+                      : `${peso(b.amount)}${dleft === 0 ? " - due today" : dleft > 0 ? ` - in ${dleft}d` : ""}`}
                   </Text>
+                  {!b.paid && dleft < 0 && (
+                    <View style={[styles.tag, { backgroundColor: ACCENT.ember + "22" }]}>
+                      <Text style={[styles.tagText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
+                    </View>
+                  )}
                   {split && <View style={[styles.tag, { backgroundColor: split.color + "22" }]}><Text style={[styles.tagText, { color: split.color }]}>{split.label}</Text></View>}
                   {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
                   {b.recurring && <View style={[styles.tag, { backgroundColor: ACCENT.plum + "22" }]}><Text style={[styles.tagText, { color: ACCENT.plum }]}>{b.recurring === "monthly" ? "Monthly" : "Weekly"}</Text></View>}
@@ -497,7 +502,7 @@ function BudgetScreen({
                 </Pressable>
               )}
               {!b.paid && <Pressable onPress={() => startEditBill(b)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit bill"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-              <Pressable onPress={() => removeBill(b.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete bill"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+              <Pressable onPress={() => removeBill(b.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete bill"><Trash2 size={14} color={theme.textMuted} /></Pressable>
             </View>
             {payingBillId === b.id && (
               <View style={[styles.partialPayRow, { backgroundColor: theme.card, borderColor: theme.line }]}>

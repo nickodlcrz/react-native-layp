@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, Animated, LayoutAnimation, UIManager } from "react-native";
 import {
-  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays,
+  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays, ListTodo,
   ChevronLeft, ChevronRight, AlertTriangle, Bell, BellOff, AlarmClock,
 } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
@@ -212,7 +212,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
       windowSize={7}
       removeClippedSubviews={Platform.OS === "android"}
       ListEmptyComponent={
-        <EmptyState text={statusView === "done" ? "No finished tasks yet." : "No tasks here yet. Add one to get started."} />
+        <EmptyState icon={ListTodo} text={statusView === "done" ? "No finished tasks yet." : "No tasks here yet. Add one to get started."} />
       }
       ListHeaderComponent={
         <>
@@ -221,10 +221,10 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
             <View style={styles.headerActions}>
               {statusView === "active" && (
                 <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                  <Pressable onPress={() => setView("list")} style={[styles.toggleBtn, view === "list" && { backgroundColor: theme.accentDark }]}>
+                  <Pressable onPress={() => setView("list")} style={[styles.toggleBtn, view === "list" && { backgroundColor: theme.neutralDark }]} accessibilityLabel="List view" accessibilityState={{ selected: view === "list" }}>
                     <List size={13} color={view === "list" ? "#fff" : theme.textMuted} />
                   </Pressable>
-                  <Pressable onPress={() => setView("week")} style={[styles.toggleBtn, view === "week" && { backgroundColor: theme.accentDark }]}>
+                  <Pressable onPress={() => setView("week")} style={[styles.toggleBtn, view === "week" && { backgroundColor: theme.neutralDark }]} accessibilityLabel="Week view" accessibilityState={{ selected: view === "week" }}>
                     <CalendarDays size={13} color={view === "week" ? "#fff" : theme.textMuted} />
                   </Pressable>
                 </View>
@@ -266,7 +266,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
                   const isToday = d === todayISO();
                   const isSel = d === selectedDay;
                   return (
-                    <Pressable key={d} onPress={() => setSelectedDay(isSel ? null : d)} style={[styles.dayBtn, isSel && { backgroundColor: theme.accentDark }]}>
+                    <Pressable key={d} onPress={() => setSelectedDay(isSel ? null : d)} style={[styles.dayBtn, isSel && { backgroundColor: theme.neutralDark }]}>
                       <Text style={[styles.dayName, { color: isSel ? "#ffffff99" : theme.textMuted }]}>
                         {new Date(d + "T00:00:00").toLocaleDateString("en-PH", { weekday: "narrow" })}
                       </Text>
@@ -389,17 +389,17 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
       },
     ]}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
-        <Pressable onPress={handleToggle} style={{ marginTop: 2 }}>
+        <Pressable onPress={handleToggle} style={{ marginTop: 2 }} accessibilityLabel={displayCompleted ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`} accessibilityRole="checkbox" accessibilityState={{ checked: displayCompleted }}>
           <Animated.View style={{ transform: [{ scale: popScale }] }}>
             {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
           </Animated.View>
         </Pressable>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Text style={[styles.rowTitle, { fontSize: 15, color: isOverdue ? ACCENT.ember : theme.text, textDecorationLine: displayCompleted ? "line-through" : "none", flex: 1 }]}>{t.title}</Text>
+            <Text style={[styles.rowTitle, { fontSize: 15, color: theme.text, textDecorationLine: displayCompleted ? "line-through" : "none", flex: 1 }]}>{t.title}</Text>
             <View style={{ flexDirection: "row", gap: 10, marginLeft: 8 }}>
               {!displayCompleted && <Pressable onPress={() => onEdit(t)} accessibilityLabel="Edit task"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-              <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete task"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+              <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete task"><Trash2 size={14} color={theme.textMuted} /></Pressable>
             </View>
           </View>
 
@@ -453,11 +453,20 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
             <Text style={[styles.descriptionText, { color: theme.text }]}>{t.description}</Text>
           ) : null}
 
-          <Text style={[styles.metaText, { color: flagged ? ACCENT.ember : theme.textMuted, marginTop: 4, fontWeight: "700" }]}>
-            {t.dueDate
-              ? `Due ${fmtDay(t.dueDate)}${t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""} · ${dleft === 0 ? "today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `in ${dleft}d`}`
-              : "No due date"}
-          </Text>
+          {t.dueDate ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+              <Text style={[styles.metaText, { color: theme.textMuted, fontWeight: "700" }]}>
+                Due {fmtDay(t.dueDate)}{t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""}{dleft >= 0 ? ` · ${dleft === 0 ? "today" : `in ${dleft}d`}` : ""}
+              </Text>
+              {dleft < 0 && (
+                <View style={[styles.tag, { backgroundColor: ACCENT.ember + "22" }]}>
+                  <Text style={[styles.tagText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4, fontWeight: "700" }]}>No due date</Text>
+          )}
 
           {subtasks.length > 0 && (
             <View style={{ marginTop: 10, gap: 6 }}>
@@ -465,7 +474,7 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
                 <View style={[styles.subProgressFill, { width: `${(subDone / subtasks.length) * 100}%`, backgroundColor: ACCENT.leaf }]} />
               </View>
               {subtasks.map((s) => (
-                <Pressable key={s.id} onPress={() => onToggleSubtask(t.id, s.id)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Pressable key={s.id} onPress={() => onToggleSubtask(t.id, s.id)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }} accessibilityRole="checkbox" accessibilityState={{ checked: s.done }}>
                   {s.done ? <CheckCircle2 size={14} color={ACCENT.leaf} /> : <Circle size={14} color={theme.textMuted} />}
                   <Text style={{ fontSize: 11.5, color: theme.text, textDecorationLine: s.done ? "line-through" : "none" }}>{s.title}</Text>
                 </Pressable>

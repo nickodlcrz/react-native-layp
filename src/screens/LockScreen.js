@@ -168,62 +168,75 @@ export default function LockScreen({ onUnlock }) {
       <Pressable onPress={toggleDark} style={[styles.themeBtn, { top: insets.top + 12, backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={dark ? "Switch to light mode" : "Switch to dark mode"}>
         {dark ? <Sun size={14} color={ACCENT.gold} /> : <Moon size={14} color={theme.text} />}
       </Pressable>
-      <View style={styles.top}>
-        <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
-        <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
-        <Text style={[styles.subtitle, { color: theme.textMuted }]}>{subtitle}</Text>
+      <View style={styles.centerGroup}>
+        <View style={styles.top}>
+          <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
+          <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
+          <Text style={[styles.subtitle, { color: theme.textMuted }]}>{subtitle}</Text>
 
-        <View style={[styles.dotsRow, shake && styles.shake]}>
-          {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-            <View key={i} style={[styles.dot, { borderColor: theme.text, backgroundColor: i < pin.length ? theme.text : "transparent" }]} />
-          ))}
+          <View style={[styles.dotsRow, shake && styles.shake]}>
+            {Array.from({ length: PIN_LENGTH }).map((_, i) => (
+              <View key={i} style={[styles.dot, { borderColor: theme.text, backgroundColor: i < pin.length ? theme.text : "transparent" }]} />
+            ))}
+          </View>
+
+          {error ? (
+            <View style={styles.errorRow}>
+              <AlertTriangle size={12} color={ACCENT.ember} />
+              <Text style={[styles.errorText, { color: ACCENT.ember }]}>{error}</Text>
+            </View>
+          ) : busy ? (
+            <ActivityIndicator color={theme.textMuted} style={{ marginTop: 8 }} />
+          ) : (
+            <View style={{ height: 20 }} />
+          )}
         </View>
 
-        {error ? (
-          <View style={styles.errorRow}>
-            <AlertTriangle size={12} color={ACCENT.ember} />
-            <Text style={[styles.errorText, { color: ACCENT.ember }]}>{error}</Text>
-          </View>
-        ) : busy ? (
-          <ActivityIndicator color={theme.textMuted} style={{ marginTop: 8 }} />
-        ) : (
-          <View style={{ height: 20 }} />
-        )}
-      </View>
-
-      <View style={[styles.keypad, lockedOutMs > 0 && { opacity: 0.4 }]}>
-        {KEYPAD.map((k, i) => {
-          if (k === "") {
-            return !needsSetup && bioAvailable ? (
-              <Pressable key={i} onPress={tryBiometric} style={styles.key} disabled={busy || lockedOutMs > 0} accessibilityLabel="Use fingerprint">
-                <Fingerprint size={22} color={ACCENT.gold} />
-              </Pressable>
-            ) : (
-              <View key={i} style={styles.key} />
-            );
-          }
-          if (k === "back") {
+        <View style={[styles.keypad, lockedOutMs > 0 && { opacity: 0.4 }]}>
+          {KEYPAD.map((k, i) => {
+            if (k === "") {
+              return !needsSetup && bioAvailable ? (
+                <View key={i} style={styles.keyCell}>
+                  <Pressable onPress={tryBiometric} style={[styles.key, { backgroundColor: theme.card, borderColor: theme.line }]} disabled={busy || lockedOutMs > 0} accessibilityLabel="Use fingerprint">
+                    <Fingerprint size={24} color={ACCENT.gold} />
+                  </Pressable>
+                </View>
+              ) : (
+                <View key={i} style={styles.keyCell} />
+              );
+            }
+            if (k === "back") {
+              return (
+                <View key={i} style={styles.keyCell}>
+                  <Pressable onPress={() => handleDigit("back")} style={[styles.key, { backgroundColor: theme.card, borderColor: theme.line }]} disabled={busy || lockedOutMs > 0} accessibilityLabel="Backspace">
+                    <Delete size={22} color={theme.textMuted} />
+                  </Pressable>
+                </View>
+              );
+            }
             return (
-              <Pressable key={i} onPress={() => handleDigit("back")} style={styles.key} disabled={busy || lockedOutMs > 0} accessibilityLabel="Backspace">
-                <Delete size={20} color={theme.textMuted} />
-              </Pressable>
+              <View key={i} style={styles.keyCell}>
+                <Pressable onPress={() => handleDigit(k)} style={[styles.key, { backgroundColor: theme.card, borderColor: theme.line }]} disabled={busy || lockedOutMs > 0} accessibilityLabel={`Digit ${k}`}>
+                  <Text style={[styles.keyText, { color: theme.text }]}>{k}</Text>
+                </Pressable>
+              </View>
             );
-          }
-          return (
-            <Pressable key={i} onPress={() => handleDigit(k)} style={styles.key} disabled={busy || lockedOutMs > 0} accessibilityLabel={`Digit ${k}`}>
-              <Text style={[styles.keyText, { color: theme.text }]}>{k}</Text>
-            </Pressable>
-          );
-        })}
+          })}
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, justifyContent: "space-between" },
+  safe: { flex: 1 },
   themeBtn: { position: "absolute", top: 16, right: 16, width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", borderWidth: 1, zIndex: 10 },
-  top: { alignItems: "center", paddingTop: 80, paddingHorizontal: 32 },
+  // The whole "logo + title + dots + keypad" group is centered as one unit
+  // in the middle of the screen, instead of top pinned with the keypad
+  // pushed all the way to the bottom -- reads much more like a deliberate
+  // lock-screen layout on both short and tall devices.
+  centerGroup: { flex: 1, alignItems: "center", justifyContent: "center" },
+  top: { alignItems: "center", paddingHorizontal: 32, marginBottom: 12 },
   logo: { width: 52, height: 52, borderRadius: 14, marginBottom: 14 },
   title: { fontSize: 18, fontWeight: "800", marginBottom: 4 },
   subtitle: { fontSize: 12, marginBottom: 24 },
@@ -232,7 +245,12 @@ const styles = StyleSheet.create({
   dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
   errorRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14 },
   errorText: { fontSize: 11 },
-  keypad: { flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 24, paddingBottom: 36 },
-  key: { width: "33.33%", height: 76, alignItems: "center", justifyContent: "center" },
+  keypad: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", paddingHorizontal: 12 },
+  // ~70px circular keys per the checklist, up from the old borderless
+  // 76-tall/33%-wide tap targets -- each cell is still a third of the row
+  // so the three columns line up, but the actual key inside is a fixed
+  // circle with its own card background and border.
+  keyCell: { width: "33.33%", height: 84, alignItems: "center", justifyContent: "center" },
+  key: { width: 70, height: 70, borderRadius: 35, alignItems: "center", justifyContent: "center", borderWidth: 1 },
   keyText: { fontSize: 24, fontWeight: "600" },
 });

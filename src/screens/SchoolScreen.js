@@ -13,7 +13,9 @@ import {
 } from "../school";
 import { rescheduleSubjectNotifications, cancelSubjectNotifications } from "../notifications";
 import { confirmDelete, confirmAction } from "../components/ConfirmModal";
+import { hapticSelect } from "../haptics";
 import Chip from "../components/Chip";
+import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
 
@@ -279,28 +281,31 @@ function SchoolScreen({
             const dotColor = cancelled ? ACCENT.ember : isNow ? ACCENT.leaf : isNext ? ACCENT.gold : theme.textMuted;
             return (
               <View key={block.entry.id} style={i > 0 ? { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.line } : undefined}>
-                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
-                  <View style={{ flex: 1 }}>
-                    <ClassLine
-                      dotColor={dotColor}
-                      tag={tag}
-                      subject={block.subject}
-                      entry={block.entry}
-                      theme={theme}
-                      sub={!cancelled && isNow ? `${minutesRemaining(block)} minutes remaining` : null}
-                    />
-                  </View>
+                {/* Cancelling a class is now a long-press on the row itself
+                    instead of a permanently visible red "Cancel" button --
+                    the small Ban glyph + hint text below is just a quiet
+                    affordance, not a tap target of its own. */}
+                <Pressable
+                  disabled={cancelled}
+                  onLongPress={() => { hapticSelect(); requestSuspend(block); }}
+                  delayLongPress={450}
+                  accessibilityLabel={cancelled ? undefined : `Long-press to cancel ${block.subject.code} today`}
+                >
+                  <ClassLine
+                    dotColor={dotColor}
+                    tag={tag}
+                    subject={block.subject}
+                    entry={block.entry}
+                    theme={theme}
+                    sub={!cancelled && isNow ? `${minutesRemaining(block)} minutes remaining` : null}
+                  />
                   {!cancelled && (
-                    <Pressable
-                      onPress={() => requestSuspend(block)}
-                      style={[styles.cancelClassBtn, { backgroundColor: theme.bg }]}
-                      accessibilityLabel={`Cancel ${block.subject.code} today`}
-                    >
-                      <Ban size={12} color={ACCENT.ember} />
-                      <Text style={[styles.cancelClassBtnText, { color: ACCENT.ember }]}>Cancel</Text>
-                    </Pressable>
+                    <View style={styles.longPressHint}>
+                      <Ban size={10} color={theme.textMuted} />
+                      <Text style={[styles.longPressHintText, { color: theme.textMuted }]}>Long-press to cancel</Text>
+                    </View>
                   )}
-                </View>
+                </Pressable>
               </View>
             );
           })
@@ -325,16 +330,18 @@ function SchoolScreen({
         />
       )}
 
-      <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
-        {[["day", "Day"], ["week", "Week"], ["list", "List"]].map(([id, label]) => (
-          <Pressable key={id} onPress={() => setView(id)} style={[styles.viewToggleBtn, view === id && { backgroundColor: theme.accentDark }]} accessibilityLabel={`${label} view`}>
-            <Text style={[styles.viewToggleText, { color: view === id ? "#fff" : theme.textMuted }]}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <SegmentedTabs
+        options={[
+          { key: "day", label: "Day" },
+          { key: "week", label: "Week" },
+          { key: "list", label: "List" },
+        ]}
+        value={view}
+        onChange={setView}
+      />
 
       {viewSubjects.length === 0 ? (
-        <EmptyState text="No classes yet. Tap + to add your first one." />
+        <EmptyState icon={GraduationCap} text="No classes yet. Tap + to add your first one." />
       ) : view === "day" ? (
         <DayView subjects={viewSubjects} entries={viewEntries} selectedDay={selectedDay} setSelectedDay={setSelectedDay} onOpen={setDetailSubjectId} theme={theme} />
       ) : view === "week" ? (
@@ -388,7 +395,7 @@ function PeriodPanel({ periods, activePeriod, onSelect, onActivate, onSetStatus,
           </View>
           {p.status !== "active" && (
             <Pressable onPress={() => onDelete(p.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginLeft: 8 }} accessibilityLabel={`Delete ${p.label}`}>
-              <Trash2 size={13} color={theme.textMuted} />
+              <Trash2 size={14} color={theme.textMuted} />
             </Pressable>
           )}
         </View>
@@ -566,7 +573,7 @@ function SubjectForm({ initialSubject, initialEntry, defaults, onSave, onCancel 
 function SubjectCard({ subject, entry, onOpen, theme, compact }) {
   const hasReminder = subject.classReminderEnabled !== false || subject.advanceReminderEnabled;
   return (
-    <Pressable onPress={() => onOpen(subject.id)} style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }, compact && styles.cardCompact]}>
+    <Pressable onPress={() => onOpen(subject.id)} style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }, compact && styles.cardCompact]} accessibilityLabel={`${subject.code}, ${fmtTime12(entry.startTime)} to ${fmtTime12(entry.endTime)}`}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.cardCode, { color: theme.text }]}>{subject.code}</Text>
@@ -586,13 +593,13 @@ function DayView({ subjects, entries, selectedDay, setSelectedDay, onOpen, theme
     <View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
         {WEEKDAYS.map((d) => (
-          <Pressable key={d.id} onPress={() => setSelectedDay(d.id)} style={[styles.dayTab, { backgroundColor: selectedDay === d.id ? theme.accentDark : theme.card, borderColor: theme.line }]}>
+          <Pressable key={d.id} onPress={() => setSelectedDay(d.id)} style={[styles.dayTab, { backgroundColor: selectedDay === d.id ? theme.neutralDark : theme.card, borderColor: theme.line }]}>
             <Text style={[styles.dayTabText, { color: selectedDay === d.id ? "#fff" : theme.text }]}>{d.label}</Text>
           </Pressable>
         ))}
       </ScrollView>
       {blocks.length === 0 ? (
-        <EmptyState text="No classes on this day." />
+        <EmptyState icon={GraduationCap} text="No classes on this day." />
       ) : (
         blocks.map((b) => <SubjectCard key={b.entry.id + b.subject.id} subject={b.subject} entry={b.entry} onOpen={onOpen} theme={theme} />)
       )}
@@ -622,7 +629,7 @@ function WeekView({ subjects, entries, onOpen, theme }) {
 
 function ListView({ subjects, entries, onOpen, theme }) {
   const groups = WEEKDAYS.map((d) => ({ day: d, blocks: blocksForWeekday(subjects, entries, d.id) })).filter((g) => g.blocks.length > 0);
-  if (groups.length === 0) return <EmptyState text="No classes scheduled yet." />;
+  if (groups.length === 0) return <EmptyState icon={GraduationCap} text="No classes scheduled yet." />;
   return (
     <View>
       {groups.map((g) => (
@@ -657,8 +664,8 @@ function SubjectDetail({ subject, subjectEntries, todos, onBack, onEdit, onDelet
           <Text style={{ fontSize: 11, color: theme.textMuted, fontWeight: "700" }}>Back</Text>
         </Pressable>
         <View style={{ flexDirection: "row", gap: 14 }}>
-          <Pressable onPress={onEdit} accessibilityLabel="Edit class"><Pencil size={15} color={theme.textMuted} /></Pressable>
-          <Pressable onPress={handleDeleteSubject} accessibilityLabel="Delete class"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+          <Pressable onPress={onEdit} accessibilityLabel="Edit class"><Pencil size={14} color={theme.textMuted} /></Pressable>
+          <Pressable onPress={handleDeleteSubject} accessibilityLabel="Delete class"><Trash2 size={14} color={theme.textMuted} /></Pressable>
         </View>
       </View>
 
@@ -800,8 +807,8 @@ const styles = StyleSheet.create({
   nowTag: { fontSize: 10, fontWeight: "800", letterSpacing: 0.4 },
   nowDesc: { fontSize: 13, fontWeight: "700", marginTop: 2 },
   nowTime: { fontSize: 11, marginTop: 2, fontFamily: "monospace" },
-  cancelClassBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 10 },
-  cancelClassBtnText: { fontSize: 9.5, fontWeight: "700" },
+  longPressHint: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
+  longPressHintText: { fontSize: 9.5, fontWeight: "600" },
   defaultsToggle: { marginBottom: 4 },
   defaultsToggleText: { fontSize: 10, fontWeight: "700" },
   toggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12 },

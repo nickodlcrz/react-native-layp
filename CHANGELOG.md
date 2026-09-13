@@ -4,6 +4,41 @@ All notable changes to LAYP are documented here. Newest entries first.
 
 ## [Unreleased]
 
+### Changed — Accessibility pass
+Went through every screen's `Pressable`s looking for ones a screen reader user would get nothing useful from:
+
+- **Todo's task-completion checkbox** (the circle/checkmark next to every task) had no label or role at all — now announces "Mark '<task>' complete/incomplete" with `accessibilityRole="checkbox"` and the checked state.
+- **Todo's List/Week view toggle** (icon-only buttons) now announce "List view"/"Week view" with selected state.
+- **Todo's subtask toggles** now expose `accessibilityRole="checkbox"` + checked state (they already had visible text, so this adds the semantic role rather than fixing a silent gap).
+- **Daily Budget's custom-amount confirm button** (a bare checkmark icon) now announces "Confirm custom amount".
+- **Budget's Daily Budget card link** now announces "Open Daily Budget" instead of leaving a screen reader to guess from the trailing "›" glyph.
+- **Borrow's Owed-to-me / I-borrowed toggle** now exposes `accessibilityRole="tab"` + selected state.
+- **School's subject card** now has a single concise label (subject code + time range) instead of leaving a screen reader to piece together several separately-ordered text nodes.
+- Audited every remaining `Pressable` across Borrow, Budget, Daily Budget, Goals, School, Spending, Summary, and Todo: all of them already carry visible text a screen reader announces by default, so no silent icon-only gaps remain anywhere in the app.
+
+### Changed — UI polish pass (checklist-driven)
+A full pass through a UI improvement checklist covering consistency, hierarchy, and a few real bugs found along the way:
+
+- **Fixed a real color bug**: `SPENDING_LABELS` had two silent duplicate-color collisions — "School" and "Other" were both plum, and "Bills" and "Health" were both ember — so the by-label pie chart on Activity couldn't visually distinguish them. Added two new accent colors (`ACCENT.rose`, `ACCENT.slate`) and reassigned so all 8 spending labels are now distinct.
+- **Unified edit/delete icons everywhere**: every Pencil/Trash2 pair across Borrow, Budget, Goals, School, Spending, Todo, and Daily Budget was a slightly different size (12–15px, inconsistently). All standardized to the same 14px/`theme.textMuted` pair.
+- **Brighter secondary text**: dark-mode `textMuted` bumped from `#94949E` to `#A8A8B0` so dates/labels are easier to read at a glance.
+- **Less pure black**: dark-mode background changed from `#09090B` to `#12121A` (dark blue-gray) — same OLED-friendly intent, less stark.
+- **Fewer blues**: added a `neutralDark` (dark gray) theme token; the app's indigo (`accentDark`) is now reserved for primary buttons and money totals (hero cards, "+"/submit buttons). Everything else that used to reach for that same indigo — Todo's list/week toggle and day picker, School's day-of-week picker — now uses the new neutral gray instead.
+- **Cleaner category chips**: `Chip` now renders a neutral border/background with a small colored dot for category/account/split selectors, instead of a colored border per chip. Plain status filters (Active/Unpaid/Paid/etc.) keep their pill shape but fill with the new neutral gray instead of indigo when active.
+- **One toggle style, app-wide**: confirmed Todo's Active/Finished and Borrow's Active/Settled already shared the `SegmentedTabs` component; also migrated School's Day/Week/List toggle onto the same component so every section-switcher in the app now looks identical.
+- **Highlighted "Safe to Spend"**: now a solid app-blue hero card (same visual weight as the Total Money card), and moved up to be the second card on Overview instead of buried after the monthly summary.
+- **Overview card order** reworked to: Total money → Safe to spend → Upcoming tasks (capped at 3, was 5) → Today's Classes → monthly summary/goal/net worth/savings → Bills (now at the very bottom, was mid-screen).
+- **Today's Classes** on Overview is now a compact horizontal scroll strip (subject code + start time per class) instead of a full detailed card; tapping still opens the full School schedule.
+- **Softer overdue styling**: replaced plain red overdue text with a small red-tinted pill/badge (matching the existing tag style already used for accounts/splits/categories) on Home's tasks & bills, Todo's due-date line, Borrow's loan rows, and Budget's bill rows.
+- **Renamed** "Lent (owed to me)" → "Owed to me" on the Borrow screen, which also brings its toggle button back to equal visual weight against "I borrowed" (was noticeably longer).
+- **Bigger transaction rows**: Spending screen expense rows now have more padding, a bolder/larger right-weighted amount, and slightly more breathing room between rows.
+- **PIN screen**: keys are now real ~70px circular buttons (card background + border) instead of borderless 33%-wide tap zones, and the whole logo/title/dots/keypad group is centered vertically instead of top-pinned with the keypad pushed to the bottom edge.
+- **Nicer empty states**: `EmptyState` now shows a small contextual icon in a soft circular badge (Receipt for bills/expenses, PiggyBank for savings/goals, HandCoins for borrowing, GraduationCap for classes, ListTodo for tasks, Search for search results, a pie-chart glyph for the Activity breakdowns) instead of plain text alone.
+- **Removed a duplicate "spent" label**: Activity's second pie chart (by spending label) no longer repeats the word "spent" in its center — the section header already says what it's breaking down, and the first chart already said "spent" once.
+- **Decluttered the Spending screen**: the always-visible row of 8 category filter chips under the search bar is now tucked behind a "Filter" button (shows the active label as a badge when one's selected) instead of permanently taking up a row on every visit.
+- **School screen "Cancel class" is now a long-press** on the class row itself (with a small muted "Long-press to cancel" hint) instead of a permanently visible red Cancel button next to every class.
+- Standardized the remaining screen-title (`h1`) inconsistencies — Activity and Goals were `fontWeight: "800"` while every other tab used `"700"` at the same 20px; all now match.
+
 ### Fixed
 - **Duplicate "Savings opportunity" notifications piling up in the shade** — an earlier version's daily-budget notification could, under a race condition (already guarded against for future reschedules by a debounce + request-token check), leave orphaned repeating notifications on the device that fired every day forever with no way to cancel themselves. The existing startup cleanup only cancelled these *scheduled* duplicates going forward; it never touched copies that had *already fired and delivered* before the cleanup ran, so a device carrying old debris from before that fix could still wake up to half a dozen near-identical delivered notifications at once. Cleanup now also dismisses any already-delivered "dailyBudget"-tagged notifications on launch, since a fresh one gets rescheduled immediately after anyway.
 

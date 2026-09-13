@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
-import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check } from "lucide-react-native";
+import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check, HandCoins } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
@@ -127,7 +127,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
       windowSize={7}
       removeClippedSubviews={Platform.OS === "android"}
       ListEmptyComponent={
-        <EmptyState text={statusView === "active" ? `No ${typeView === "lent" ? "lent" : "borrowed"} entries yet.` : "Nothing settled yet."} />
+        <EmptyState icon={HandCoins} text={statusView === "active" ? `No ${typeView === "lent" ? "lent" : "borrowed"} entries yet.` : "Nothing settled yet."} />
       }
       ListHeaderComponent={
         <>
@@ -139,11 +139,11 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
           </View>
 
           <View style={styles.typeToggle}>
-            <Pressable onPress={() => setTypeView("lent")} style={[styles.typeBtn, { backgroundColor: typeView === "lent" ? ACCENT.leaf : theme.card, borderColor: theme.line }]}>
+            <Pressable onPress={() => setTypeView("lent")} style={[styles.typeBtn, { backgroundColor: typeView === "lent" ? ACCENT.leaf : theme.card, borderColor: theme.line }]} accessibilityRole="tab" accessibilityState={{ selected: typeView === "lent" }}>
               <ArrowDownLeft size={14} color={typeView === "lent" ? "#fff" : theme.textMuted} />
-              <Text style={[styles.typeBtnText, { color: typeView === "lent" ? "#fff" : theme.text }]}>Lent (owed to me)</Text>
+              <Text style={[styles.typeBtnText, { color: typeView === "lent" ? "#fff" : theme.text }]}>Owed to me</Text>
             </Pressable>
-            <Pressable onPress={() => setTypeView("borrowed")} style={[styles.typeBtn, { backgroundColor: typeView === "borrowed" ? ACCENT.ember : theme.card, borderColor: theme.line }]}>
+            <Pressable onPress={() => setTypeView("borrowed")} style={[styles.typeBtn, { backgroundColor: typeView === "borrowed" ? ACCENT.ember : theme.card, borderColor: theme.line }]} accessibilityRole="tab" accessibilityState={{ selected: typeView === "borrowed" }}>
               <ArrowUpRight size={14} color={typeView === "borrowed" ? "#fff" : theme.textMuted} />
               <Text style={[styles.typeBtnText, { color: typeView === "borrowed" ? "#fff" : theme.text }]}>I borrowed</Text>
             </Pressable>
@@ -221,11 +221,15 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
             <Text style={[styles.totalDueText, { color: theme.text }]}>
               {hasPartialPayments ? `${peso(remaining)} left of ${peso(due)}` : `Total: ${peso(due)}`}
             </Text>
-            {l.dueDate && (
-              <Text style={[styles.metaText, { color: overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.textMuted }]}>
-                {l.settled ? `settled ${fmtDay(l.settledAt)}` : dleft === 0 ? "due today" : dleft < 0 ? `${Math.abs(dleft)}d overdue` : `due in ${dleft}d`}
+            {l.dueDate && overdue ? (
+              <View style={[styles.tag, { backgroundColor: ACCENT.ember + "22" }]}>
+                <Text style={[styles.tagText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
+              </View>
+            ) : l.dueDate ? (
+              <Text style={[styles.metaText, { color: dueSoon ? ACCENT.gold : theme.textMuted }]}>
+                {l.settled ? `settled ${fmtDay(l.settledAt)}` : dleft === 0 ? "due today" : `due in ${dleft}d`}
               </Text>
-            )}
+            ) : null}
             {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
           </View>
           {hasPartialPayments && (
@@ -240,7 +244,7 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
           </Pressable>
         )}
         {!l.settled && <Pressable onPress={() => startEdit(l)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit entry"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-        <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete entry"><Trash2 size={15} color={theme.textMuted} /></Pressable>
+        <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete entry"><Trash2 size={14} color={theme.textMuted} /></Pressable>
       </View>
 
       {payingId === l.id && (

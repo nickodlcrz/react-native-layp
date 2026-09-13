@@ -3,23 +3,48 @@ import React, { createContext, useContext } from "react";
 export const LIGHT = {
   bg: "#F3F4F0", card: "#FFFFFF", text: "#17203A", textMuted: "#8891A0",
   line: "#E4E5DF", accentDark: "#17203A",
+  // A dark-gray "solid surface" for toggles/segmented active states that
+  // aren't primary CTAs or money totals -- see accentDark's note below on
+  // why those two get to keep the indigo and everything else doesn't.
+  neutralDark: "#4B5160",
 };
 export const DARK = {
-  // A true near-black rather than the previous dark navy-gray -- closer to
-  // what most people mean by "dark mode" (OLED-friendly, less of a washed-
-  // out charcoal look), with just enough lift on `card` to keep cards and
-  // sheets readable as distinct surfaces against the background.
-  bg: "#09090B", card: "#151518", text: "#EDEDF0", textMuted: "#94949E",
+  // A dark blue-gray rather than a true near-black -- keeps the
+  // OLED-friendly, low-glare feel of a dark background without tipping
+  // into the "everything is pure #000" look, and reads a little warmer
+  // next to `card` than a flat black would.
+  bg: "#12121A", card: "#151518", text: "#EDEDF0",
+  // Brightened from a dimmer #94949E so secondary text (dates, muted
+  // labels, timestamps) stays comfortably readable at a glance instead of
+  // disappearing into the background.
+  textMuted: "#A8A8B0",
   // accentDark is used everywhere as a "solid accent surface" -- hero
   // cards, FAB-style round buttons, and active/selected toggle
   // backgrounds, always paired with white icons/text on top. A rich,
   // desaturated indigo keeps that "solid dark surface" language while
   // still popping clearly against the near-black bg/card above.
+  //
+  // Reserved for primary actions and money totals only (hero cards, the
+  // main "+" / submit buttons) -- everywhere else that used to reach for
+  // this same indigo (filter chips, view toggles, day pickers) now uses
+  // neutralDark below instead, so indigo stays a meaningful signal
+  // ("this is the primary thing" / "this is money") instead of just being
+  // the app's all-purpose accent.
   line: "#242428", accentDark: "#2E3E72",
+  // Dark gray "solid surface" for the same toggle/segmented active states
+  // as LIGHT.neutralDark above -- distinct from both `card` (too close to
+  // the resting surface to read as "selected") and `accentDark` (now
+  // reserved for CTAs/totals).
+  neutralDark: "#3A3A42",
 };
 export const ACCENT = {
   gold: "#D9A441", leaf: "#3E7C59", ember: "#D1573F",
   sky: "#3E63D1", plum: "#8B5FBF", teal: "#2F9E9E",
+  // Added so every category/label swatch in the app can be visually
+  // distinct -- see SPENDING_LABELS below, which previously reused plum
+  // and ember twice each (School/Other both plum, Bills/Health both
+  // ember), making those categories indistinguishable in the pie charts.
+  rose: "#D1477F", slate: "#5C6B8A",
 };
 export const PALETTE = [ACCENT.gold, ACCENT.leaf, ACCENT.ember, ACCENT.sky, ACCENT.plum, ACCENT.teal];
 
@@ -68,11 +93,11 @@ export const INCOME_CATEGORIES = [
 export const SPENDING_LABELS = [
   { id: "food", label: "Food", color: ACCENT.gold },
   { id: "transportation", label: "Transportation", color: ACCENT.sky },
-  { id: "school", label: "School", color: ACCENT.plum },
+  { id: "school", label: "School", color: ACCENT.rose },
   { id: "bills", label: "Bills", color: ACCENT.ember },
   { id: "shopping", label: "Shopping", color: ACCENT.teal },
   { id: "entertainment", label: "Entertainment", color: ACCENT.leaf },
-  { id: "health", label: "Health", color: ACCENT.ember },
+  { id: "health", label: "Health", color: ACCENT.slate },
   { id: "other", label: "Other", color: ACCENT.plum },
 ];
 
