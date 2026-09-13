@@ -1,5 +1,10 @@
+// Must be the very first import so gesture-handler installs its native
+// event subscriptions before anything else touches the RN bridge -- this
+// is what lets EditSheet's swipe-to-dismiss work.
+import "react-native-gesture-handler";
 import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, BackHandler, Alert } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap } from "lucide-react-native";
@@ -81,6 +86,7 @@ export default function App() {
   }, [autoLockMinutes]);
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
       <View style={{ flex: 1 }}>
         {/* AppShell now stays mounted even while locked (instead of being
@@ -102,6 +108,7 @@ export default function App() {
         )}
       </View>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

@@ -11,6 +11,7 @@ import Chip from "../components/Chip";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import { confirmDelete, confirmAction } from "../components/ConfirmModal";
+import EditSheet from "../components/EditSheet";
 
 export default function SpendingScreen({
   expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [],
@@ -279,6 +280,7 @@ export default function SpendingScreen({
   ), [theme, accounts]);
 
   return (
+    <>
     <FlatList
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
@@ -476,7 +478,6 @@ export default function SpendingScreen({
           )}
 
           {showMoneyForm && <MoneyForm accounts={accounts} ctx={ctx} onSave={saveMoney} />}
-          {showForm && <ExpenseForm initial={editing} splits={splits} accounts={accounts} ctx={ctx} onSave={saveExpense} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
 
           {isFiltering ? (
             <View style={{ marginBottom: 16 }}>
@@ -561,6 +562,25 @@ export default function SpendingScreen({
         </>
       }
     />
+
+    {/* Editing a logged expense now opens its own popped-up, blurred sheet
+        instead of an inline form -- same pattern as the Todo task editor,
+        so the "edit this one thing" moment is consistent app-wide. */}
+    <EditSheet
+      visible={showForm}
+      title={editing ? "Edit expense" : "Log expense"}
+      onClose={() => { setShowForm(false); setEditingId(null); }}
+    >
+      <ExpenseForm
+        initial={editing}
+        splits={splits}
+        accounts={accounts}
+        ctx={ctx}
+        onSave={saveExpense}
+        onCancel={() => { setShowForm(false); setEditingId(null); }}
+      />
+    </EditSheet>
+    </>
   );
 }
 
@@ -611,7 +631,7 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
   }
 
   return (
-    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+    <View style={styles.formCardBare}>
       <TextInput value={name} onChangeText={setName} placeholder="What did you spend on?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
       {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Label (optional)</Text>
@@ -727,6 +747,7 @@ const styles = StyleSheet.create({
   summaryComparisonText: { fontSize: 11, fontWeight: "700" },
   summaryComparisonDetail: { fontSize: 10, marginTop: 4, fontFamily: "monospace" },
   formCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12 },
+  formCardBare: { paddingTop: 2, paddingBottom: 4 },
   formTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
   input: { fontSize: 13, fontWeight: "500", marginBottom: 8, paddingVertical: 4 },
   amountInput: { fontSize: 13, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontFamily: "monospace" },

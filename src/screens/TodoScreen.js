@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, Animated, LayoutAnimation, UIManager } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, LayoutAnimation, UIManager } from "react-native";
 import {
   CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays, ListTodo,
   ChevronLeft, ChevronRight, AlertTriangle, Bell, BellOff, AlarmClock,
@@ -16,6 +16,8 @@ import { rescheduleTodoNotifications, cancelTodoNotifications, rescheduleTodoAla
 import { hapticSuccess } from "../haptics";
 import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
+import EditSheet from "../components/EditSheet";
+import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming } from "react-native-reanimated";
 
 // A task's work status now doubles as the checkbox's progression: tapping
 // the circle steps a task forward through these stages in order, and the
@@ -199,6 +201,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
   ), [subjectsById, toggle, startEdit, remove, toggleSubtask]);
 
   return (
+    <>
     <FlatList
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
@@ -283,19 +286,28 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
             <Chip label="All" active={filter === "all"} onPress={() => setFilter("all")} />
             {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={filter === c.id} onPress={() => setFilter(c.id)} />)}
           </ScrollView>
-
-          {showForm && (
-            <TodoForm
-              initial={editingTodo}
-              presetSubjectId={editingTodo ? null : pendingSubjectId}
-              subjects={subjects}
-              onSave={saveTodo}
-              onCancel={() => { setShowForm(false); setEditingId(null); setPendingSubjectId(null); }}
-            />
-          )}
         </>
       }
     />
+
+    {/* The task editor now lives in its own popped-up, blurred-backdrop
+        sheet instead of inline in the list -- editing a task (its
+        deadline included) is a focused moment of its own, not something
+        squeezed between the filter chips and the rows. */}
+    <EditSheet
+      visible={showForm}
+      title={editingTodo ? "Edit task" : "New task"}
+      onClose={() => { setShowForm(false); setEditingId(null); setPendingSubjectId(null); }}
+    >
+      <TodoForm
+        initial={editingTodo}
+        presetSubjectId={editingTodo ? null : pendingSubjectId}
+        subjects={subjects}
+        onSave={saveTodo}
+        onCancel={() => { setShowForm(false); setEditingId(null); setPendingSubjectId(null); }}
+      />
+    </EditSheet>
+    </>
   );
 }
 
@@ -312,7 +324,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
 // and commits immediately -- there's nothing to celebrate about undoing.
 function useTaskCompletion(t, onToggle) {
   const [optimisticDone, setOptimisticDone] = useState(false);
-  const popScale = useRef(new Animated.Value(1)).current;
+  const popScale = useSharedValue(1);
   const completingRef = useRef(false);
   const timeoutRef = useRef(null);
 
@@ -322,25 +334,28 @@ function useTaskCompletion(t, onToggle) {
   const stageIndex = rawIndex === -1 ? 0 : rawIndex;
   const isFinalStage = stageIndex === STATUS_ORDER.length - 1;
 
+  function pop(peak) {
+    // Runs on the UI thread -- the checkmark pop stays smooth even if a
+    // save/re-render is happening on the JS thread at the same moment.
+    popScale.value = withSequence(
+      withSpring(peak, { damping: 8, stiffness: 400 }),
+      withSpring(1, { damping: 10, stiffness: 400 }),
+    );
+  }
+
   function handleToggle() {
     if (completingRef.current) return;
     if (t.completed) { onToggle(t.id); return; }
     if (!isFinalStage) {
       // Just bumping the status forward -- a quick pop, committed right
       // away, since the task stays put in the Active list either way.
-      Animated.sequence([
-        Animated.spring(popScale, { toValue: 1.25, useNativeDriver: true, friction: 4, tension: 220 }),
-        Animated.spring(popScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 220 }),
-      ]).start();
+      pop(1.25);
       onToggle(t.id);
       return;
     }
     completingRef.current = true;
     setOptimisticDone(true);
-    Animated.sequence([
-      Animated.spring(popScale, { toValue: 1.4, useNativeDriver: true, friction: 4, tension: 220 }),
-      Animated.spring(popScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 220 }),
-    ]).start();
+    pop(1.4);
     timeoutRef.current = setTimeout(() => {
       onToggle(t.id);
       completingRef.current = false;
@@ -348,17 +363,19 @@ function useTaskCompletion(t, onToggle) {
     }, 420);
   }
 
-  return { displayCompleted: t.completed || optimisticDone, popScale, handleToggle };
+  const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: popScale.value }] }));
+
+  return { displayCompleted: t.completed || optimisticDone, popStyle, handleToggle };
 }
 
 // Animates the status progress bar smoothly to its new fraction whenever
 // status/completed changes, instead of snapping straight there.
 function useAnimatedProgress(fraction) {
-  const anim = useRef(new Animated.Value(fraction)).current;
+  const progress = useSharedValue(fraction);
   React.useEffect(() => {
-    Animated.timing(anim, { toValue: fraction, duration: 350, useNativeDriver: false }).start();
+    progress.value = withTiming(fraction, { duration: 350 });
   }, [fraction]);
-  return anim;
+  return useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
 }
 
 // --- Detailed layout: everything visible up front, no expand needed ---
@@ -368,7 +385,7 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
   const { theme } = useTheme();
   const cat = CATEGORIES.find((c) => c.id === t.category);
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
-  const { displayCompleted, popScale, handleToggle } = useTaskCompletion(t, onToggle);
+  const { displayCompleted, popStyle, handleToggle } = useTaskCompletion(t, onToggle);
   const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
   const dueTodayOrOverdue = !displayCompleted && dleft !== null && dleft <= 0;
   const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
@@ -390,9 +407,9 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
     ]}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
         <Pressable onPress={handleToggle} style={{ marginTop: 2 }} accessibilityLabel={displayCompleted ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`} accessibilityRole="checkbox" accessibilityState={{ checked: displayCompleted }}>
-          <Animated.View style={{ transform: [{ scale: popScale }] }}>
+          <Reanimated.View style={popStyle}>
             {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
-          </Animated.View>
+          </Reanimated.View>
         </Pressable>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -434,13 +451,11 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
           </View>
 
           <View style={[styles.statusProgressTrack, { backgroundColor: theme.bg }]}>
-            <Animated.View
+            <Reanimated.View
               style={[
                 styles.statusProgressFill,
-                {
-                  backgroundColor: displayCompleted ? ACCENT.leaf : effectiveStatusColor,
-                  width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
-                },
+                { backgroundColor: displayCompleted ? ACCENT.leaf : effectiveStatusColor },
+                progressAnim,
               ]}
             />
           </View>
@@ -539,7 +554,10 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
   const canSave = title.trim().length > 0;
 
   return (
-    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+    // No card background/border here anymore -- the form now lives
+    // inside EditSheet, which already provides that surface, so this
+    // just needs its own inner spacing.
+    <View style={styles.formCardBare}>
       <TextInput value={title} onChangeText={setTitle} placeholder="What do you need to do?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
       <TextInput
         value={description}
@@ -685,6 +703,7 @@ const styles = StyleSheet.create({
   dayNum: { fontSize: 12, fontWeight: "700" },
   dot: { width: 4, height: 4, borderRadius: 2 },
   formCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12 },
+  formCardBare: { paddingTop: 2, paddingBottom: 4 },
   input: { fontSize: 13, fontWeight: "500", marginBottom: 12, paddingVertical: 4 },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", marginBottom: 12, gap: 6 },
   label: { fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 },
