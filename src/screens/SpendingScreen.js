@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
-import { Plus, X, Pencil, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search, Filter } from "lucide-react-native";
+import { Plus, X, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search, Filter, Receipt } from "lucide-react-native";
 import { useTheme, ACCENT, INCOME_CATEGORIES, SPENDING_LABELS } from "../theme";
 import { peso, uid, todayISO, fmtDay, fmtDaySmart, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview, nextRecurringDate } from "../utils";
 import { categoryBreakdown, frequentExpenseTemplates, spendingByLabel } from "../selectors";
@@ -12,6 +12,8 @@ import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import { confirmDelete, confirmAction } from "../components/ConfirmModal";
 import EditSheet from "../components/EditSheet";
+import { DURATION, SPRING, useCardPressAnimation } from "../animation";
+import Reanimated from "react-native-reanimated";
 
 export default function SpendingScreen({
   expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [],
@@ -466,17 +468,6 @@ export default function SpendingScreen({
             </View>
           )}
 
-          {!showForm && !showMoneyForm && !isFiltering && quickTemplates.length > 0 && (
-            <View style={{ marginBottom: 14 }}>
-              <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 6 }]}>Log again</Text>
-              <View style={styles.chipWrap}>
-                {quickTemplates.map((t) => (
-                  <Chip key={t.id} label={`${t.name} - ${peso(t.amount)}`} small onPress={() => logAgain(t)} />
-                ))}
-              </View>
-            </View>
-          )}
-
           {showMoneyForm && <MoneyForm accounts={accounts} ctx={ctx} onSave={saveMoney} />}
 
           {isFiltering ? (
@@ -578,6 +569,9 @@ export default function SpendingScreen({
         ctx={ctx}
         onSave={saveExpense}
         onCancel={() => { setShowForm(false); setEditingId(null); }}
+        onDelete={remove}
+        quickTemplates={quickTemplates}
+        onLogAgain={(t) => { logAgain(t); setShowForm(false); }}
       />
     </EditSheet>
     </>
@@ -592,24 +586,38 @@ const ExpenseRow = React.memo(function ExpenseRow({ e, splits, accounts, onEdit,
   const { theme } = useTheme();
   const split = splits.find((s) => s.id === e.splitId);
   const account = accounts.find((a) => a.id === e.account);
-  return (
+  const isBill = e.source === "bill";
+  // Bill-generated entries aren't editable (no form to edit them into), so
+  // they keep a direct delete button -- everything else opens its own
+  // edit sheet on long-press instead, with Delete living inside that
+  // sheet, same as Todo.
+  const { style: pressStyle, pressIn, pressOut, handleLongPress } = useCardPressAnimation(() => onEdit(e));
+
+  const content = (
     <View style={[styles.row, { backgroundColor: compact ? theme.bg : theme.card, borderColor: theme.line, borderWidth: compact ? 0 : 1 }]}>
-      <Pressable style={{ flex: 1 }} onPress={() => onEdit(e)}>
-        <Text style={[styles.rowTitle, { color: theme.text }]}>{e.name}{e.source === "bill" ? <Text style={{ fontSize: 9, fontWeight: "400", color: theme.textMuted }}> (bill)</Text> : null}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowTitle, { color: theme.text }]}>{e.name}{isBill ? <Text style={{ fontSize: 9, fontWeight: "400", color: theme.textMuted }}> (bill)</Text> : null}</Text>
         {e.label ? <Text style={[styles.customLabel, { color: theme.textMuted }]}>{e.label}</Text> : null}
         <View style={{ flexDirection: "row", gap: 4, marginTop: 3, flexWrap: "wrap" }}>
           {split && <View style={[styles.tag, { backgroundColor: split.color + "22" }]}><Text style={[styles.tagText, { color: split.color }]}>{split.label}</Text></View>}
           {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
         </View>
-      </Pressable>
+      </View>
       <Text style={[styles.amount, { color: ACCENT.ember }]}>-{peso(e.amount)}</Text>
-      {e.source !== "bill" && <Pressable onPress={() => onEdit(e)} style={{ marginRight: 2 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit expense"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-      <Pressable onPress={() => onRemove(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={14} color={theme.textMuted} /></Pressable>
+      {isBill && <Pressable onPress={() => onRemove(e.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete expense"><Trash2 size={14} color={theme.textMuted} /></Pressable>}
     </View>
+  );
+
+  if (isBill) return content;
+
+  return (
+    <Pressable onLongPress={handleLongPress} delayLongPress={350} onPressIn={pressIn} onPressOut={pressOut} accessibilityLabel={`"${e.name}" expense`} accessibilityHint="Long press to edit">
+      <Reanimated.View style={pressStyle}>{content}</Reanimated.View>
+    </Pressable>
   );
 });
 
-function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
+function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ctx, quickTemplates = [], onLogAgain }) {
   const { theme } = useTheme();
   const [name, setName] = useState(initial?.name || "");
   const [label, setLabel] = useState(initial?.label || "");
@@ -632,6 +640,18 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
 
   return (
     <View style={styles.formCardBare}>
+      {/* "Log again" only makes sense while adding a brand-new expense --
+          once you're editing one, quick-repeat templates aren't relevant. */}
+      {!initial && quickTemplates.length > 0 && (
+        <View style={{ marginBottom: 14 }}>
+          <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 6 }]}>Log again</Text>
+          <View style={styles.chipWrap}>
+            {quickTemplates.map((t) => (
+              <Chip key={t.id} label={`${t.name} - ${peso(t.amount)}`} small onPress={() => onLogAgain(t)} />
+            ))}
+          </View>
+        </View>
+      )}
       <TextInput value={name} onChangeText={setName} placeholder="What did you spend on?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
       {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Label (optional)</Text>
@@ -662,6 +682,12 @@ function ExpenseForm({ initial, onSave, onCancel, splits, accounts, ctx }) {
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
       <View style={styles.formActions}>
+        {initial && onDelete && (
+          <Pressable onPress={() => onDelete(initial.id)} style={[styles.formBtn, styles.formBtnDanger, { borderColor: ACCENT.ember }]} accessibilityLabel="Delete expense">
+            <Trash2 size={14} color={ACCENT.ember} />
+            <Text style={[styles.formBtnText, { color: ACCENT.ember }]}>Delete</Text>
+          </Pressable>
+        )}
         {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
         <Pressable onPress={attemptSave} style={[styles.formBtn, { backgroundColor: ACCENT.gold }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Log expense"}</Text>
@@ -770,6 +796,7 @@ const styles = StyleSheet.create({
   progressFill: { height: "100%", borderRadius: 3 },
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
+  formBtnDanger: { flexDirection: "row", justifyContent: "center", gap: 6, borderWidth: 1, backgroundColor: "transparent" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
   // Slightly tighter than before (was padding: 12, gap: 10) -- a modest
   // ~15% cut to let more transactions fit on screen without feeling cramped.

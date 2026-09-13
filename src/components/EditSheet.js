@@ -12,10 +12,17 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { BlurView } from "expo-blur";
 import { X } from "lucide-react-native";
 import { useTheme } from "../theme";
+import { DURATION, SPRING } from "../animation";
 
 const { height: SCREEN_H } = Dimensions.get("window");
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 900;
+// expo-blur's default Android implementation doesn't actually blur the
+// content behind it (Android has no equivalent of iOS's native
+// UIVisualEffectView) -- it just tints, which reads as "the backdrop isn't
+// blurred at all" next to iOS. "dimezisBlurView" opts into a real
+// view-snapshot blur on Android instead. iOS needs no override.
+const ANDROID_BLUR_METHOD = "dimezisBlurView";
 
 // A single reusable "editing surface": instead of a form squeezed inline
 // into a list (the old pattern), whatever's being edited -- a task's
@@ -37,9 +44,9 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
     if (visible) {
       setMounted(true);
       dragY.value = 0;
-      progress.value = withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) });
+      progress.value = withTiming(1, { duration: DURATION, easing: Easing.out(Easing.cubic) });
     } else {
-      progress.value = withTiming(0, { duration: 220, easing: Easing.in(Easing.cubic) }, (finished) => {
+      progress.value = withTiming(0, { duration: DURATION, easing: Easing.in(Easing.cubic) }, (finished) => {
         if (finished) runOnJS(setMounted)(false);
       });
     }
@@ -69,11 +76,11 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
     })
     .onEnd((e) => {
       if (e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY) {
-        dragY.value = withTiming(SCREEN_H, { duration: 180, easing: Easing.in(Easing.cubic) }, (finished) => {
+        dragY.value = withTiming(SCREEN_H, { duration: DURATION, easing: Easing.in(Easing.cubic) }, (finished) => {
           if (finished) runOnJS(requestClose)();
         });
       } else {
-        dragY.value = withSpring(0, { damping: 20, stiffness: 260 });
+        dragY.value = withSpring(0, SPRING);
       }
     });
 
@@ -83,7 +90,12 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
     <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={requestClose}>
       <Animated.View style={[StyleSheet.absoluteFillObject, backdropStyle]}>
         <Pressable style={StyleSheet.absoluteFillObject} onPress={requestClose} accessibilityLabel="Close">
-          <BlurView intensity={35} tint={dark ? "dark" : "light"} style={StyleSheet.absoluteFillObject} />
+          <BlurView
+            intensity={60}
+            tint={dark ? "dark" : "light"}
+            style={StyleSheet.absoluteFillObject}
+            experimentalBlurMethod={Platform.OS === "android" ? ANDROID_BLUR_METHOD : undefined}
+          />
           <View style={[StyleSheet.absoluteFillObject, { backgroundColor: dark ? "#00000066" : "#00000033" }]} />
         </Pressable>
       </Animated.View>

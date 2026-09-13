@@ -1,41 +1,49 @@
 import React, { createContext, useContext } from "react";
 
 export const LIGHT = {
-  bg: "#F3F4F0", card: "#FFFFFF", text: "#17203A", textMuted: "#8891A0",
-  line: "#E4E5DF", accentDark: "#17203A",
+  bg: "#F3F4F0", card: "#FFFFFF",
+  // Rich black rather than the old navy-tinted #17203A -- reads as neutral
+  // black instead of blue-black.
+  text: "#121212", textMuted: "#8891A0",
+  line: "#E4E5DF",
+  // Gold, not navy, is now the "solid accent surface" color -- hero cards,
+  // FAB-style round buttons, and primary CTAs. A deepened gold (rather
+  // than ACCENT.gold itself) keeps enough contrast for the white
+  // icons/text already used on top of it everywhere this is applied.
+  accentDark: "#B8862E",
   // A dark-gray "solid surface" for toggles/segmented active states that
-  // aren't primary CTAs or money totals -- see accentDark's note below on
-  // why those two get to keep the indigo and everything else doesn't.
-  neutralDark: "#4B5160",
+  // aren't primary CTAs or money totals -- see accentDark's note above on
+  // why those two get to keep the gold and everything else doesn't.
+  neutralDark: "#3A3A3A",
 };
 export const DARK = {
-  // A dark blue-gray rather than a true near-black -- keeps the
-  // OLED-friendly, low-glare feel of a dark background without tipping
-  // into the "everything is pure #000" look, and reads a little warmer
-  // next to `card` than a flat black would.
-  bg: "#12121A", card: "#151518", text: "#EDEDF0",
+  // True rich black rather than the old dark blue-gray (#12121A/#151518
+  // had a visible blue cast) -- keeps the OLED-friendly, low-glare feel of
+  // a dark background without any blue tint creeping in.
+  bg: "#101010", card: "#161616", text: "#EDEDF0",
   // Brightened from a dimmer #94949E so secondary text (dates, muted
   // labels, timestamps) stays comfortably readable at a glance instead of
   // disappearing into the background.
   textMuted: "#A8A8B0",
   // accentDark is used everywhere as a "solid accent surface" -- hero
   // cards, FAB-style round buttons, and active/selected toggle
-  // backgrounds, always paired with white icons/text on top. A rich,
-  // desaturated indigo keeps that "solid dark surface" language while
-  // still popping clearly against the near-black bg/card above.
+  // backgrounds, always paired with white icons/text on top. Gold is now
+  // that dominant accent (replacing the old indigo) so primary
+  // actions/money totals read as the app's signature color instead of
+  // blending into a generic dark-blue "everything" accent.
   //
   // Reserved for primary actions and money totals only (hero cards, the
   // main "+" / submit buttons) -- everywhere else that used to reach for
-  // this same indigo (filter chips, view toggles, day pickers) now uses
-  // neutralDark below instead, so indigo stays a meaningful signal
+  // this same accent (filter chips, view toggles, day pickers) uses
+  // neutralDark below instead, so gold stays a meaningful signal
   // ("this is the primary thing" / "this is money") instead of just being
   // the app's all-purpose accent.
-  line: "#242428", accentDark: "#2E3E72",
+  line: "#262626", accentDark: "#C9922E",
   // Dark gray "solid surface" for the same toggle/segmented active states
   // as LIGHT.neutralDark above -- distinct from both `card` (too close to
   // the resting surface to read as "selected") and `accentDark` (now
   // reserved for CTAs/totals).
-  neutralDark: "#3A3A42",
+  neutralDark: "#3A3A3A",
 };
 export const ACCENT = {
   gold: "#D9A441", leaf: "#3E7C59", ember: "#D1573F",

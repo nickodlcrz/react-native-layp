@@ -343,10 +343,31 @@ export async function rescheduleDailyBudgetNotification(previousId, settings, co
 // *presented* with the same tag and dismisses it -- the app recomputes
 // and reschedules a fresh one right after this runs anyway, so there's
 // nothing worth preserving in the stale delivered copies.
+//
+// One more wrinkle: the `data.type: "dailyBudget"` tag itself was added
+// *as part of* this fix, so any duplicate scheduled by a version of the
+// app from before the tag existed has no tag to match on -- it would
+// otherwise keep silently re-firing its original, increasingly stale
+// "Savings opportunity" figure forever, from what looks like "a past
+// budget" since it was never rescheduled with current numbers. These
+// legacy copies are recognized by title instead, since the four possible
+// titles this feature has ever used are fixed strings (kept in sync with
+// dailyBudgetNotificationContent in utils.ts).
+const LEGACY_DAILY_BUDGET_TITLES = [
+  "\ud83c\udf19 Daily budget review",
+  "\u26a0\ufe0f Daily budget review",
+  "\u26a0\ufe0f Budget review",
+  "\ud83d\udcb0 Savings opportunity",
+];
+function isDailyBudgetNotificationContent(content) {
+  if (content?.data?.type === "dailyBudget") return true;
+  return LEGACY_DAILY_BUDGET_TITLES.includes(content?.title);
+}
+
 export async function cleanupDuplicateDailyBudgetNotifications() {
   try {
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-    const dupes = scheduled.filter((n) => n.content?.data?.type === "dailyBudget");
+    const dupes = scheduled.filter((n) => isDailyBudgetNotificationContent(n.content));
     for (const n of dupes) {
       try {
         await Notifications.cancelScheduledNotificationAsync(n.identifier);
@@ -360,7 +381,7 @@ export async function cleanupDuplicateDailyBudgetNotifications() {
 
   try {
     const presented = await Notifications.getPresentedNotificationsAsync();
-    const presentedDupes = presented.filter((n) => n.request?.content?.data?.type === "dailyBudget");
+    const presentedDupes = presented.filter((n) => isDailyBudgetNotificationContent(n.request?.content));
     for (const n of presentedDupes) {
       try {
         await Notifications.dismissNotificationAsync(n.request.identifier);

@@ -10,6 +10,8 @@ import { StatusBar } from "expo-status-bar";
 import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap } from "lucide-react-native";
 
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
+import Reanimated, { FadeOut } from "react-native-reanimated";
+import { DURATION } from "./src/animation";
 import { loadState, saveState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
 import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate } from "./src/utils";
@@ -101,10 +103,12 @@ export default function App() {
           // Rendered as an overlay, not a replacement -- see the zIndex
           // note on ClassAlarmScreen for why a class alarm can still show
           // through this, the same way a phone's own alarm clock can ring
-          // over its lock screen.
-          <View style={[StyleSheet.absoluteFillObject, { zIndex: 500, elevation: 500 }]}>
+          // over its lock screen. Fades out on unlock (matching the ~0.2s
+          // feel used for every other transition in the app) instead of
+          // just vanishing the instant the PIN is accepted.
+          <Reanimated.View exiting={FadeOut.duration(DURATION)} style={[StyleSheet.absoluteFillObject, { zIndex: 500, elevation: 500 }]}>
             <LockScreen onUnlock={handleUnlock} />
-          </View>
+          </Reanimated.View>
         )}
       </View>
     </SafeAreaProvider>

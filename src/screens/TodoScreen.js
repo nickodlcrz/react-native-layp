@@ -1,8 +1,8 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, LayoutAnimation, UIManager } from "react-native";
 import {
-  CheckCircle2, Circle, Plus, X, Pencil, Trash2, List, CalendarDays, ListTodo,
-  ChevronLeft, ChevronRight, AlertTriangle, Bell, BellOff, AlarmClock,
+  CheckCircle2, Circle, Plus, X, Trash2, List, CalendarDays, ListTodo,
+  ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Bell, BellOff, AlarmClock,
 } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { uid, todayISO, daysUntil, fmtDay, fmtTime12, getWeekDates } from "../utils";
@@ -17,6 +17,7 @@ import { hapticSuccess } from "../haptics";
 import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 import EditSheet from "../components/EditSheet";
+import { DURATION, SPRING, useCardPressAnimation } from "../animation";
 import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming } from "react-native-reanimated";
 
 // A task's work status now doubles as the checkbox's progression: tapping
@@ -305,6 +306,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
         subjects={subjects}
         onSave={saveTodo}
         onCancel={() => { setShowForm(false); setEditingId(null); setPendingSubjectId(null); }}
+        onDelete={remove}
       />
     </EditSheet>
     </>
@@ -373,7 +375,7 @@ function useTaskCompletion(t, onToggle) {
 function useAnimatedProgress(fraction) {
   const progress = useSharedValue(fraction);
   React.useEffect(() => {
-    progress.value = withTiming(fraction, { duration: 350 });
+    progress.value = withTiming(fraction, { duration: DURATION });
   }, [fraction]);
   return useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
 }
@@ -394,115 +396,143 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
   const subDone = subtasks.filter((s) => s.done).length;
   const effectiveStatusColor = statusColor(t.status, dueTodayOrOverdue);
   const progressAnim = useAnimatedProgress(statusProgress(t));
+  const [expanded, setExpanded] = useState(false);
+  const hasExpandableContent = !!t.description || subtasks.length > 0 || !!subject?.description || (t.alarmEnabled && t.dueTime);
+  const { style: pressStyle, pressIn, pressOut, handleLongPress } = useCardPressAnimation(() => onEdit(t));
+  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: withTiming(expanded ? "180deg" : "0deg", { duration: DURATION }) }] }));
 
   return (
-    <View style={[
-      styles.detailedRow,
-      {
-        backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
-        borderColor: flagged ? ACCENT.ember : theme.line,
-        borderWidth: flagged ? 1.5 : 1,
-        opacity: displayCompleted ? 0.6 : 1,
-      },
-    ]}>
-      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
-        <Pressable onPress={handleToggle} style={{ marginTop: 2 }} accessibilityLabel={displayCompleted ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`} accessibilityRole="checkbox" accessibilityState={{ checked: displayCompleted }}>
-          <Reanimated.View style={popStyle}>
-            {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
-          </Reanimated.View>
-        </Pressable>
-        <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Text style={[styles.rowTitle, { fontSize: 15, color: theme.text, textDecorationLine: displayCompleted ? "line-through" : "none", flex: 1 }]}>{t.title}</Text>
-            <View style={{ flexDirection: "row", gap: 10, marginLeft: 8 }}>
-              {!displayCompleted && <Pressable onPress={() => onEdit(t)} accessibilityLabel="Edit task"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-              <Pressable onPress={() => onRemove(t.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete task"><Trash2 size={14} color={theme.textMuted} /></Pressable>
-            </View>
-          </View>
-
-          <View style={[styles.detailedMetaRow]}>
-            <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
-              <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
-            </View>
-            {!displayCompleted && (
-              <View style={[styles.tag, { backgroundColor: effectiveStatusColor + "22" }]}>
-                <Text style={[styles.tagText, { color: effectiveStatusColor }]}>
-                  {(STATUS_OPTIONS.find((s) => s.id === t.status) || STATUS_OPTIONS[0]).label}
-                </Text>
-              </View>
-            )}
-            {t.reminderEnabled !== false ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                <Bell size={10} color={theme.textMuted} />
-                <Text style={[styles.metaText, { color: theme.textMuted }]}>Reminder on</Text>
-              </View>
-            ) : (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                <BellOff size={10} color={theme.textMuted} />
-                <Text style={[styles.metaText, { color: theme.textMuted }]}>No reminder</Text>
-              </View>
-            )}
-            {t.alarmEnabled && t.dueTime && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                <AlarmClock size={10} color={ACCENT.rust || ACCENT.gold} />
-                <Text style={[styles.metaText, { color: ACCENT.rust || ACCENT.gold }]}>Alarm set</Text>
-              </View>
-            )}
-          </View>
-
-          <View style={[styles.statusProgressTrack, { backgroundColor: theme.bg }]}>
-            <Reanimated.View
-              style={[
-                styles.statusProgressFill,
-                { backgroundColor: displayCompleted ? ACCENT.leaf : effectiveStatusColor },
-                progressAnim,
-              ]}
-            />
-          </View>
-
-          {subject && (
-            <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4 }]}>{subject.code} · {subject.description}</Text>
-          )}
-
-          {t.description ? (
-            <Text style={[styles.descriptionText, { color: theme.text }]}>{t.description}</Text>
-          ) : null}
-
-          {t.dueDate ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-              <Text style={[styles.metaText, { color: theme.textMuted, fontWeight: "700" }]}>
-                Due {fmtDay(t.dueDate)}{t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""}{dleft >= 0 ? ` · ${dleft === 0 ? "today" : `in ${dleft}d`}` : ""}
-              </Text>
-              {dleft < 0 && (
-                <View style={[styles.tag, { backgroundColor: ACCENT.ember + "22" }]}>
-                  <Text style={[styles.tagText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
-                </View>
+    <Pressable
+      onLongPress={handleLongPress}
+      delayLongPress={350}
+      onPressIn={pressIn}
+      onPressOut={pressOut}
+      accessibilityLabel={`"${t.title}" task`}
+      accessibilityHint="Long press to edit"
+    >
+      <Reanimated.View
+        layout={ReanimatedLayout.duration(DURATION)}
+        style={[
+          styles.detailedRow,
+          {
+            backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
+            borderColor: flagged ? ACCENT.ember : theme.line,
+            borderWidth: flagged ? 1.5 : 1,
+            opacity: displayCompleted ? 0.6 : 1,
+          },
+          pressStyle,
+        ]}
+      >
+        <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+          <Pressable onPress={handleToggle} style={{ marginTop: 2 }} accessibilityLabel={displayCompleted ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`} accessibilityRole="checkbox" accessibilityState={{ checked: displayCompleted }}>
+            <Reanimated.View style={popStyle}>
+              {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
+            </Reanimated.View>
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={[styles.rowTitle, { fontSize: 15, color: theme.text, textDecorationLine: displayCompleted ? "line-through" : "none", flex: 1 }]}>{t.title}</Text>
+              {/* Editing and deleting no longer live here as separate buttons --
+                  long-press the card to open the edit sheet, which has its own
+                  Delete action. Only the expand/collapse chevron stays, since
+                  that's this row's own affordance, not an editing one. */}
+              {hasExpandableContent && (
+                <Pressable onPress={() => setExpanded((e) => !e)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={expanded ? "Hide details" : "Show details"} style={{ marginLeft: 8 }}>
+                  <Reanimated.View style={chevronStyle}>
+                    <ChevronDown size={16} color={theme.textMuted} />
+                  </Reanimated.View>
+                </Pressable>
               )}
             </View>
-          ) : (
-            <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4, fontWeight: "700" }]}>No due date</Text>
-          )}
 
-          {subtasks.length > 0 && (
-            <View style={{ marginTop: 10, gap: 6 }}>
-              <View style={[styles.subProgressTrack, { backgroundColor: theme.bg }]}>
-                <View style={[styles.subProgressFill, { width: `${(subDone / subtasks.length) * 100}%`, backgroundColor: ACCENT.leaf }]} />
+            <View style={[styles.detailedMetaRow]}>
+              {subject && (
+                <View style={[styles.tag, { backgroundColor: (cat?.color || theme.neutralDark) + "22" }]}>
+                  <Text style={[styles.tagText, { color: cat?.color || theme.textMuted }]}>{subject.code}</Text>
+                </View>
+              )}
+              <View style={[styles.tag, { backgroundColor: cat?.color + "22" }]}>
+                <Text style={[styles.tagText, { color: cat?.color }]}>{cat?.label}</Text>
               </View>
-              {subtasks.map((s) => (
-                <Pressable key={s.id} onPress={() => onToggleSubtask(t.id, s.id)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }} accessibilityRole="checkbox" accessibilityState={{ checked: s.done }}>
-                  {s.done ? <CheckCircle2 size={14} color={ACCENT.leaf} /> : <Circle size={14} color={theme.textMuted} />}
-                  <Text style={{ fontSize: 11.5, color: theme.text, textDecorationLine: s.done ? "line-through" : "none" }}>{s.title}</Text>
-                </Pressable>
-              ))}
+              {!displayCompleted && (
+                <View style={[styles.tag, { backgroundColor: effectiveStatusColor + "22" }]}>
+                  <Text style={[styles.tagText, { color: effectiveStatusColor }]}>
+                    {(STATUS_OPTIONS.find((s) => s.id === t.status) || STATUS_OPTIONS[0]).label}
+                  </Text>
+                </View>
+              )}
+              {t.reminderEnabled !== false ? <Bell size={12} color={theme.textMuted} /> : <BellOff size={12} color={theme.textMuted} />}
             </View>
-          )}
+
+            <View style={[styles.statusProgressTrack, { backgroundColor: theme.bg }]}>
+              <Reanimated.View
+                style={[
+                  styles.statusProgressFill,
+                  { backgroundColor: displayCompleted ? ACCENT.leaf : effectiveStatusColor },
+                  progressAnim,
+                ]}
+              />
+            </View>
+
+            {t.dueDate ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                <Text style={[styles.metaText, { color: theme.textMuted, fontWeight: "700" }]}>
+                  Due {fmtDay(t.dueDate)}{t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""}{dleft >= 0 ? ` · ${dleft === 0 ? "today" : `in ${dleft}d`}` : ""}
+                </Text>
+                {dleft < 0 && (
+                  <View style={[styles.tag, { backgroundColor: ACCENT.ember + "22" }]}>
+                    <Text style={[styles.tagText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4, fontWeight: "700" }]}>No due date</Text>
+            )}
+
+            {/* Everything below is the "detail" tier -- hidden by default so
+                the card reads at a glance, and morphs open with the card's
+                own layout animation (see `layout` above) when the chevron
+                is tapped. */}
+            {expanded && (
+              <Reanimated.View entering={FadeIn.duration(DURATION)} exiting={FadeOut.duration(DURATION * 0.75)} style={{ marginTop: 6 }}>
+                {subject?.description ? (
+                  <Text style={[styles.metaText, { color: theme.textMuted, marginBottom: 6 }]}>{subject.code} · {subject.description}</Text>
+                ) : null}
+
+                {t.alarmEnabled && t.dueTime && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 6 }}>
+                    <AlarmClock size={10} color={ACCENT.rust || ACCENT.gold} />
+                    <Text style={[styles.metaText, { color: ACCENT.rust || ACCENT.gold }]}>Alarm set</Text>
+                  </View>
+                )}
+
+                {t.description ? (
+                  <Text style={[styles.descriptionText, { color: theme.text }]}>{t.description}</Text>
+                ) : null}
+
+                {subtasks.length > 0 && (
+                  <View style={{ marginTop: 10, gap: 6 }}>
+                    <View style={[styles.subProgressTrack, { backgroundColor: theme.bg }]}>
+                      <View style={[styles.subProgressFill, { width: `${(subDone / subtasks.length) * 100}%`, backgroundColor: ACCENT.leaf }]} />
+                    </View>
+                    {subtasks.map((s) => (
+                      <Pressable key={s.id} onPress={() => onToggleSubtask(t.id, s.id)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }} accessibilityRole="checkbox" accessibilityState={{ checked: s.done }}>
+                        {s.done ? <CheckCircle2 size={14} color={ACCENT.leaf} /> : <Circle size={14} color={theme.textMuted} />}
+                        <Text style={{ fontSize: 11.5, color: theme.text, textDecorationLine: s.done ? "line-through" : "none" }}>{s.title}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+              </Reanimated.View>
+            )}
+          </View>
         </View>
-      </View>
-    </View>
+      </Reanimated.View>
+    </Pressable>
   );
 });
 
-function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = null }) {
+function TodoForm({ initial, onSave, onCancel, onDelete, subjects = [], presetSubjectId = null }) {
   const { theme } = useTheme();
   const [title, setTitle] = useState(initial?.title || "");
   const [description, setDescription] = useState(initial?.description || "");
@@ -666,6 +696,12 @@ function TodoForm({ initial, onSave, onCancel, subjects = [], presetSubjectId = 
       </View>
 
       <View style={styles.formActions}>
+        {initial && onDelete && (
+          <Pressable onPress={() => onDelete(initial.id)} style={[styles.formBtn, styles.formBtnDanger, { borderColor: ACCENT.ember }]} accessibilityLabel="Delete task">
+            <Trash2 size={14} color={ACCENT.ember} />
+            <Text style={[styles.formBtnText, { color: ACCENT.ember }]}>Delete</Text>
+          </Pressable>
+        )}
         {initial && (
           <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel">
             <Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text>
@@ -715,6 +751,7 @@ const styles = StyleSheet.create({
   subtaskAddBtn: { paddingHorizontal: 14, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
+  formBtnDanger: { flexDirection: "row", justifyContent: "center", gap: 6, borderWidth: 1, backgroundColor: "transparent" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
   rowTitle: { fontSize: 13, fontWeight: "600" },
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },

@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
-import { Plus, X, CheckCircle2, Circle, Pencil, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check, HandCoins } from "lucide-react-native";
+import { Plus, X, CheckCircle2, Circle, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check, HandCoins } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount } from "../utils";
 import Chip from "../components/Chip";
@@ -10,6 +10,9 @@ import CalendarPicker from "../components/CalendarPicker";
 import { validate, loanSchema } from "../validation";
 import { rescheduleLoanNotification, cancelTodoNotifications } from "../notifications";
 import { confirmDelete } from "../components/ConfirmModal";
+import EditSheet from "../components/EditSheet";
+import { useCardPressAnimation } from "../animation";
+import Reanimated from "react-native-reanimated";
 
 export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, weeklySummaries, savingsLog = [], accounts, transfers = [] }) {
   const { theme } = useTheme();
@@ -117,6 +120,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
   ), [theme, accounts, ctx, payingId, paymentAmount, paymentAccount, toggleSettled, startEdit, remove, recordPayment]);
 
   return (
+    <>
     <FlatList
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
@@ -174,12 +178,31 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
             value={statusView}
             onChange={setStatusView}
           />
-
-          {showForm && <LoanForm key={editingId || typeView} initial={editingLoan} type={typeView} ctx={ctx} accounts={accounts} onSave={saveLoan} onCancel={() => { setShowForm(false); setEditingId(null); }} />}
         </>
       }
       renderItem={renderItem}
     />
+
+    {/* Editing a loan entry now opens its own popped-up, blurred sheet --
+        same long-press-to-edit pattern as Todo and Spending -- instead of
+        an inline form and a separate pencil button on the row. */}
+    <EditSheet
+      visible={showForm}
+      title={editingLoan ? "Edit entry" : "Add loan entry"}
+      onClose={() => { setShowForm(false); setEditingId(null); }}
+    >
+      <LoanForm
+        key={editingId || typeView}
+        initial={editingLoan}
+        type={typeView}
+        ctx={ctx}
+        accounts={accounts}
+        onSave={saveLoan}
+        onCancel={() => { setShowForm(false); setEditingId(null); }}
+        onDelete={remove}
+      />
+    </EditSheet>
+    </>
   );
 }
 
@@ -204,13 +227,15 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
   const resultingBalance = paymentAccount != null
     ? computeAccountBalance(paymentAccount, ctx) + (l.type === "lent" ? payAmt : -payAmt)
     : null;
-  return (
+  const { style: pressStyle, pressIn, pressOut, handleLongPress } = useCardPressAnimation(() => !l.settled && startEdit(l));
+
+  const content = (
     <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={l.settled ? "Mark unsettled" : "Mark settled"}>
           {l.settled ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
         </Pressable>
-        <Pressable style={{ flex: 1 }} onPress={() => !l.settled && startEdit(l)}>
+        <View style={{ flex: 1 }}>
           <Text style={[styles.rowTitle, { color: theme.text, textDecorationLine: l.settled ? "line-through" : "none" }]}>{l.person}</Text>
           {l.note ? <Text style={[styles.noteText, { color: theme.textMuted }]}>{l.note}</Text> : null}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
@@ -237,14 +262,16 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
               <View style={[styles.progressFill, { width: `${Math.min(100, (paid / due) * 100)}%`, backgroundColor: ACCENT.leaf }]} />
             </View>
           )}
-        </Pressable>
+        </View>
+        {/* Editing and deleting no longer have their own buttons here --
+            long-press the card to open the edit sheet, which has its own
+            Delete action. Recording a payment stays a direct tap since
+            it's a distinct, frequent action, not an editing one. */}
         {!l.settled && (
           <Pressable onPress={() => { setPayingId(payingId === l.id ? null : l.id); setPaymentAmount(""); setPaymentAccount(l.account); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Record a payment">
             <Wallet size={15} color={ACCENT.leaf} />
           </Pressable>
         )}
-        {!l.settled && <Pressable onPress={() => startEdit(l)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit entry"><Pencil size={14} color={theme.textMuted} /></Pressable>}
-        <Pressable onPress={() => remove(l)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete entry"><Trash2 size={14} color={theme.textMuted} /></Pressable>
       </View>
 
       {payingId === l.id && (
@@ -284,9 +311,17 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
       )}
     </View>
   );
+
+  if (l.settled) return content;
+
+  return (
+    <Pressable onLongPress={handleLongPress} delayLongPress={350} onPressIn={pressIn} onPressOut={pressOut} accessibilityLabel={`"${l.person}" entry`} accessibilityHint="Long press to edit">
+      <Reanimated.View style={pressStyle}>{content}</Reanimated.View>
+    </Pressable>
+  );
 });
 
-function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
+function LoanForm({ initial, type, ctx, accounts, onSave, onCancel, onDelete }) {
   const { theme } = useTheme();
   const [person, setPerson] = useState(initial?.person || "");
   const [note, setNote] = useState(initial?.note || "");
@@ -307,7 +342,7 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
   }
 
   return (
-    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+    <View style={styles.formCardBare}>
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>{type === "lent" ? "Who borrowed from you" : "Who you borrowed from"}</Text>
       <TextInput value={person} onChangeText={setPerson} placeholder="Name" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]} />
       {errors.person && <Text style={styles.fieldError}>{errors.person}</Text>}
@@ -346,6 +381,12 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel }) {
       ) : null}
 
       <View style={styles.formActions}>
+        {initial && onDelete && (
+          <Pressable onPress={() => onDelete(initial)} style={[styles.formBtn, styles.formBtnDanger, { borderColor: ACCENT.ember }]} accessibilityLabel="Delete entry">
+            <Trash2 size={14} color={ACCENT.ember} />
+            <Text style={[styles.formBtnText, { color: ACCENT.ember }]}>Delete</Text>
+          </Pressable>
+        )}
         {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
         <Pressable onPress={attemptSave} style={[styles.formBtn, { backgroundColor: ACCENT.gold }]}>
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add entry"}</Text>
@@ -369,6 +410,7 @@ const styles = StyleSheet.create({
   heroDivider: { height: 1, backgroundColor: "#ffffff22", marginVertical: 10 },
   heroFootnote: { fontSize: 10, color: "#ffffffcc", fontWeight: "600" },
   formCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12 },
+  formCardBare: { paddingTop: 2, paddingBottom: 4 },
   input: { fontSize: 13, fontWeight: "500", marginBottom: 10, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   amountInput: { fontSize: 13, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontFamily: "monospace" },
   miniLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 },
@@ -380,6 +422,7 @@ const styles = StyleSheet.create({
   fieldError: { color: ACCENT.ember, fontSize: 10.5, marginTop: -6, marginBottom: 8, fontWeight: "600" },
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
+  formBtnDanger: { flexDirection: "row", justifyContent: "center", gap: 6, borderWidth: 1, backgroundColor: "transparent" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
   row: { borderRadius: 16, padding: 12, marginBottom: 8 },
   rowTitle: { fontSize: 13, fontWeight: "600" },
