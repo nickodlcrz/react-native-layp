@@ -6,14 +6,13 @@ export const LIGHT = {
   // black instead of blue-black.
   text: "#121212", textMuted: "#8891A0",
   line: "#E4E5DF",
-  // Gold, not navy, is now the "solid accent surface" color -- hero cards,
-  // FAB-style round buttons, and primary CTAs. A deepened gold (rather
-  // than ACCENT.gold itself) keeps enough contrast for the white
-  // icons/text already used on top of it everywhere this is applied.
-  accentDark: "#B8862E",
+  // Reverted back to the original navy "solid accent surface" color for
+  // hero cards, FAB-style round buttons, and primary CTAs -- the gold
+  // version didn't stick.
+  accentDark: "#17203A",
   // A dark-gray "solid surface" for toggles/segmented active states that
   // aren't primary CTAs or money totals -- see accentDark's note above on
-  // why those two get to keep the gold and everything else doesn't.
+  // why those two get to keep navy and everything else doesn't.
   neutralDark: "#3A3A3A",
 };
 export const DARK = {
@@ -27,18 +26,17 @@ export const DARK = {
   textMuted: "#A8A8B0",
   // accentDark is used everywhere as a "solid accent surface" -- hero
   // cards, FAB-style round buttons, and active/selected toggle
-  // backgrounds, always paired with white icons/text on top. Gold is now
-  // that dominant accent (replacing the old indigo) so primary
-  // actions/money totals read as the app's signature color instead of
-  // blending into a generic dark-blue "everything" accent.
+  // backgrounds, always paired with white icons/text on top. Reverted
+  // back to the original desaturated indigo (a brief experiment made this
+  // gold instead, but that didn't stick).
   //
   // Reserved for primary actions and money totals only (hero cards, the
   // main "+" / submit buttons) -- everywhere else that used to reach for
-  // this same accent (filter chips, view toggles, day pickers) uses
-  // neutralDark below instead, so gold stays a meaningful signal
+  // this same indigo (filter chips, view toggles, day pickers) uses
+  // neutralDark below instead, so indigo stays a meaningful signal
   // ("this is the primary thing" / "this is money") instead of just being
   // the app's all-purpose accent.
-  line: "#262626", accentDark: "#C9922E",
+  line: "#262626", accentDark: "#2E3E72",
   // Dark gray "solid surface" for the same toggle/segmented active states
   // as LIGHT.neutralDark above -- distinct from both `card` (too close to
   // the resting surface to read as "selected") and `accentDark` (now
@@ -74,6 +72,19 @@ export const WEEKDAYS = [
 export const DEFAULT_ACCOUNTS = [
   { id: "ecash", label: "E-cash", color: ACCENT.sky },
   { id: "physical", label: "Physical", color: ACCENT.gold },
+];
+
+// Named savings destinations -- e.g. "this specific money is sitting in
+// GoTyme, earning its own interest" instead of one undifferentiated
+// savings pool. Seeded with the two banks mentioned, but with
+// interestRate left at 0 rather than guessing a real-world rate: digital
+// bank promo rates change often enough that hard-coding a number here
+// would likely just be wrong by the time anyone reads it -- the account's
+// own edit screen is where the person fills in whatever their actual
+// current rate is.
+export const DEFAULT_SAVINGS_ACCOUNTS = [
+  { id: "gotyme", name: "GoTyme", color: ACCENT.teal, interestRate: 0 },
+  { id: "maribank", name: "Maribank", color: ACCENT.sky, interestRate: 0 },
 ];
 
 export const CATEGORIES = [

@@ -1,6 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, Animated, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import { View, Text, Pressable, StyleSheet } from "react-native";
+import Reanimated, { useAnimatedStyle, withSpring } from "react-native-reanimated";
 import { useTheme } from "../theme";
+import { SPRING } from "../animation";
 
 // A row of section tabs that live inside a screen (as opposed to TabBar,
 // which is the app's one fixed bottom nav). Visually it's the same idea --
@@ -8,42 +10,38 @@ import { useTheme } from "../theme";
 // inline above a screen's content instead of anchored to the bottom edge.
 // Used wherever a plain filter-style Chip row was actually standing in for
 // primary navigation between sections (Budget's Overview/Goals/Activity/
-// Spending/Borrow, Todo's Active/Finished, Borrow's Active/Settled, Daily
-// Budget's review/settings), which is why those all got promoted to this
-// component rather than every Chip in the app being restyled -- Chip still
-// covers genuine filters and multi-color selectors (categories, accounts)
-// elsewhere, where a segmented control wouldn't make sense.
+// Spending/Borrow, Todo's All/Upcoming/Overdue/Finished, Borrow's
+// Active/Settled, Daily Budget's review/settings), which is why those all
+// got promoted to this component rather than every Chip in the app being
+// restyled -- Chip still covers genuine filters and multi-color selectors
+// (categories, accounts) elsewhere, where a segmented control wouldn't
+// make sense.
+//
+// Runs on Reanimated (like the rest of the app's motion) instead of RN's
+// own Animated API, so the slide is driven on the UI thread and shares the
+// same spring feel as everything else -- one shared implementation this
+// control's used from Todo, Budget, Borrow, and Daily Budget all get for
+// free instead of each screen's tab bar animating slightly differently.
 export default function SegmentedTabs({ options, value, onChange, style }) {
   const { theme } = useTheme();
   const [barWidth, setBarWidth] = useState(0);
-  const indicatorX = useRef(new Animated.Value(0)).current;
   const activeIndex = Math.max(0, options.findIndex((o) => o.key === value));
   const segWidth = barWidth / (options.length || 1);
+  const didInitialize = React.useRef(false);
 
-  // Mirrors TabBar's own approach: snap to place on the very first layout
-  // instead of visibly sliding in from the left edge before the row has
-  // even finished measuring itself.
-  const didInitialize = useRef(false);
+  // Snap to place on the very first layout instead of visibly sliding in
+  // from the left edge before the row has even finished measuring itself.
+  React.useEffect(() => {
+    if (barWidth) didInitialize.current = true;
+  }, [barWidth]);
 
-  useEffect(() => {
-    if (!barWidth) return;
+  const indicatorStyle = useAnimatedStyle(() => {
     const toValue = activeIndex * segWidth + 3;
-    if (!didInitialize.current) {
-      indicatorX.setValue(toValue);
-      didInitialize.current = true;
-      return;
-    }
-    Animated.spring(indicatorX, {
-      toValue,
-      useNativeDriver: true,
-      friction: 10,
-      tension: 90,
-    }).start();
-    // barWidth and segWidth move together, so depending on both would just
-    // double-fire this on every layout -- activeIndex is the only other
-    // thing that should retrigger the slide.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex, barWidth]);
+    return {
+      width: segWidth - 6,
+      transform: [{ translateX: didInitialize.current ? withSpring(toValue, SPRING) : toValue }],
+    };
+  }, [activeIndex, segWidth]);
 
   return (
     <View
@@ -51,17 +49,7 @@ export default function SegmentedTabs({ options, value, onChange, style }) {
       onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
     >
       {barWidth > 0 && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.indicator,
-            {
-              width: segWidth - 6,
-              backgroundColor: theme.card,
-              transform: [{ translateX: indicatorX }],
-            },
-          ]}
-        />
+        <Reanimated.View pointerEvents="none" style={[styles.indicator, { backgroundColor: theme.card }, indicatorStyle]} />
       )}
       {options.map((o) => {
         const active = o.key === value;
@@ -108,11 +96,6 @@ const styles = StyleSheet.create({
     bottom: 3,
     left: 0,
     borderRadius: 10,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
   },
   seg: {
     flex: 1,

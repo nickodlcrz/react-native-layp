@@ -29,18 +29,17 @@ import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue
 const STATUS_OPTIONS = [
   { id: "not_started", label: "Not starting yet", color: "#9AA0A6", progress: 0 },
   { id: "wip", label: "Work in progress", color: ACCENT.sky, progress: 0.34 },
-  { id: "to_pass", label: "To pass", color: ACCENT.ember, progress: 0.67 },
+  { id: "to_pass", label: "To pass", color: ACCENT.leaf, progress: 0.67 },
 ];
 const STATUS_ORDER = STATUS_OPTIONS.map((s) => s.id);
 
-// "To pass" is deliberately red/urgent by default, but once the deadline
-// has actually arrived (due today or overdue) red stops being useful
-// information -- it's not a warning anymore, it's just where things stand
-// -- so it switches to green as a "this is the one to act on now" cue
-// instead of restating the alarm.
-function statusColor(status, dueTodayOrOverdue) {
+// "To pass" is the last active stage before a task is actually marked
+// complete, so it always reads as green ("on track to finish") -- this
+// used to only switch to green once the due date had already arrived,
+// which meant a task with no due date at all could never reach the green
+// case and looked permanently stuck on its (unrelated) urgent color.
+function statusColor(status) {
   const opt = STATUS_OPTIONS.find((s) => s.id === status) || STATUS_OPTIONS[0];
-  if (status === "to_pass" && dueTodayOrOverdue) return ACCENT.leaf;
   return opt.color;
 }
 function statusProgress(t) {
@@ -64,7 +63,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
   const [editingId, setEditingId] = useState(null);
   const [filter, setFilter] = useState("all");
   const [view, setView] = useState("list");
-  const [statusView, setStatusView] = useState("active");
+  const [statusView, setStatusView] = useState("all");
   const [weekAnchor, setWeekAnchor] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
   const [pendingSubjectId, setPendingSubjectId] = useState(null);
@@ -93,13 +92,20 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
   }, [todos]);
 
   const filtered = useMemo(() => {
-    let list = todos.filter((t) => (statusView === "active" ? !t.completed : t.completed));
+    let list = todos.filter((t) => (statusView === "done" ? t.completed : !t.completed));
+    if (statusView === "upcoming" || statusView === "overdue") {
+      list = list.filter((t) => {
+        const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
+        const isOverdue = dleft !== null && dleft < 0;
+        return statusView === "overdue" ? isOverdue : !isOverdue;
+      });
+    }
     list = list.filter((t) => filter === "all" || t.category === filter);
-    if (statusView === "active" && view === "week") {
+    if (statusView !== "done" && view === "week") {
       list = list.filter((t) => weekDates.includes(t.dueDate));
       if (selectedDay) list = list.filter((t) => t.dueDate === selectedDay);
     }
-    if (statusView === "active") return [...list].sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"));
+    if (statusView !== "done") return [...list].sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"));
     return [...list].sort((a, b) => (b.completedAt || "").localeCompare(a.completedAt || ""));
   }, [todos, filter, view, weekDates, selectedDay, statusView]);
 
@@ -223,7 +229,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
           <View style={styles.headerRow}>
             <Text style={[styles.h1, { color: theme.text }]}>Your tasks</Text>
             <View style={styles.headerActions}>
-              {statusView === "active" && (
+              {statusView !== "done" && (
                 <View style={[styles.viewToggle, { backgroundColor: theme.card, borderColor: theme.line }]}>
                   <Pressable onPress={() => setView("list")} style={[styles.toggleBtn, view === "list" && { backgroundColor: theme.neutralDark }]} accessibilityLabel="List view" accessibilityState={{ selected: view === "list" }}>
                     <List size={13} color={view === "list" ? "#fff" : theme.textMuted} />
@@ -241,14 +247,16 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
 
           <SegmentedTabs
             options={[
-              { key: "active", label: "Active" },
-              { key: "done", label: `Finished (${todos.filter((t) => t.completed).length})` },
+              { key: "all", label: "All" },
+              { key: "upcoming", label: "Upcoming" },
+              { key: "overdue", label: "Overdue" },
+              { key: "done", label: "Finished" },
             ]}
             value={statusView}
             onChange={setStatusView}
           />
 
-          {schoolConflicts.length > 0 && statusView === "active" && (
+          {schoolConflicts.length > 0 && statusView !== "done" && (
             <View style={[styles.warnBanner, { backgroundColor: ACCENT.ember + "20" }]}>
               <AlertTriangle size={14} color={ACCENT.ember} style={{ marginTop: 2 }} />
               <Text style={[styles.warnText, { color: ACCENT.ember }]}>
@@ -257,7 +265,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
             </View>
           )}
 
-          {statusView === "active" && view === "week" && (
+          {statusView !== "done" && view === "week" && (
             <View style={[styles.weekCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
               <View style={styles.weekNav}>
                 <Pressable onPress={() => setWeekAnchor((d) => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} accessibilityLabel="Previous week"><ChevronLeft size={15} color={theme.textMuted} /></Pressable>
@@ -394,7 +402,7 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
   const flagged = isOverdue || isUrgentSchool;
   const subtasks = t.subtasks || [];
   const subDone = subtasks.filter((s) => s.done).length;
-  const effectiveStatusColor = statusColor(t.status, dueTodayOrOverdue);
+  const effectiveStatusColor = statusColor(t.status);
   const progressAnim = useAnimatedProgress(statusProgress(t));
   const [expanded, setExpanded] = useState(false);
   const hasExpandableContent = !!t.description || subtasks.length > 0 || !!subject?.description || (t.alarmEnabled && t.dueTime);
@@ -416,8 +424,12 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
           styles.detailedRow,
           {
             backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
-            borderColor: flagged ? ACCENT.ember : theme.line,
-            borderWidth: flagged ? 1.5 : 1,
+            // A border only appears when it's actually signaling something
+            // (flagged/overdue) -- otherwise the card relies on its own
+            // background tone against the screen bg to read as a card,
+            // which is quieter than outlining every single row.
+            borderColor: flagged ? ACCENT.ember : "transparent",
+            borderWidth: flagged ? 1.5 : 0,
             opacity: displayCompleted ? 0.6 : 1,
           },
           pressStyle,

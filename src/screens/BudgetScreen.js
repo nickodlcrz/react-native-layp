@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Receipt } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, addAccount as pushAccount, isPositiveAmount, nextRecurringDate } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, savingsAccountBalance, addAccount as pushAccount, isPositiveAmount, nextRecurringDate } from "../utils";
 import Chip from "../components/Chip";
 import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
@@ -28,6 +28,7 @@ function matchPresetName(splits) {
 function BudgetScreen({
   moneyLog, setMoneyLog, splits, setSplits, bills, setBills, expenses, setExpenses, weeklySummaries, setWeeklySummaries,
   savingsLog, setSavingsLog, loans, setLoans, accounts, setAccounts, transfers, setTransfers, goals, setGoals,
+  savingsAccounts, setSavingsAccounts, interestLog,
   recurringIncome, setRecurringIncome, spendingLimits, setSpendingLimits,
   dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog, dailyBudgetLog,
   subTab, setSubTab, showDailyBudget, setShowDailyBudget,
@@ -271,7 +272,10 @@ function BudgetScreen({
         </ErrorBoundary>
       ) : subTab === "goals" ? (
         <ErrorBoundary resetKey={subTab}>
-        <GoalsScreen goals={goals} setGoals={setGoals} savingsLog={savingsLog} />
+        <GoalsScreen
+          goals={goals} setGoals={setGoals} savingsLog={savingsLog}
+          savingsAccounts={savingsAccounts} setSavingsAccounts={setSavingsAccounts} interestLog={interestLog}
+        />
         </ErrorBoundary>
       ) : subTab === "activity" ? (
         <ErrorBoundary resetKey={subTab}>
@@ -420,6 +424,8 @@ function BudgetScreen({
           ctx={ctx}
           accounts={accounts}
           goals={goals}
+          savingsAccounts={savingsAccounts}
+          interestLog={interestLog}
           onSave={(entry) => { setSavingsLog((prev) => [...prev, { id: uid(), ...entry }]); setShowSavingsForm(false); }}
         />
       )}
@@ -591,7 +597,7 @@ function BillForm({ initial, onSave, onCancel, splits, accounts }) {
   );
 }
 
-function SavingsTransferForm({ mode, totalSavings, ctx, accounts, goals = [], onSave }) {
+function SavingsTransferForm({ mode, totalSavings, ctx, accounts, goals = [], savingsAccounts = [], interestLog = [], onSave }) {
   const { theme } = useTheme();
   const isWithdraw = mode === "withdraw";
   const [amount, setAmount] = useState("");
@@ -599,9 +605,18 @@ function SavingsTransferForm({ mode, totalSavings, ctx, accounts, goals = [], on
   const [note, setNote] = useState("");
   const [account, setAccount] = useState(accounts[0].id);
   const [goalId, setGoalId] = useState(null);
+  const [savingsAccountId, setSavingsAccountId] = useState(null);
   const amountNum = Number(amount) || 0;
   const accountBal = computeAccountBalance(account, ctx);
-  const exceedsSource = isWithdraw ? amountNum > totalSavings : amountNum > accountBal;
+  // Withdrawing from one specific savings account (GoTyme, Maribank, etc.)
+  // is capped by *that account's* own balance -- not the whole savings
+  // pool -- so it's never possible to withdraw more from GoTyme than is
+  // actually sitting in GoTyme, even if the overall savings total is
+  // larger because of money held elsewhere.
+  const withdrawCap = isWithdraw && savingsAccountId
+    ? savingsAccountBalance(savingsAccountId, ctx.savingsLog || [], interestLog)
+    : totalSavings;
+  const exceedsSource = isWithdraw ? amountNum > withdrawCap : amountNum > accountBal;
   const canSave = isPositiveAmount(amount) && !exceedsSource;
 
   return (
@@ -612,6 +627,15 @@ function SavingsTransferForm({ mode, totalSavings, ctx, accounts, goals = [], on
       <View style={styles.chipWrap}>
         {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />)}
       </View>
+      {savingsAccounts.length > 0 && (
+        <>
+          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>{isWithdraw ? "From which savings account" : "Which savings account"} (optional)</Text>
+          <View style={styles.chipWrap}>
+            <Chip label="General" color={theme.textMuted} active={!savingsAccountId} onPress={() => setSavingsAccountId(null)} small />
+            {savingsAccounts.map((sa) => <Chip key={sa.id} label={sa.name} color={sa.color} active={savingsAccountId === sa.id} onPress={() => setSavingsAccountId(sa.id)} small />)}
+          </View>
+        </>
+      )}
       {!isWithdraw && goals.length > 0 && (
         <>
           <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Toward a goal (optional)</Text>
@@ -631,21 +655,23 @@ function SavingsTransferForm({ mode, totalSavings, ctx, accounts, goals = [], on
         <Text style={[styles.previewText2, { color: theme.textMuted }]}>
           {isWithdraw
             ? `Will move ${peso(amountNum)} from savings into ${accounts.find((a) => a.id === account)?.label}`
-            : `Will move ${peso(amountNum)} from ${accounts.find((a) => a.id === account)?.label} into savings${goalId ? ` (toward ${goals.find((g) => g.id === goalId)?.name})` : ""}`}
+            : `Will move ${peso(amountNum)} from ${accounts.find((a) => a.id === account)?.label} into savings${savingsAccountId ? ` (${savingsAccounts.find((sa) => sa.id === savingsAccountId)?.name})` : ""}${goalId ? ` (toward ${goals.find((g) => g.id === goalId)?.name})` : ""}`}
         </Text>
       )}
       {exceedsSource && (
         <View style={styles.warnRow2}>
           <AlertTriangle size={11} color={ACCENT.ember} />
           <Text style={styles.warnText2}>
-            {isWithdraw ? `More than your ${peso(totalSavings)} in savings.` : `More than your current ${accounts.find((a) => a.id === account)?.label} balance (${peso(accountBal)}).`}
+            {isWithdraw
+              ? `More than the ${peso(withdrawCap)} available${savingsAccountId ? ` in ${savingsAccounts.find((sa) => sa.id === savingsAccountId)?.name}` : " in savings"}.`
+              : `More than your current ${accounts.find((a) => a.id === account)?.label} balance (${peso(accountBal)}).`}
           </Text>
         </View>
       )}
 
       <Pressable
         disabled={!canSave}
-        onPress={() => canSave && onSave({ amount: amountNum, date, note: note.trim(), account, goalId: isWithdraw ? null : goalId, type: isWithdraw ? "withdraw" : "deposit" })}
+        onPress={() => canSave && onSave({ amount: amountNum, date, note: note.trim(), account, goalId: isWithdraw ? null : goalId, savingsAccountId, type: isWithdraw ? "withdraw" : "deposit" })}
         style={[styles.formBtn, { backgroundColor: isWithdraw ? theme.accentDark : ACCENT.leaf, opacity: canSave ? 1 : 0.5 }]}
       >
         <Text style={[styles.formBtnText, { color: "#fff" }]}>{isWithdraw ? "Withdraw" : "Add to savings"}</Text>

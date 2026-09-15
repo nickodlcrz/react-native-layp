@@ -594,7 +594,7 @@ const ExpenseRow = React.memo(function ExpenseRow({ e, splits, accounts, onEdit,
   const { style: pressStyle, pressIn, pressOut, handleLongPress } = useCardPressAnimation(() => onEdit(e));
 
   const content = (
-    <View style={[styles.row, { backgroundColor: compact ? theme.bg : theme.card, borderColor: theme.line, borderWidth: compact ? 0 : 1 }]}>
+    <View style={[styles.row, { backgroundColor: compact ? theme.bg : theme.card }]}>
       <View style={{ flex: 1 }}>
         <Text style={[styles.rowTitle, { color: theme.text }]}>{e.name}{isBill ? <Text style={{ fontSize: 9, fontWeight: "400", color: theme.textMuted }}> (bill)</Text> : null}</Text>
         {e.label ? <Text style={[styles.customLabel, { color: theme.textMuted }]}>{e.label}</Text> : null}

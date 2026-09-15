@@ -218,7 +218,10 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
   const overdue = !l.settled && dleft !== null && dleft < 0;
   const dueSoon = !l.settled && dleft !== null && dleft >= 0 && dleft <= 2;
   const account = accounts.find((a) => a.id === l.account);
-  const borderColor = overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : theme.line;
+  // A border only appears when it's actually signaling something
+  // (overdue/due-soon) -- otherwise the card relies on its own background
+  // tone, same as Todo and Spending rows.
+  const borderColor = overdue ? ACCENT.ember : dueSoon ? ACCENT.gold : "transparent";
   // Paying back money you borrowed takes it OUT of whichever account you
   // pay with; receiving payment for money you lent puts it INTO whichever
   // account you receive it in -- opposite directions, same "which account"
@@ -230,7 +233,7 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
   const { style: pressStyle, pressIn, pressOut, handleLongPress } = useCardPressAnimation(() => !l.settled && startEdit(l));
 
   const content = (
-    <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 1, opacity: l.settled ? 0.6 : 1 }]}>
+    <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 0, opacity: l.settled ? 0.6 : 1 }]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={l.settled ? "Mark unsettled" : "Mark settled"}>
           {l.settled ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}

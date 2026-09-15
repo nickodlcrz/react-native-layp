@@ -79,6 +79,16 @@ const transferSchema = z.object({
   toAccount: z.string(),
 }).passthrough();
 
+const savingsAccountSchema = z.object({
+  id,
+  name: z.string(),
+}).passthrough();
+
+const interestLogEntrySchema = z.object({
+  id,
+  amount: z.number({ invalid_type_error: "interest amount must be a number" }),
+}).passthrough();
+
 // School-related domains are validated more loosely (z.any() items) --
 // they don't carry money, so a malformed entry here is an inconvenience
 // (a class that fails to render) rather than a corrupted balance. The
@@ -104,6 +114,8 @@ export const backupSchema = z.object({
   subjects: z.array(z.any()).optional(),
   scheduleEntries: z.array(z.any()).optional(),
   schoolDefaults: z.object({}).passthrough().optional(),
+  savingsAccounts: z.array(savingsAccountSchema).optional(),
+  interestLog: z.array(interestLogEntrySchema).optional(),
 }).passthrough();
 
 // Parses + validates in one step. Returns { ok: true, data } on success, or

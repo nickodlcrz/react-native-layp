@@ -237,6 +237,79 @@ export function unallocatedSavings(savingsLog: SavingsLogEntry[]): number {
     .reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
 }
 
+// --- Savings accounts (specific interest-bearing destinations, e.g. a
+// GoTyme or Maribank savings pocket) ---
+//
+// Before this, "savings" was one undifferentiated pool -- there was no way
+// to say "this ₱3,000 is specifically sitting in GoTyme, earning its own
+// interest" versus "this ₱2,000 is in Maribank". A savingsLog entry can
+// now optionally carry a `savingsAccountId` tying it to one specific named
+// savings account instead. Entries with no savingsAccountId (everything
+// recorded before this feature existed, or a deposit someone deliberately
+// leaves unassigned) still count toward the overall total via
+// savingsTotal above -- they just don't show up under any one account.
+
+function daysBetween(fromISO: string, toISO: string): number {
+  const from = new Date(fromISO + "T00:00:00");
+  const to = new Date(toISO + "T00:00:00");
+  return Math.round((to.getTime() - from.getTime()) / 86400000);
+}
+
+// This savings account's own balance -- deposits/withdrawals tagged to it,
+// plus any interest it's actually been credited so far.
+export function savingsAccountBalance(savingsAccountId: string, savingsLog: SavingsLogEntry[], interestLog: any[] = []): number {
+  const principal = savingsLog
+    .filter((x) => x.savingsAccountId === savingsAccountId)
+    .reduce((s, x) => s + (x.type === "withdraw" ? -Number(x.amount) : Number(x.amount)), 0);
+  const interest = interestLog
+    .filter((x) => x.savingsAccountId === savingsAccountId)
+    .reduce((s, x) => s + Number(x.amount), 0);
+  return principal + interest;
+}
+
+// Total interest a savings account has actually earned to date -- shown
+// next to its balance so the interest rate feels like it's doing
+// something, not just a number sitting in a settings field.
+export function savingsAccountInterestEarned(savingsAccountId: string, interestLog: any[] = []): number {
+  return interestLog
+    .filter((x) => x.savingsAccountId === savingsAccountId)
+    .reduce((s, x) => s + Number(x.amount), 0);
+}
+
+// Works out how many days' worth of daily interest a savings account has
+// missed since it last accrued, and returns ONE lump interestLog entry
+// covering all of them at once (using the account's *current* balance as
+// the base for every one of those days). That's an approximation -- the
+// real balance may have moved day to day if money was added or withdrawn
+// in between -- but a reasonable one for a personal tracker that isn't
+// trying to replicate a bank's own ledger, and it means opening the app
+// after a few days away still credits everything that was missed instead
+// of only "today". Returns null when there's nothing to accrue (no rate
+// set, a zero/negative balance, or it's already been credited today).
+export function accrueSavingsAccountInterest(
+  account: { id: string; interestRate?: number; lastAccrualDate?: string },
+  savingsLog: SavingsLogEntry[],
+  interestLog: any[],
+  today: string
+): { id: string; savingsAccountId: string; amount: number; date: string; days: number } | null {
+  const rate = Number(account.interestRate) || 0;
+  if (rate <= 0) return null;
+  const balance = savingsAccountBalance(account.id, savingsLog, interestLog);
+  if (balance <= 0) return null;
+
+  const priorEntries = interestLog.filter((x) => x.savingsAccountId === account.id);
+  const mostRecent = priorEntries.reduce((latest: string | null, x) => (!latest || x.date > latest ? x.date : latest), null);
+  const lastDate = mostRecent || account.lastAccrualDate || null;
+  const days = lastDate ? daysBetween(lastDate, today) : 1;
+  if (days <= 0) return null;
+
+  const dailyRate = rate / 100 / 365;
+  const amount = Math.round(balance * dailyRate * days * 100) / 100;
+  if (amount <= 0) return null;
+
+  return { id: uid(), savingsAccountId: account.id, amount, date: today, days };
+}
+
 // --- Savings goals ---
 
 export function goalCurrentAmount(goalId: string, savingsLog: SavingsLogEntry[]): number {
@@ -443,4 +516,17 @@ export function addAccount(accounts: Account[], palette: string[]): Account[] {
 export function removeAccount(accounts: Account[], id: string): Account[] {
   if (accounts.length <= 1) return accounts;
   return accounts.filter((a) => a.id !== id);
+}
+
+// Same idea as addAccount/removeAccount above, for the separate list of
+// named *savings* accounts (GoTyme, Maribank, etc.) -- these aren't
+// blocked from going to zero, since "no savings accounts" is a perfectly
+// normal state (everything just sits in the one undifferentiated savings
+// pool, same as before this feature existed).
+export function addSavingsAccount(savingsAccounts: any[], palette: string[]): any[] {
+  const color = palette[savingsAccounts.length % palette.length];
+  return [...savingsAccounts, { id: uid(), name: "New savings account", color, interestRate: 0 }];
+}
+export function removeSavingsAccount(savingsAccounts: any[], id: string): any[] {
+  return savingsAccounts.filter((a) => a.id !== id);
 }

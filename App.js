@@ -9,12 +9,12 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap } from "lucide-react-native";
 
-import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
+import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_SAVINGS_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import Reanimated, { FadeOut } from "react-native-reanimated";
 import { DURATION } from "./src/animation";
 import { loadState, saveState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
-import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate } from "./src/utils";
+import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
@@ -143,6 +143,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   const [goals, setGoals] = useState([]); // savings goals: name, target amount, target date
   const [loans, setLoans] = useState([]); // lent / borrowed tracker
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
+  const [savingsAccounts, setSavingsAccounts] = useState(DEFAULT_SAVINGS_ACCOUNTS.map((a) => ({ ...a })));
+  const [interestLog, setInterestLog] = useState([]); // one entry per day/account interest was actually credited
   const [transfers, setTransfers] = useState([]); // money moved between accounts -- never counts as income/expense
   const [recurringIncome, setRecurringIncome] = useState([]); // templates: [{ id, label, category, amount, account, frequency, nextDate }] -- see the catch-up effect below for how these actually post to moneyLog
   const [spendingLimits, setSpendingLimits] = useState({}); // { [spendingLabel]: monthlyLimitAmount } -- a user-set budget per spending label (Food, Transportation, etc.), separate from the automatic 80%-of-split alert
@@ -340,6 +342,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
         setLoans(s.loans || []);
         setSplits(s.splits || DEFAULT_SPLITS["50-30-20"].map((sp) => ({ ...sp })));
         setAccounts(s.accounts || DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
+        setSavingsAccounts(s.savingsAccounts || DEFAULT_SAVINGS_ACCOUNTS.map((a) => ({ ...a })));
+        setInterestLog(s.interestLog || []);
         setTransfers(s.transfers || []);
         setRecurringIncome(s.recurringIncome || []);
         setSpendingLimits(s.spendingLimits || {});
@@ -368,12 +372,33 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     })();
   }, []);
 
+  // Once per launch, catch up on any daily interest each savings account
+  // has missed since it was last credited (see accrueSavingsAccountInterest
+  // in utils.ts for how the "missed days" catch-up math works). This is
+  // what makes an interest-bearing savings account (GoTyme, Maribank, or
+  // any other one someone adds) actually gain interest every day instead
+  // of only whenever someone happens to be looking at the screen.
+  useEffect(() => {
+    if (!ready) return;
+    const today = todayISO();
+    const newEntries = [];
+    for (const acc of savingsAccounts) {
+      const entry = accrueSavingsAccountInterest(acc, savingsLog, [...interestLog, ...newEntries], today);
+      if (entry) newEntries.push(entry);
+    }
+    if (newEntries.length) setInterestLog((prev) => [...prev, ...newEntries]);
+    // Deliberately only [ready] -- this is a once-per-launch catch-up job,
+    // not something that should re-run and potentially double-credit
+    // interest every time savings data changes during the session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   useEffect(() => {
     if (!ready) return;
     if (firstLoad.current) { firstLoad.current = false; return; }
-    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits });
+    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog });
     setThemePreference(dark);
-  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits]);
+  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog]);
 
   // Cancellation records only ever need to cover "today" at check time, so
   // trim anything older than a week on load rather than let this list grow
@@ -626,6 +651,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     setMoneyLog(data.moneyLog); setWeeklySummaries(data.weeklySummaries);
     setSavingsLog(data.savingsLog); setGoals(data.goals); setLoans(data.loans);
     setSplits(data.splits); setAccounts(data.accounts); setTransfers(data.transfers);
+    setSavingsAccounts(data.savingsAccounts?.length ? data.savingsAccounts : DEFAULT_SAVINGS_ACCOUNTS.map((a) => ({ ...a })));
+    setInterestLog(data.interestLog || []);
     setDark(data.dark);
     setDailyBudgetSettings(data.dailyBudgetSettings || { ...DEFAULT_DAILY_BUDGET_SETTINGS });
     setDailyBudgetLog(data.dailyBudgetLog || []);
@@ -637,8 +664,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     setSpendingLimits(data.spendingLimits || {});
   }, []);
   const backupData = useMemo(
-    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits }),
-    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits]
+    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog }),
+    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog]
   );
 
   function renderTabContent(t) {
@@ -687,6 +714,8 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             savingsLog={savingsLog} setSavingsLog={setSavingsLog}
             loans={loans} setLoans={setLoans}
             accounts={accounts} setAccounts={setAccounts}
+            savingsAccounts={savingsAccounts} setSavingsAccounts={setSavingsAccounts}
+            interestLog={interestLog}
             transfers={transfers} setTransfers={setTransfers}
             goals={goals} setGoals={setGoals}
             recurringIncome={recurringIncome} setRecurringIncome={setRecurringIncome}
