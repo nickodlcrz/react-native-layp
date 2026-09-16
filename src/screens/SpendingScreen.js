@@ -677,7 +677,7 @@ function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ct
       </Text>
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
-        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
         {errors.amount && <Text style={styles.fieldError}>{errors.amount}</Text>}
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
@@ -729,7 +729,7 @@ function MoneyForm({ accounts, ctx, onSave }) {
       )}
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
-        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Repeats</Text>

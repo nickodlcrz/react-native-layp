@@ -310,6 +310,50 @@ export function accrueSavingsAccountInterest(
   return { id: uid(), savingsAccountId: account.id, amount, date: today, days };
 }
 
+// Total interest a regular budget account has earned to date -- mirrors
+// savingsAccountInterestEarned above, just reading from moneyLog's
+// "interest" category instead of a separate interest log, since interest
+// on a *budget* account is meant to show up as ordinary income (see
+// accrueAccountInterest below).
+export function accountInterestEarned(accountId: string, moneyLog: MoneyLogEntry[] = []): number {
+  return moneyLog
+    .filter((m) => m.account === accountId && m.category === "interest")
+    .reduce((s, m) => s + Number(m.amount), 0);
+}
+
+// Same daily-catch-up mechanic as accrueSavingsAccountInterest, but for a
+// regular budget account (e.g. a Maribank account used for everyday
+// spending that still earns interest on whatever's sitting in it, without
+// the money ever being moved into a separate savings account). Returns a
+// plain moneyLog-shaped entry (category "interest") rather than a
+// separate interestLog entry -- that's what makes it show up in the
+// account's normal income total instead of needing its own display
+// wiring. Returns null when there's nothing to accrue (no rate set, a
+// zero/negative balance, or it's already been credited today).
+export function accrueAccountInterest(
+  account: { id: string; interestRate?: number; lastAccrualDate?: string },
+  ctx: Partial<FinancialContext>,
+  moneyLog: MoneyLogEntry[],
+  today: string
+): { id: string; account: string; amount: number; category: string; note: string; date: string; days: number; createdAt: number } | null {
+  const rate = Number(account.interestRate) || 0;
+  if (rate <= 0) return null;
+  const balance = computeAccountBalance(account.id, { ...ctx, moneyLog });
+  if (balance <= 0) return null;
+
+  const priorEntries = moneyLog.filter((m) => m.account === account.id && m.category === "interest");
+  const mostRecent = priorEntries.reduce((latest: string | null, m: any) => (!latest || m.date > latest ? m.date : latest), null);
+  const lastDate = mostRecent || account.lastAccrualDate || null;
+  const days = lastDate ? daysBetween(lastDate, today) : 1;
+  if (days <= 0) return null;
+
+  const dailyRate = rate / 100 / 365;
+  const amount = Math.round(balance * dailyRate * days * 100) / 100;
+  if (amount <= 0) return null;
+
+  return { id: uid(), account: account.id, amount, category: "interest", note: "Interest earned", date: today, days, createdAt: Date.now() };
+}
+
 // --- Savings goals ---
 
 export function goalCurrentAmount(goalId: string, savingsLog: SavingsLogEntry[]): number {
@@ -506,7 +550,7 @@ export function dailyBudgetNotificationContent(review: DailyBudgetReview): { tit
 
 export function addAccount(accounts: Account[], palette: string[]): Account[] {
   const color = palette[accounts.length % palette.length];
-  return [...accounts, { id: uid(), label: "New account", color }];
+  return [...accounts, { id: uid(), label: "New account", color, interestRate: 0 }];
 }
 
 // Removing an account doesn't touch historical records tagged with its id

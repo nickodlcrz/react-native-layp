@@ -335,7 +335,7 @@ function SettingsView({ theme, splits, totalPercent, applyPreset, addSplit, remo
           </View>
         )}
         <Text style={[styles.hintText, { color: theme.textMuted, marginTop: 10, marginBottom: 0 }]}>
-          At this time LAYP sends a notification encouraging you to open today's review -- it never puts your full financial summary inside the notification itself.
+          At this time LAYP sends a notification encouraging you to open today's review -- it never puts your full financial summary inside the notification itself. When there's something safe to save, the notification also carries "Save to savings" and "Keep for tomorrow" buttons so you can decide right there, without opening the app.
         </Text>
       </View>
     </>

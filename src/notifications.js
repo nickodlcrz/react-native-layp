@@ -28,6 +28,13 @@ const CLASS_ALARM_CATEGORY = "layp-class-alarm-actions";
 export const CLASS_CHECKIN_YES_ACTION = "CHECKIN_YES";
 export const CLASS_CHECKIN_NONE_ACTION = "CHECKIN_NONE";
 const CLASS_CHECKIN_CATEGORY = "layp-class-checkin-actions";
+// Lets the Daily Budget reminder itself carry the "save it" / "keep it
+// for tomorrow" decision right on the notification -- see
+// rescheduleDailyBudgetNotification below for how the actual save amount
+// gets attached to each notification's data payload.
+export const DAILY_BUDGET_SAVE_ACTION = "DAILY_BUDGET_SAVE";
+export const DAILY_BUDGET_KEEP_ACTION = "DAILY_BUDGET_KEEP";
+const DAILY_BUDGET_CATEGORY = "layp-daily-budget-actions";
 // Fallback for how long before a class's own alarm the "Do you have class
 // today?" check-in fires, used only if a subject somehow has no value of
 // its own. Per-subject (subject.classCheckInMinutes, defaulting from
@@ -55,6 +62,17 @@ export async function setupNotificationCategories() {
   await Notifications.setNotificationCategoryAsync(CLASS_CHECKIN_CATEGORY, [
     { identifier: CLASS_CHECKIN_YES_ACTION, buttonTitle: "Yes" },
     { identifier: CLASS_CHECKIN_NONE_ACTION, buttonTitle: "None", options: { isDestructive: true } },
+  ]);
+  // Lets the Daily Budget reminder be acted on right from the
+  // notification (lock screen included) -- "Save" deposits today's
+  // recommended savings split, "Keep for tomorrow" logs that decision,
+  // matching the two in-app buttons on the review screen. Whether "Save"
+  // actually appears is decided per-notification in
+  // rescheduleDailyBudgetNotification below (only when there's really
+  // something worth saving) by choosing which category to attach.
+  await Notifications.setNotificationCategoryAsync(DAILY_BUDGET_CATEGORY, [
+    { identifier: DAILY_BUDGET_SAVE_ACTION, buttonTitle: "Save to savings" },
+    { identifier: DAILY_BUDGET_KEEP_ACTION, buttonTitle: "Keep for tomorrow" },
   ]);
 }
 
@@ -307,12 +325,26 @@ export async function rescheduleLoanNotification(loan) {
 // so this is the closest practical approximation to "context-aware" for a
 // purely local, no-backend notification. See dailyBudgetNotificationContent
 // in utils.js for how the title/body are derived.
-export async function rescheduleDailyBudgetNotification(previousId, settings, content) {
+//
+// `savings` (optional) is { amount, account } -- when there's a positive
+// amount safe to save right now, it's embedded in the notification's data
+// payload and the DAILY_BUDGET_CATEGORY is attached so "Save to savings"
+// shows up as a button on the notification itself; otherwise only "Keep
+// for tomorrow" makes sense, so the category (and its Save button) is left
+// off entirely rather than offering a button that would save ₱0.
+export async function rescheduleDailyBudgetNotification(previousId, settings, content, savings) {
   await cancelTodoNotifications(previousId ? [previousId] : []);
   if (!settings?.enabled || !settings?.time) return null;
   const [h, m] = settings.time.split(":").map(Number);
+  const hasSaveOption = Number(savings?.amount) > 0;
   return safeScheduleNotificationAsync({
-    content: { title: content.title, body: content.body, sound: true, data: { type: "dailyBudget" } },
+    content: {
+      title: content.title,
+      body: content.body,
+      sound: true,
+      data: { type: "dailyBudget", saveAmount: hasSaveOption ? Number(savings.amount) : 0, saveAccount: savings?.account || null },
+      categoryIdentifier: hasSaveOption ? DAILY_BUDGET_CATEGORY : undefined,
+    },
     trigger: Platform.OS === "android" ? { hour: h, minute: m, repeats: true, channelId: "layp-reminders" } : { hour: h, minute: m, repeats: true },
   });
 }

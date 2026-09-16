@@ -353,12 +353,12 @@ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel, onDelete }) 
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Principal (P)</Text>
-          <TextInput value={principal} onChangeText={(v) => setPrincipal(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+          <TextInput value={principal} onChangeText={(v) => setPrincipal(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
           {errors.principal && <Text style={styles.fieldError}>{errors.principal}</Text>}
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Interest (%)</Text>
-          <TextInput value={interestPercent} onChangeText={(v) => setInterestPercent(v.replace(/[^0-9.]/g, ""))} placeholder="0" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+          <TextInput value={interestPercent} onChangeText={(v) => setInterestPercent(v.replace(/[^0-9.]/g, ""))} placeholder="0" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
         </View>
       </View>
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>{type === "lent" ? "Take money from" : "Add money to"}</Text>

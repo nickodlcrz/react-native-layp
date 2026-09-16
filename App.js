@@ -13,8 +13,8 @@ import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DE
 import Reanimated, { FadeOut } from "react-native-reanimated";
 import { DURATION } from "./src/animation";
 import { loadState, saveState } from "./src/storage";
-import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
-import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest } from "./src/utils";
+import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
+import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest, accrueAccountInterest } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
@@ -225,6 +225,31 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
       if (!data?.type) return;
 
       if (data.type === "dailyBudget") {
+        if (actionId === DAILY_BUDGET_SAVE_ACTION || actionId === DAILY_BUDGET_KEEP_ACTION) {
+          // Same "one decision per day" lock the in-app review screen
+          // uses (see DailyBudgetScreen's todayDecision) -- ignore a late
+          // or duplicate tap if today's already been decided some other
+          // way (e.g. the app was opened and acted on in between).
+          const already = dailyBudgetLog.find((e) => e.date === todayISO());
+          if (!already) {
+            if (actionId === DAILY_BUDGET_SAVE_ACTION) {
+              // Recomputed fresh rather than trusting the notification's
+              // own (possibly stale) saveAmount -- balances may have
+              // moved since this notification was scheduled.
+              const review = computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers });
+              const cappedAmount = review.savings ? Math.max(0, Math.min(review.savings.maxSafeToSave || 0, review.currentBalance || 0)) : 0;
+              if (cappedAmount > 0) {
+                const saveAccount = data.saveAccount || accounts[0]?.id;
+                setSavingsLog((prev) => [...prev, { id: uid(), amount: cappedAmount, account: saveAccount, splitId: review.savings.id, note: "Daily budget review", date: todayISO(), type: "deposit", createdAt: Date.now() }]);
+                setDailyBudgetLog((prev) => [...prev, { id: uid(), date: todayISO(), choice: "saved", amount: cappedAmount }]);
+              }
+            } else {
+              setDailyBudgetLog((prev) => [...prev, { id: uid(), date: todayISO(), choice: "kept" }]);
+            }
+          }
+          if (notifId) await dismissNotification(notifId);
+          return;
+        }
         if (!actionId || actionId === DEFAULT_ACTION_IDENTIFIER) {
           setTab("budget");
           setBudgetSubTab("overview");
@@ -393,6 +418,25 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
+  // Same once-per-launch catch-up, but for regular budget accounts that
+  // have their own interestRate set (e.g. a Maribank account used for
+  // everyday spending that still earns interest without the money being
+  // moved into a separate savings account). Posted straight to moneyLog
+  // as an ordinary "interest" income entry so it's counted in the
+  // account's income total automatically -- no separate ledger needed.
+  useEffect(() => {
+    if (!ready) return;
+    const today = todayISO();
+    const newEntries = [];
+    const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+    for (const acc of accounts) {
+      const entry = accrueAccountInterest(acc, ctx, [...moneyLog, ...newEntries], today);
+      if (entry) newEntries.push(entry);
+    }
+    if (newEntries.length) setMoneyLog((prev) => [...prev, ...newEntries]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   useEffect(() => {
     if (!ready) return;
     if (firstLoad.current) { firstLoad.current = false; return; }
@@ -474,7 +518,12 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
       (async () => {
         const review = computeDailyBudgetReview({ splits, accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers });
         const content = dailyBudgetNotificationContent(review);
-        const id = await rescheduleDailyBudgetNotification(dailyBudgetNotifId, dailyBudgetSettings, content);
+        // Cap the same way the in-app "Save recommended" button does --
+        // never more than what's actually sitting in the accounts right
+        // now -- so the notification's Save button can't ever save more
+        // than is really there.
+        const saveAmount = review.savings ? Math.max(0, Math.min(review.savings.maxSafeToSave || 0, review.currentBalance || 0)) : 0;
+        const id = await rescheduleDailyBudgetNotification(dailyBudgetNotifId, dailyBudgetSettings, content, { amount: saveAmount, account: accounts[0]?.id });
         if (dailyBudgetRequestRef.current !== myToken) {
           // A newer change already superseded this one while we were
           // awaiting -- this id would otherwise never be cancelled again.

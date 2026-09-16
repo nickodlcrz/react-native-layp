@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
-import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Receipt } from "lucide-react-native";
+import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Receipt, Sparkles, Eye, EyeOff } from "lucide-react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
-import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, savingsAccountBalance, addAccount as pushAccount, isPositiveAmount, nextRecurringDate } from "../utils";
+import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsAccountBalance, addAccount as pushAccount, isPositiveAmount, nextRecurringDate, accountInterestEarned } from "../utils";
 import Chip from "../components/Chip";
 import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
@@ -38,14 +39,29 @@ function BudgetScreen({
   const [editingBillId, setEditingBillId] = useState(null);
   const [payingBillId, setPayingBillId] = useState(null);
   const [payAmount, setPayAmount] = useState("");
-  const [showSavingsForm, setShowSavingsForm] = useState(false);
-  const [savingsMode, setSavingsMode] = useState("deposit");
   const [billStatusView, setBillStatusView] = useState("unpaid");
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [addAmount, setAddAmount] = useState("");
   const [addAccount, setAddAccount] = useState(accounts[0]?.id);
   const [addCategory, setAddCategory] = useState("other");
+  // Whether the big "Current budget" figure (and its "remaining after X
+  // spent" line) is masked out -- e.g. showing the screen around other
+  // people. Persisted on its own in AsyncStorage rather than folded into
+  // the main app-state schema, since it's a pure display preference with
+  // nothing to migrate or sync.
+  const [budgetHidden, setBudgetHidden] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem("layp:budgetHidden").then((v) => { if (v === "1") setBudgetHidden(true); }).catch(() => {});
+  }, []);
+  function toggleBudgetHidden() {
+    setBudgetHidden((prev) => {
+      const next = !prev;
+      AsyncStorage.setItem("layp:budgetHidden", next ? "1" : "0").catch(() => {});
+      return next;
+    });
+  }
+  const maskedPeso = "\u20B1*****";
 
   function addMoney() {
     const amt = Number(addAmount);
@@ -199,7 +215,6 @@ function BudgetScreen({
   const unpaidTotal = unpaidBills.reduce((s, b) => s + (Number(b.amount) - Number(b.paidAmount || 0)), 0);
   const editingBill = editingBillId ? bills.find((b) => b.id === editingBillId) : null;
 
-  const totalSavings = computeSavingsTotal(savingsLog);
 
   const rolledTotal = weeklySummaries.reduce((s, w) => s + w.total, 0);
   const totalSpent = expenses.reduce((s, e) => s + Number(e.amount), 0) + rolledTotal;
@@ -242,7 +257,7 @@ function BudgetScreen({
       <SegmentedTabs
         options={[
           { key: "overview", label: "Overview" },
-          { key: "goals", label: "Goals" },
+          { key: "goals", label: "Savings" },
           { key: "activity", label: "Activity" },
           { key: "spending", label: "Spending" },
           { key: "borrow", label: "Borrow" },
@@ -273,8 +288,10 @@ function BudgetScreen({
       ) : subTab === "goals" ? (
         <ErrorBoundary resetKey={subTab}>
         <GoalsScreen
-          goals={goals} setGoals={setGoals} savingsLog={savingsLog}
+          goals={goals} setGoals={setGoals} savingsLog={savingsLog} setSavingsLog={setSavingsLog}
           savingsAccounts={savingsAccounts} setSavingsAccounts={setSavingsAccounts} interestLog={interestLog}
+          accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
+          loans={loans} transfers={transfers}
         />
         </ErrorBoundary>
       ) : subTab === "activity" ? (
@@ -287,21 +304,26 @@ function BudgetScreen({
 
       {/* HERO: current remaining budget is the focus */}
       <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
-        <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>Current budget</Text>
-        <Text style={[styles.heroValue, { color: remaining < 0 ? ACCENT.ember : "#fff" }]}>{peso(remaining)}</Text>
-        <Text style={styles.heroSub}>remaining after {peso(totalSpent)} spent</Text>
+        <View style={styles.heroLabelRow}>
+          <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>Current budget</Text>
+          <Pressable onPress={toggleBudgetHidden} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={budgetHidden ? "Show budget amount" : "Hide budget amount"}>
+            {budgetHidden ? <EyeOff size={15} color={ACCENT.gold} /> : <Eye size={15} color={ACCENT.gold} />}
+          </Pressable>
+        </View>
+        <Text style={[styles.heroValue, { color: remaining < 0 && !budgetHidden ? ACCENT.ember : "#fff" }]}>{budgetHidden ? maskedPeso : peso(remaining)}</Text>
+        <Text style={styles.heroSub}>{budgetHidden ? `remaining after ${maskedPeso} spent` : `remaining after ${peso(totalSpent)} spent`}</Text>
 
         <View style={styles.heroDivider} />
 
-        <View style={styles.accountRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
           {accounts.map((a) => (
             <View key={a.id} style={styles.accountChip}>
               <View style={[styles.accountDot, { backgroundColor: a.color }]} />
-              <Text style={styles.accountLabel}>{a.label}</Text>
-              <Text style={styles.accountBalance}>{peso(computeAccountBalance(a.id, ctx))}</Text>
+              <Text style={styles.accountLabel} numberOfLines={1}>{a.label}</Text>
+              <Text style={styles.accountBalance}>{budgetHidden ? maskedPeso : peso(computeAccountBalance(a.id, ctx))}</Text>
             </View>
           ))}
-        </View>
+        </ScrollView>
 
         {!showAddMoney ? (
           <Pressable onPress={() => setShowAddMoney(true)} style={styles.addMoneyBtn} accessibilityLabel="Add money received">
@@ -367,23 +389,49 @@ function BudgetScreen({
       )}
 
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
-        {accounts.map((a) => (
-          <View key={a.id} style={styles.accountEditRow}>
-            <View style={[styles.accountDotSmall, { backgroundColor: a.color }]} />
-            <TextInput
-              value={a.label}
-              onChangeText={(v) => setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, label: v } : x)))}
-              style={[styles.accountEditInput, { color: theme.text }]}
-            />
-            <Text style={[styles.accountEditBalance, { color: theme.textMuted }]}>{peso(computeAccountBalance(a.id, ctx))}</Text>
-            {accounts.length > 1 && (
-              <Pressable onPress={() => removeAccount(a.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={`Delete ${a.label} account`}>
-                <Trash2 size={14} color={theme.textMuted} />
-              </Pressable>
-            )}
-          </View>
-        ))}
-        <Text style={[styles.accountHint, { color: theme.textMuted }]}>Add as many named accounts as you use -- GCash, Maya, Wallet, Bank, etc. Tap a name to rename it.</Text>
+        {accounts.map((a) => {
+          const earned = accountInterestEarned(a.id, moneyLog);
+          return (
+            <View key={a.id} style={styles.accountEditBlock}>
+              <View style={styles.accountEditRow}>
+                <View style={[styles.accountDotSmall, { backgroundColor: a.color }]} />
+                <TextInput
+                  value={a.label}
+                  onChangeText={(v) => setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, label: v } : x)))}
+                  style={[styles.accountEditInput, { color: theme.text }]}
+                />
+                <Text style={[styles.accountEditBalance, { color: theme.textMuted }]}>{peso(computeAccountBalance(a.id, ctx))}</Text>
+                {accounts.length > 1 && (
+                  <Pressable onPress={() => removeAccount(a.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={`Delete ${a.label} account`}>
+                    <Trash2 size={14} color={theme.textMuted} />
+                  </Pressable>
+                )}
+              </View>
+              <View style={styles.savAccRateRow}>
+                <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>Interest rate (% per year, optional)</Text>
+                <TextInput
+                  value={a.interestRate != null && a.interestRate !== 0 ? String(a.interestRate) : ""}
+                  onChangeText={(v) => {
+                    const cleaned = v.replace(/[^0-9.]/g, "");
+                    setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, interestRate: cleaned === "" ? 0 : Number(cleaned) } : x)));
+                  }}
+                  placeholder="0"
+                  placeholderTextColor={theme.textMuted}
+                  keyboardType="decimal-pad"
+                  style={[styles.savAccRateInput, { backgroundColor: theme.bg, color: theme.text }]}
+                />
+                <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>%</Text>
+              </View>
+              {earned > 0 && (
+                <View style={styles.savAccEarnedRow}>
+                  <Sparkles size={11} color={ACCENT.gold} />
+                  <Text style={[styles.savAccEarnedText, { color: ACCENT.gold }]}>{peso(earned)} earned in interest so far</Text>
+                </View>
+              )}
+            </View>
+          );
+        })}
+        <Text style={[styles.accountHint, { color: theme.textMuted }]}>Add as many named accounts as you use -- GCash, Maya, Wallet, Bank, etc. Tap a name to rename it. Set a yearly interest rate on an account (like Maribank) to have it earn interest automatically, every day, counted as income -- no separate savings transfer needed.</Text>
       </View>
 
       <Pressable onPress={() => setShowDailyBudget(true)} style={[styles.dailyBudgetCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="Open Daily Budget">
@@ -401,53 +449,7 @@ function BudgetScreen({
         <Text style={[styles.dailyBudgetChevron, { color: theme.textMuted }]}>{"\u203A"}</Text>
       </Pressable>
 
-      <View style={styles.headerRow}>
-        <Text style={[styles.h2, { color: theme.text }]}>Savings</Text>
-        <View style={{ flexDirection: "row", gap: 6 }}>
-          <Pressable onPress={() => { setSavingsMode("deposit"); setShowSavingsForm((s) => (showSavingsForm && savingsMode === "deposit" ? false : true)); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel="Add to savings">
-            {showSavingsForm && savingsMode === "deposit" ? <X size={14} color="#fff" /> : <Plus size={14} color="#fff" />}
-          </Pressable>
-          <Pressable onPress={() => { setSavingsMode("withdraw"); setShowSavingsForm((s) => (showSavingsForm && savingsMode === "withdraw" ? false : true)); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel="Withdraw from savings">
-            {showSavingsForm && savingsMode === "withdraw" ? <X size={14} color="#fff" /> : <ArrowLeftRight size={14} color="#fff" />}
-          </Pressable>
-        </View>
-      </View>
-      <Text style={[styles.savingsHint, { color: theme.textMuted }]}>Savings is kept separate from your spendable budget above. Money moved here comes out of E-cash/Physical; withdrawing sends it back.</Text>
-      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line, marginBottom: 12 }]}>
-        <Text style={[styles.smallLabel, { color: theme.textMuted }]}>Total in savings</Text>
-        <Text style={[styles.savingsTotal, { color: ACCENT.leaf }]}>{peso(totalSavings)}</Text>
-      </View>
-      {showSavingsForm && (
-        <SavingsTransferForm
-          mode={savingsMode}
-          totalSavings={totalSavings}
-          ctx={ctx}
-          accounts={accounts}
-          goals={goals}
-          savingsAccounts={savingsAccounts}
-          interestLog={interestLog}
-          onSave={(entry) => { setSavingsLog((prev) => [...prev, { id: uid(), ...entry }]); setShowSavingsForm(false); }}
-        />
-      )}
-      {savingsLog.length > 0 &&
-        [...savingsLog].reverse().slice(0, 4).map((s) => {
-          const account = accounts.find((a) => a.id === s.account);
-          const isWithdraw = s.type === "withdraw";
-          return (
-            <View key={s.id} style={[styles.smallRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-              <View>
-                <Text style={[styles.smallRowTitle, { color: theme.text }]}>{s.note || (isWithdraw ? "Withdrawn to " + (account?.label || "budget") : "Added from " + (account?.label || "budget"))}</Text>
-                <Text style={[styles.smallRowDate, { color: theme.textMuted }]}>{fmtDay(s.date)}</Text>
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <Text style={[styles.smallRowAmount, { color: isWithdraw ? ACCENT.ember : ACCENT.leaf }]}>{isWithdraw ? "-" : "+"}{peso(s.amount)}</Text>
-                <Pressable onPress={() => confirmDelete("Delete this entry?", "This savings entry will be removed for good.", () => setSavingsLog((prev) => prev.filter((x) => x.id !== s.id)))} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete savings entry"><Trash2 size={14} color={theme.textMuted} /></Pressable>
-              </View>
-            </View>
-          );
-        })}
-
-      <View style={[styles.chipRow, { marginTop: savingsLog.length ? 12 : 4 }]}>
+      <View style={[styles.chipRow, { marginTop: 4 }]}>
         <Chip label={`Unpaid (${unpaidBills.length})`} active={billStatusView === "unpaid"} onPress={() => setBillStatusView("unpaid")} small />
         <Chip label={`Paid (${paidBills.length})`} active={billStatusView === "paid"} onPress={() => setBillStatusView("paid")} small />
         <View style={{ flex: 1 }} />
@@ -572,7 +574,7 @@ function BillForm({ initial, onSave, onCancel, splits, accounts }) {
       </View>
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
-        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
         {errors.amount && <Text style={styles.fieldError}>{errors.amount}</Text>}
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={dueDate} onChange={setDueDate} label="Needed by" /></View>
@@ -593,89 +595,6 @@ function BillForm({ initial, onSave, onCancel, splits, accounts }) {
           <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add bill"}</Text>
         </Pressable>
       </View>
-    </View>
-  );
-}
-
-function SavingsTransferForm({ mode, totalSavings, ctx, accounts, goals = [], savingsAccounts = [], interestLog = [], onSave }) {
-  const { theme } = useTheme();
-  const isWithdraw = mode === "withdraw";
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(todayISO());
-  const [note, setNote] = useState("");
-  const [account, setAccount] = useState(accounts[0].id);
-  const [goalId, setGoalId] = useState(null);
-  const [savingsAccountId, setSavingsAccountId] = useState(null);
-  const amountNum = Number(amount) || 0;
-  const accountBal = computeAccountBalance(account, ctx);
-  // Withdrawing from one specific savings account (GoTyme, Maribank, etc.)
-  // is capped by *that account's* own balance -- not the whole savings
-  // pool -- so it's never possible to withdraw more from GoTyme than is
-  // actually sitting in GoTyme, even if the overall savings total is
-  // larger because of money held elsewhere.
-  const withdrawCap = isWithdraw && savingsAccountId
-    ? savingsAccountBalance(savingsAccountId, ctx.savingsLog || [], interestLog)
-    : totalSavings;
-  const exceedsSource = isWithdraw ? amountNum > withdrawCap : amountNum > accountBal;
-  const canSave = isPositiveAmount(amount) && !exceedsSource;
-
-  return (
-    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-      <Text style={[styles.formTitle, { color: theme.text }]}>{isWithdraw ? "Withdraw from savings" : "Add to savings"}</Text>
-      <TextInput value={note} onChangeText={setNote} placeholder="Note (optional)" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
-      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>{isWithdraw ? "Send back to" : "Take from"}</Text>
-      <View style={styles.chipWrap}>
-        {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />)}
-      </View>
-      {savingsAccounts.length > 0 && (
-        <>
-          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>{isWithdraw ? "From which savings account" : "Which savings account"} (optional)</Text>
-          <View style={styles.chipWrap}>
-            <Chip label="General" color={theme.textMuted} active={!savingsAccountId} onPress={() => setSavingsAccountId(null)} small />
-            {savingsAccounts.map((sa) => <Chip key={sa.id} label={sa.name} color={sa.color} active={savingsAccountId === sa.id} onPress={() => setSavingsAccountId(sa.id)} small />)}
-          </View>
-        </>
-      )}
-      {!isWithdraw && goals.length > 0 && (
-        <>
-          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Toward a goal (optional)</Text>
-          <View style={styles.chipWrap}>
-            <Chip label="General" color={theme.textMuted} active={!goalId} onPress={() => setGoalId(null)} small />
-            {goals.map((g) => <Chip key={g.id} label={g.name} color={ACCENT.sky} active={goalId === g.id} onPress={() => setGoalId(g.id)} small />)}
-          </View>
-        </>
-      )}
-      <View style={{ marginBottom: 12 }}>
-        <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
-        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
-      </View>
-      <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
-
-      {amountNum > 0 && (
-        <Text style={[styles.previewText2, { color: theme.textMuted }]}>
-          {isWithdraw
-            ? `Will move ${peso(amountNum)} from savings into ${accounts.find((a) => a.id === account)?.label}`
-            : `Will move ${peso(amountNum)} from ${accounts.find((a) => a.id === account)?.label} into savings${savingsAccountId ? ` (${savingsAccounts.find((sa) => sa.id === savingsAccountId)?.name})` : ""}${goalId ? ` (toward ${goals.find((g) => g.id === goalId)?.name})` : ""}`}
-        </Text>
-      )}
-      {exceedsSource && (
-        <View style={styles.warnRow2}>
-          <AlertTriangle size={11} color={ACCENT.ember} />
-          <Text style={styles.warnText2}>
-            {isWithdraw
-              ? `More than the ${peso(withdrawCap)} available${savingsAccountId ? ` in ${savingsAccounts.find((sa) => sa.id === savingsAccountId)?.name}` : " in savings"}.`
-              : `More than your current ${accounts.find((a) => a.id === account)?.label} balance (${peso(accountBal)}).`}
-          </Text>
-        </View>
-      )}
-
-      <Pressable
-        disabled={!canSave}
-        onPress={() => canSave && onSave({ amount: amountNum, date, note: note.trim(), account, goalId: isWithdraw ? null : goalId, savingsAccountId, type: isWithdraw ? "withdraw" : "deposit" })}
-        style={[styles.formBtn, { backgroundColor: isWithdraw ? theme.accentDark : ACCENT.leaf, opacity: canSave ? 1 : 0.5 }]}
-      >
-        <Text style={[styles.formBtnText, { color: "#fff" }]}>{isWithdraw ? "Withdraw" : "Add to savings"}</Text>
-      </Pressable>
     </View>
   );
 }
@@ -706,7 +625,7 @@ function TransferForm({ accounts, ctx, onSave }) {
       <TextInput value={note} onChangeText={setNote} placeholder="Note (optional)" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
-        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
       </View>
       <View style={{ marginBottom: 12 }}><CalendarPicker value={date} onChange={setDate} label="Date" /></View>
       <Text style={[styles.previewText2, { color: theme.textMuted }]}>Transfers don't count as income or spending -- your total money stays the same, it just moves between accounts.</Text>
@@ -735,21 +654,33 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   roundBtn: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   heroCard: { borderRadius: 20, padding: 18, marginBottom: 16 },
+  heroLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   heroLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
   heroValue: { fontSize: 32, fontWeight: "800", fontFamily: "monospace", marginTop: 4 },
   heroSub: { fontSize: 10, color: "#ffffff99", marginTop: 2 },
   heroDivider: { height: 1, backgroundColor: "#ffffff22", marginVertical: 12 },
-  accountRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  accountChip: { flex: 1, backgroundColor: "#ffffff14", borderRadius: 12, padding: 10 },
+  // Horizontal-scrolling row rather than flex:1 chips -- with flex:1 every
+  // chip shrank to fit whenever more accounts were added, eventually
+  // squeezing labels/balances down to illegible slivers. A fixed minimum
+  // width per chip plus horizontal scroll keeps every chip readable no
+  // matter how many accounts exist.
+  accountRow: { flexDirection: "row", gap: 8, marginBottom: 12, paddingRight: 4 },
+  accountChip: { minWidth: 108, backgroundColor: "#ffffff14", borderRadius: 12, padding: 10 },
   accountDot: { width: 6, height: 6, borderRadius: 3, marginBottom: 4 },
+  accountEditBlock: { borderBottomWidth: 1, borderBottomColor: "#00000010", paddingBottom: 8, marginBottom: 8 },
   accountEditRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
   accountDotSmall: { width: 8, height: 8, borderRadius: 4 },
   accountEditInput: { flex: 1, fontSize: 13, fontWeight: "600" },
   accountEditBalance: { fontSize: 11, fontFamily: "monospace" },
   accountHint: { fontSize: 9, lineHeight: 13, marginTop: 6 },
+  savAccRateRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 18 },
+  savAccRateLabel: { fontSize: 10.5, fontWeight: "600" },
+  savAccRateInput: { width: 56, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, fontSize: 12, fontWeight: "700", textAlign: "center" },
+  savAccEarnedRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: 18, marginTop: 4 },
+  savAccEarnedText: { fontSize: 10.5, fontWeight: "600" },
   accountLabel: { fontSize: 9, color: "#ffffffaa", fontWeight: "600" },
   accountBalance: { fontSize: 13, color: "#fff", fontWeight: "700", fontFamily: "monospace", marginTop: 2 },
-  accountPickRow: { flexDirection: "row", gap: 6, marginBottom: 8 },
+  accountPickRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
   accountPickChip: { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: "center" },
   accountPickText: { fontSize: 10, fontWeight: "700" },
   addMoneyBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "#fff", borderRadius: 12, paddingVertical: 10 },
@@ -776,18 +707,11 @@ const styles = StyleSheet.create({
   goalFooterText: { fontSize: 9, fontFamily: "monospace" },
   goalRecommend: { fontSize: 10, fontWeight: "700", marginTop: 6 },
   autoBalanceRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4 },
-  smallLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase" },
-  savingsHint: { fontSize: 10, lineHeight: 14, marginBottom: 8 },
   formTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },
   previewText2: { fontSize: 11, marginBottom: 8 },
   warnRow2: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginBottom: 10 },
   warnText2: { fontSize: 10, color: ACCENT.ember, flex: 1, lineHeight: 14 },
   miniLabel: { fontSize: 9, fontWeight: "700", textTransform: "uppercase", marginBottom: 4 },
-  savingsTotal: { fontSize: 20, fontWeight: "700", fontFamily: "monospace" },
-  smallRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 6 },
-  smallRowTitle: { fontSize: 11, fontWeight: "600" },
-  smallRowDate: { fontSize: 9, fontFamily: "monospace" },
-  smallRowAmount: { fontSize: 11, fontWeight: "600", fontFamily: "monospace" },
   hintText: { fontSize: 11, marginBottom: 8 },
   formCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12 },
   input: { fontSize: 13, fontWeight: "500", marginBottom: 12, paddingVertical: 4 },

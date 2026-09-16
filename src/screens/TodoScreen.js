@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, LayoutAnimation, UIManager } from "react-native";
 import {
   CheckCircle2, Circle, Plus, X, Trash2, List, CalendarDays, ListTodo,
@@ -18,7 +18,7 @@ import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 import EditSheet from "../components/EditSheet";
 import { DURATION, SPRING, useCardPressAnimation } from "../animation";
-import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming } from "react-native-reanimated";
+import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming, withRepeat, interpolateColor } from "react-native-reanimated";
 
 // A task's work status now doubles as the checkbox's progression: tapping
 // the circle steps a task forward through these stages in order, and the
@@ -41,6 +41,66 @@ const STATUS_ORDER = STATUS_OPTIONS.map((s) => s.id);
 function statusColor(status) {
   const opt = STATUS_OPTIONS.find((s) => s.id === status) || STATUS_OPTIONS[0];
   return opt.color;
+}
+
+// Due-date urgency, as a single tier per task:
+//  - "red": overdue, due today, or due tomorrow -- glowing + blinking red border
+//  - "yellow": due in 2 days ("less than 3 days out") -- glowing + blinking gold border
+//  - "green": finished, or in the last active stage ("To pass") -- solid green border, no glow/blink
+//  - "none": everything else (far off, or no due date) -- no border at all
+// Red/yellow take priority over green when both would apply (an
+// almost-due task stays urgent-colored even if it's also marked "To
+// pass"), since the due date is the more actionable signal.
+function urgencyTier(t, displayCompleted, dleft) {
+  if (!displayCompleted && dleft !== null && dleft <= 1) return "red";
+  if (!displayCompleted && dleft !== null && dleft === 2) return "yellow";
+  if (displayCompleted || t.status === "to_pass") return "green";
+  return "none";
+}
+
+// Drives the border color/width and a soft shadow "glow" for the
+// red/yellow urgency tiers, pulsing back and forth forever while that
+// tier is active. Reanimated animates plain color strings directly (no
+// interpolateColor needed for a two-color loop), so this just toggles a
+// shared value between 0 and 1 and derives everything else from it.
+function useUrgencyStyle(tier) {
+  const pulse = useSharedValue(0);
+  useEffect(() => {
+    if (tier === "red" || tier === "yellow") {
+      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 650 }), withTiming(0, { duration: 650 })), -1, true);
+    } else {
+      pulse.value = withTiming(0, { duration: 200 });
+    }
+  }, [tier]);
+
+  return useAnimatedStyle(() => {
+    if (tier === "red") {
+      return {
+        borderWidth: 1.5,
+        borderColor: interpolateColor(pulse.value, [0, 1], [ACCENT.ember + "66", ACCENT.ember]),
+        shadowColor: ACCENT.ember,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.15 + pulse.value * 0.35,
+        shadowRadius: 5 + pulse.value * 4,
+        elevation: 2,
+      };
+    }
+    if (tier === "yellow") {
+      return {
+        borderWidth: 1.5,
+        borderColor: interpolateColor(pulse.value, [0, 1], [ACCENT.gold + "55", ACCENT.gold]),
+        shadowColor: ACCENT.gold,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.1 + pulse.value * 0.25,
+        shadowRadius: 3 + pulse.value * 3,
+        elevation: 1,
+      };
+    }
+    if (tier === "green") {
+      return { borderWidth: 1.5, borderColor: ACCENT.leaf };
+    }
+    return { borderWidth: 0, borderColor: "transparent" };
+  });
 }
 function statusProgress(t) {
   if (t.completed) return 1;
@@ -396,10 +456,8 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
   const cat = CATEGORIES.find((c) => c.id === t.category);
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
   const { displayCompleted, popStyle, handleToggle } = useTaskCompletion(t, onToggle);
-  const isOverdue = !displayCompleted && dleft !== null && dleft < 0;
-  const dueTodayOrOverdue = !displayCompleted && dleft !== null && dleft <= 0;
-  const isUrgentSchool = t.category === "school" && !displayCompleted && dleft !== null && dleft <= 2 && dleft >= 0;
-  const flagged = isOverdue || isUrgentSchool;
+  const urgency = urgencyTier(t, displayCompleted, dleft);
+  const urgencyStyle = useUrgencyStyle(urgency);
   const subtasks = t.subtasks || [];
   const subDone = subtasks.filter((s) => s.done).length;
   const effectiveStatusColor = statusColor(t.status);
@@ -422,16 +480,8 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
         layout={ReanimatedLayout.duration(DURATION)}
         style={[
           styles.detailedRow,
-          {
-            backgroundColor: isOverdue ? ACCENT.ember + "14" : theme.card,
-            // A border only appears when it's actually signaling something
-            // (flagged/overdue) -- otherwise the card relies on its own
-            // background tone against the screen bg to read as a card,
-            // which is quieter than outlining every single row.
-            borderColor: flagged ? ACCENT.ember : "transparent",
-            borderWidth: flagged ? 1.5 : 0,
-            opacity: displayCompleted ? 0.6 : 1,
-          },
+          { backgroundColor: theme.card, opacity: displayCompleted ? 0.6 : 1 },
+          urgencyStyle,
           pressStyle,
         ]}
       >
