@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Receipt, Sparkles, Eye, EyeOff } from "lucide-react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsAccountBalance, addAccount as pushAccount, isPositiveAmount, nextRecurringDate, accountInterestEarned } from "../utils";
 import Chip from "../components/Chip";
@@ -33,6 +32,7 @@ function BudgetScreen({
   recurringIncome, setRecurringIncome, spendingLimits, setSpendingLimits,
   dailyBudgetSettings, setDailyBudgetSettings, setDailyBudgetLog, dailyBudgetLog,
   subTab, setSubTab, showDailyBudget, setShowDailyBudget,
+  budgetHidden, onToggleBudgetHidden,
 }) {
   const { theme } = useTheme();
   const [showBillForm, setShowBillForm] = useState(false);
@@ -45,22 +45,6 @@ function BudgetScreen({
   const [addAmount, setAddAmount] = useState("");
   const [addAccount, setAddAccount] = useState(accounts[0]?.id);
   const [addCategory, setAddCategory] = useState("other");
-  // Whether the big "Current budget" figure (and its "remaining after X
-  // spent" line) is masked out -- e.g. showing the screen around other
-  // people. Persisted on its own in AsyncStorage rather than folded into
-  // the main app-state schema, since it's a pure display preference with
-  // nothing to migrate or sync.
-  const [budgetHidden, setBudgetHidden] = useState(false);
-  useEffect(() => {
-    AsyncStorage.getItem("layp:budgetHidden").then((v) => { if (v === "1") setBudgetHidden(true); }).catch(() => {});
-  }, []);
-  function toggleBudgetHidden() {
-    setBudgetHidden((prev) => {
-      const next = !prev;
-      AsyncStorage.setItem("layp:budgetHidden", next ? "1" : "0").catch(() => {});
-      return next;
-    });
-  }
   const maskedPeso = "\u20B1*****";
 
   function addMoney() {
@@ -306,7 +290,7 @@ function BudgetScreen({
       <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
         <View style={styles.heroLabelRow}>
           <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>Current budget</Text>
-          <Pressable onPress={toggleBudgetHidden} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={budgetHidden ? "Show budget amount" : "Hide budget amount"}>
+          <Pressable onPress={onToggleBudgetHidden} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={budgetHidden ? "Show budget amount" : "Hide budget amount"}>
             {budgetHidden ? <EyeOff size={15} color={ACCENT.gold} /> : <Eye size={15} color={ACCENT.gold} />}
           </Pressable>
         </View>

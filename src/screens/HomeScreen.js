@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
-import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet } from "lucide-react-native";
+import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet, Eye, EyeOff } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
 import { totalBalance, netWorth as selectNetWorth, safeToSpend as selectSafeToSpend, monthlySummary, billCoverageByAccount } from "../selectors";
@@ -8,7 +8,7 @@ import { getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday,
 import AnimatedNumber from "../components/AnimatedNumber";
 import EmptyState from "../components/EmptyState";
 
-function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos }) {
+function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden }) {
   const { theme } = useTheme();
   const ctx = useMemo(
     () => ({ moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }),
@@ -54,6 +54,7 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
     .filter((g) => g.progress.percent < 100)
     .sort((a, b) => (a.targetDate || "9999").localeCompare(b.targetDate || "9999"));
   const featuredGoal = activeGoals[0];
+  const maskedPeso = "\u20B1*****";
 
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
@@ -61,14 +62,21 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
 
       {/* Total money, animated */}
       <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
-        <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>Total money</Text>
-        <AnimatedNumber value={totalMoney} formatter={peso} style={styles.heroValue} />
+        <View style={styles.heroLabelRow}>
+          <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>Total money</Text>
+          {onToggleBudgetHidden && (
+            <Pressable onPress={onToggleBudgetHidden} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel={budgetHidden ? "Show budget amount" : "Hide budget amount"}>
+              {budgetHidden ? <EyeOff size={15} color={ACCENT.gold} /> : <Eye size={15} color={ACCENT.gold} />}
+            </Pressable>
+          )}
+        </View>
+        {budgetHidden ? <Text style={styles.heroValue}>{maskedPeso}</Text> : <AnimatedNumber value={totalMoney} formatter={peso} style={styles.heroValue} />}
         <View style={styles.accountBreakdown}>
           {accounts.map((a) => (
             <View key={a.id} style={styles.accountRow}>
               <View style={[styles.dot, { backgroundColor: a.color }]} />
               <Text style={styles.accountLabel}>{a.label}</Text>
-              <AnimatedNumber value={computeAccountBalance(a.id, ctx)} formatter={peso} style={styles.accountValue} />
+              {budgetHidden ? <Text style={styles.accountValue}>{maskedPeso}</Text> : <AnimatedNumber value={computeAccountBalance(a.id, ctx)} formatter={peso} style={styles.accountValue} />}
             </View>
           ))}
         </View>
@@ -83,9 +91,9 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
           <Wallet size={12} color="#ffffffcc" />
           <Text style={styles.safeLabel}>SAFE TO SPEND</Text>
         </View>
-        <AnimatedNumber value={safeToSpend} formatter={peso} style={styles.safeValue} />
+        {budgetHidden ? <Text style={styles.safeValue}>{maskedPeso}</Text> : <AnimatedNumber value={safeToSpend} formatter={peso} style={styles.safeValue} />}
         <Text style={styles.safeSub}>
-          {daysLeftInMonth > 0 ? `\u2248 ${peso(perDay)}/day for the rest of the month` : "end of month"}
+          {budgetHidden ? "hidden" : daysLeftInMonth > 0 ? `\u2248 ${peso(perDay)}/day for the rest of the month` : "end of month"}
         </Text>
         <Text style={styles.estimateNote}>Estimate only, not financial advice -- total money minus unpaid bills.</Text>
       </View>
@@ -278,6 +286,7 @@ function MonthRow({ icon: Icon, color, label, value, theme, last }) {
 const styles = StyleSheet.create({
   h1: { fontSize: 20, fontWeight: "700", marginBottom: 12 },
   heroCard: { borderRadius: 20, padding: 18, marginBottom: 16 },
+  heroLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   heroLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
   heroValue: { fontSize: 32, fontWeight: "800", color: "#fff", fontFamily: "monospace", marginTop: 4 },
   accountBreakdown: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#ffffff22", gap: 8 },

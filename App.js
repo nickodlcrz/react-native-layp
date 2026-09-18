@@ -12,6 +12,7 @@ import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationC
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_SAVINGS_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import Reanimated, { FadeOut } from "react-native-reanimated";
 import { DURATION } from "./src/animation";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { loadState, saveState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
 import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest, accrueAccountInterest } from "./src/utils";
@@ -143,6 +144,26 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   const [goals, setGoals] = useState([]); // savings goals: name, target amount, target date
   const [loans, setLoans] = useState([]); // lent / borrowed tracker
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
+  // Whether budget/money figures (Home's Total money + Safe to spend,
+  // Budget Overview's Current budget) are masked out -- e.g. showing the
+  // screen around other people. Lifted up here rather than kept local to
+  // each screen so toggling it in one tab is instantly reflected in the
+  // other (both HomeScreen and BudgetScreen stay mounted at once in the
+  // tab navigator, so two independent local states would drift out of
+  // sync with each other). Persisted on its own in AsyncStorage rather
+  // than folded into the main app-state schema, since it's a pure
+  // display preference with nothing to migrate or sync.
+  const [budgetHidden, setBudgetHiddenState] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem("layp:budgetHidden").then((v) => { if (v === "1") setBudgetHiddenState(true); }).catch(() => {});
+  }, []);
+  function toggleBudgetHidden() {
+    setBudgetHiddenState((prev) => {
+      const next = !prev;
+      AsyncStorage.setItem("layp:budgetHidden", next ? "1" : "0").catch(() => {});
+      return next;
+    });
+  }
   const [savingsAccounts, setSavingsAccounts] = useState(DEFAULT_SAVINGS_ACCOUNTS.map((a) => ({ ...a })));
   const [interestLog, setInterestLog] = useState([]); // one entry per day/account interest was actually credited
   const [transfers, setTransfers] = useState([]); // money moved between accounts -- never counts as income/expense
@@ -728,6 +749,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries} cancelledClasses={cancelledClasses}
             onViewSchedule={goToSchool}
             onViewTodos={goToTodo}
+            budgetHidden={budgetHidden} onToggleBudgetHidden={toggleBudgetHidden}
           />
         );
       case "todo":
@@ -774,6 +796,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             dailyBudgetLog={dailyBudgetLog}
             subTab={budgetSubTab} setSubTab={setBudgetSubTab}
             showDailyBudget={showDailyBudget} setShowDailyBudget={setShowDailyBudget}
+            budgetHidden={budgetHidden} onToggleBudgetHidden={toggleBudgetHidden}
           />
         );
       case "summary":

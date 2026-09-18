@@ -37,7 +37,7 @@ describe("validateBackup", () => {
       bills: [{ id: "b1", name: "Rent", amount: 1500, paid: false }],
       expenses: [{ id: "e1", name: "Coffee", amount: 60, date: "2026-09-01" }],
       moneyLog: [{ id: "m1", amount: 5000 }],
-      loans: [{ id: "l1", amount: 300 }],
+      loans: [{ id: "l1", principal: 300, type: "lent" }],
       accounts: [{ id: "a1", label: "Cash" }],
       splits: [{ id: "s1", label: "Needs", percent: 50 }],
       transfers: [{ id: "t1", amount: 100, fromAccount: "a1", toAccount: "a2" }],
@@ -64,6 +64,19 @@ describe("validateBackup", () => {
     const backup = validBackup({ transfers: [{ id: "t1", amount: 100 }] });
     const result = validateBackup(JSON.stringify(backup));
     expect(result.ok).toBe(false);
+  });
+
+  test("rejects a loan missing its principal", () => {
+    const backup = validBackup({ loans: [{ id: "l1", type: "lent" }] });
+    const result = validateBackup(JSON.stringify(backup));
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/loans\.0\.principal/);
+  });
+
+  test("accepts a loan with a numeric principal (not `amount`)", () => {
+    const backup = validBackup({ loans: [{ id: "l1", principal: 500, type: "borrowed" }] });
+    const result = validateBackup(JSON.stringify(backup));
+    expect(result.ok).toBe(true);
   });
 
   test("rejects a backup where a required array is missing entirely", () => {

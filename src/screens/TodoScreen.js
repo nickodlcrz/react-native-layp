@@ -18,7 +18,7 @@ import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 import EditSheet from "../components/EditSheet";
 import { DURATION, SPRING, useCardPressAnimation } from "../animation";
-import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming, withRepeat, interpolateColor } from "react-native-reanimated";
+import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming, withRepeat } from "react-native-reanimated";
 
 // A task's work status now doubles as the checkbox's progression: tapping
 // the circle steps a task forward through these stages in order, and the
@@ -46,28 +46,28 @@ function statusColor(status) {
 // Due-date urgency, as a single tier per task:
 //  - "red": overdue, due today, or due tomorrow -- glowing + blinking red border
 //  - "yellow": due in 2 days ("less than 3 days out") -- glowing + blinking gold border
-//  - "green": finished, or in the last active stage ("To pass") -- solid green border, no glow/blink
+//  - "green": finished, or status "To pass" -- solid green border, no glow/blink
 //  - "none": everything else (far off, or no due date) -- no border at all
-// Red/yellow take priority over green when both would apply (an
-// almost-due task stays urgent-colored even if it's also marked "To
-// pass"), since the due date is the more actionable signal.
+// "To pass" now wins over due-date urgency (checked before red/yellow) --
+// once a task has reached that stage the blinking stops and it just sits
+// green, even if it's also overdue, since "To pass" itself is the
+// more current signal about where the task actually stands.
 function urgencyTier(t, displayCompleted, dleft) {
-  if (!displayCompleted && dleft !== null && dleft <= 1) return "red";
-  if (!displayCompleted && dleft !== null && dleft === 2) return "yellow";
   if (displayCompleted || t.status === "to_pass") return "green";
+  if (dleft !== null && dleft <= 1) return "red";
+  if (dleft !== null && dleft === 2) return "yellow";
   return "none";
 }
 
-// Drives the border color/width and a soft shadow "glow" for the
-// red/yellow urgency tiers, pulsing back and forth forever while that
-// tier is active. Reanimated animates plain color strings directly (no
-// interpolateColor needed for a two-color loop), so this just toggles a
-// shared value between 0 and 1 and derives everything else from it.
+// Drives a soft, blinking drop-shadow "glow" for the red/yellow urgency
+// tiers -- border width and color stay put; only the shadow pulses, so it
+// reads as a glow breathing around the card rather than the card's edge
+// visibly thickening.
 function useUrgencyStyle(tier) {
   const pulse = useSharedValue(0);
   useEffect(() => {
     if (tier === "red" || tier === "yellow") {
-      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 650 }), withTiming(0, { duration: 650 })), -1, true);
+      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 900 }), withTiming(0, { duration: 900 })), -1, true);
     } else {
       pulse.value = withTiming(0, { duration: 200 });
     }
@@ -77,23 +77,29 @@ function useUrgencyStyle(tier) {
     if (tier === "red") {
       return {
         borderWidth: 1.5,
-        borderColor: interpolateColor(pulse.value, [0, 1], [ACCENT.ember + "66", ACCENT.ember]),
+        borderColor: ACCENT.ember,
         shadowColor: ACCENT.ember,
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.15 + pulse.value * 0.35,
-        shadowRadius: 5 + pulse.value * 4,
-        elevation: 2,
+        // Android ignores shadowColor on elevation, so elevation alone
+        // won't carry the red glow there -- it still gets a subtle,
+        // pulsing lift, while the colored glow itself is iOS-only. A
+        // bigger radius (rather than higher opacity alone) is what keeps
+        // a stronger glow reading as soft instead of harsh -- it spreads
+        // the light out further rather than making it more solid.
+        shadowOpacity: 0.16 + pulse.value * 0.34,
+        shadowRadius: 8 + pulse.value * 10,
+        elevation: 2 + pulse.value * 2.5,
       };
     }
     if (tier === "yellow") {
       return {
         borderWidth: 1.5,
-        borderColor: interpolateColor(pulse.value, [0, 1], [ACCENT.gold + "55", ACCENT.gold]),
+        borderColor: ACCENT.gold,
         shadowColor: ACCENT.gold,
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.1 + pulse.value * 0.25,
-        shadowRadius: 3 + pulse.value * 3,
-        elevation: 1,
+        shadowOpacity: 0.13 + pulse.value * 0.27,
+        shadowRadius: 6 + pulse.value * 8,
+        elevation: 1.5 + pulse.value * 2,
       };
     }
     if (tier === "green") {

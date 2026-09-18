@@ -58,7 +58,11 @@ const goalSchema = z.object({
 
 const loanSchema = z.object({
   id,
-  amount: z.number({ invalid_type_error: "loan amount must be a number" }),
+  // Loans store their money field as `principal`, not `amount` -- see
+  // loanInterest/loanBalance/etc. in utils.ts. This used to check for
+  // `amount` here, which meant every real backup (loans never had that
+  // field) failed validation with a false "loans.0.amount: Required".
+  principal: z.number({ invalid_type_error: "loan principal must be a number" }),
 }).passthrough();
 
 const splitSchema = z.object({
