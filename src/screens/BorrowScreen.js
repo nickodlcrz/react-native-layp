@@ -11,8 +11,8 @@ import { validate, loanSchema } from "../validation";
 import { rescheduleLoanNotification, cancelTodoNotifications } from "../notifications";
 import { confirmDelete } from "../components/ConfirmModal";
 import EditSheet from "../components/EditSheet";
-import { useCardPressAnimation } from "../animation";
-import Reanimated from "react-native-reanimated";
+import { useCardPressAnimation, DURATION } from "../animation";
+import Reanimated, { FadeOut, Layout as ReanimatedLayout } from "react-native-reanimated";
 
 export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, weeklySummaries, savingsLog = [], accounts, transfers = [] }) {
   const { theme } = useTheme();
@@ -233,7 +233,7 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
   const { style: pressStyle, pressIn, pressOut, handleLongPress } = useCardPressAnimation(() => !l.settled && startEdit(l));
 
   const content = (
-    <View style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 0, opacity: l.settled ? 0.6 : 1 }]}>
+    <Reanimated.View layout={ReanimatedLayout.duration(DURATION)} exiting={FadeOut.duration(DURATION * 0.75)} style={[styles.row, { backgroundColor: theme.card, borderColor, borderWidth: overdue || dueSoon ? 1.5 : 0, opacity: l.settled ? 0.6 : 1 }]}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Pressable onPress={() => toggleSettled(l)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={l.settled ? "Mark unsettled" : "Mark settled"}>
           {l.settled ? <CheckCircle2 size={20} color={ACCENT.leaf} /> : <Circle size={20} color={theme.textMuted} />}
@@ -312,7 +312,7 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
           {l.payments.length} payment{l.payments.length === 1 ? "" : "s"} logged - last {peso(l.payments[l.payments.length - 1].amount)} on {fmtDay(l.payments[l.payments.length - 1].date)}
         </Text>
       )}
-    </View>
+    </Reanimated.View>
   );
 
   if (l.settled) return content;

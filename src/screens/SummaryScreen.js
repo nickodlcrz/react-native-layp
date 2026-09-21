@@ -11,6 +11,7 @@ import { AUTO_LOCK_OPTIONS } from "../autoLockPreference";
 import Chip from "../components/Chip";
 import { confirmAction } from "../components/ConfirmModal";
 import { validateBackup } from "../backupSchema";
+import { markBackupExported } from "../backupReminder";
 
 function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore, autoLockMinutes, onChangeAutoLockMinutes }) {
   const { theme } = useTheme();
@@ -95,6 +96,7 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
 
   async function copyBackup() {
     await Clipboard.setStringAsync(JSON.stringify(backup));
+    await markBackupExported();
     Alert.alert("Backup copied", "Save the copied text somewhere private. It contains your financial data.");
   }
 
@@ -106,6 +108,7 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
       const filename = `layp-backup-${todayISO()}.json`;
       const uri = FileSystem.documentDirectory + filename;
       await FileSystem.writeAsStringAsync(uri, JSON.stringify(backup), { encoding: FileSystem.EncodingType.UTF8 });
+      await markBackupExported();
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(uri, { mimeType: "application/json", dialogTitle: "Save your LAYP backup" });

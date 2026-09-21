@@ -5,7 +5,32 @@ import * as LocalAuthentication from "expo-local-authentication";
 // A normal single-vault PIN lock. Stored in SecureStore (hardware-backed
 // encryption on most devices), never in plain AsyncStorage.
 const HASH_KEY = "layp-pin-hash";
-const SALT = "layp-v2-";
+// Was a single hardcoded constant here (same string on every install of
+// the app) -- functionally unsalted, since a fixed, publicly-knowable
+// salt gives a rainbow-table attacker nothing to work around. A 4-digit
+// PIN only has 10,000 possible values, so if the stored hash were ever
+// exposed (a backup/restore bug leaking the SecureStore blob, say),
+// precomputing all 10,000 hashes under this one known constant would
+// crack it instantly. Now each install generates and stores its own
+// random salt (see getOrCreateSalt below), so the same PIN hashes
+// differently on every device and a leaked hash from one install is
+// useless against any other.
+const SALT_KEY = "layp-pin-salt";
+// Kept only so a PIN set before this device had its own random salt can
+// still be verified (and quietly re-hashed under the new salt) instead
+// of locking that person out of their own app the moment this update
+// lands -- see the fallback in verifyPin below.
+const LEGACY_SALT = "layp-v2-";
+
+async function getOrCreateSalt() {
+  let salt = await SecureStore.getItemAsync(SALT_KEY);
+  if (!salt) {
+    const bytes = await Crypto.getRandomBytesAsync(16);
+    salt = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+    await SecureStore.setItemAsync(SALT_KEY, salt);
+  }
+  return salt;
+}
 
 export const PIN_LENGTH = 4;
 
@@ -52,8 +77,8 @@ async function clearAttempts() {
   await SecureStore.deleteItemAsync(LOCKOUT_UNTIL_KEY);
 }
 
-async function hash(pin) {
-  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, SALT + pin);
+async function hash(pin, salt) {
+  return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, salt + pin);
 }
 
 export async function hasPinSetup() {
@@ -62,7 +87,8 @@ export async function hasPinSetup() {
 }
 
 export async function setPin(pin) {
-  const h = await hash(pin);
+  const salt = await getOrCreateSalt();
+  const h = await hash(pin, salt);
   await SecureStore.setItemAsync(HASH_KEY, h);
   await clearAttempts();
 }
@@ -76,8 +102,24 @@ export async function verifyPin(pin) {
 
   const stored = await SecureStore.getItemAsync(HASH_KEY);
   if (!stored) return { ok: false, lockedOutMs: 0, attemptsRemaining: MAX_FREE_ATTEMPTS };
-  const h = await hash(pin);
-  const ok = h === stored;
+
+  const salt = await getOrCreateSalt();
+  const h = await hash(pin, salt);
+  let ok = h === stored;
+
+  // A PIN set before this device had its own random salt was hashed
+  // under the old shared constant -- if the per-install-salt hash
+  // doesn't match, check that one too. A match there means the PIN
+  // really is correct, just hashed the old way, so quietly re-hash and
+  // store it under the real salt rather than reporting a wrong PIN.
+  if (!ok) {
+    const legacyHash = await hash(pin, LEGACY_SALT);
+    if (legacyHash === stored) {
+      ok = true;
+      await SecureStore.setItemAsync(HASH_KEY, h);
+    }
+  }
+
   if (ok) {
     await clearAttempts();
     return { ok: true, lockedOutMs: 0, attemptsRemaining: MAX_FREE_ATTEMPTS };
@@ -89,6 +131,7 @@ export async function verifyPin(pin) {
 
 export async function clearPin() {
   await SecureStore.deleteItemAsync(HASH_KEY);
+  await SecureStore.deleteItemAsync(SALT_KEY);
   await clearAttempts();
 }
 

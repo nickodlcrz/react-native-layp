@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Image, ActivityIndicator, useColorScheme } from "react-native";
+import Reanimated, { useSharedValue, useAnimatedStyle, withSequence, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Fingerprint, Delete, AlertTriangle, Sun, Moon } from "lucide-react-native";
@@ -31,8 +32,15 @@ export default function LockScreen({ onUnlock }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [bioAvailable, setBioAvailable] = useState(false);
-  const [shake, setShake] = useState(false);
   const [lockedOutMs, setLockedOutMs] = useState(0);
+  // Real shake-on-wrong / pulse-on-correct feedback, replacing what used
+  // to be a `shake` boolean wired to a no-op style (transform translateX
+  // fixed at 0 -- it never actually moved).
+  const dotsShakeX = useSharedValue(0);
+  const dotsScale = useSharedValue(1);
+  const dotsAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: dotsShakeX.value }, { scale: dotsScale.value }],
+  }));
 
   useEffect(() => {
     (async () => {
@@ -118,7 +126,7 @@ export default function LockScreen({ onUnlock }) {
     setBusy(true);
     await setPin(entered);
     setBusy(false);
-    onUnlock();
+    triggerCorrectPulse(onUnlock);
   }
 
   async function handleUnlockDigitsComplete(entered) {
@@ -126,7 +134,7 @@ export default function LockScreen({ onUnlock }) {
     const result = await verifyPin(entered);
     setBusy(false);
     if (result.ok) {
-      onUnlock();
+      triggerCorrectPulse(onUnlock);
     } else if (result.lockedOutMs > 0) {
       setLockedOutMs(result.lockedOutMs);
       setError(`Too many attempts. Try again in ${fmtLockout(result.lockedOutMs)}.`);
@@ -142,8 +150,19 @@ export default function LockScreen({ onUnlock }) {
   }
 
   function triggerShake() {
-    setShake(true);
-    setTimeout(() => setShake(false), 400);
+    dotsShakeX.value = withSequence(
+      withTiming(-10, { duration: 55 }), withTiming(10, { duration: 55 }),
+      withTiming(-8, { duration: 55 }), withTiming(8, { duration: 55 }),
+      withTiming(0, { duration: 55 })
+    );
+  }
+
+  // Brief scale-pulse on a correct PIN before actually unlocking, so the
+  // "yes, that was right" feedback is visible instead of the screen just
+  // vanishing the instant the last digit is typed.
+  function triggerCorrectPulse(after) {
+    dotsScale.value = withSequence(withTiming(1.18, { duration: 120 }), withTiming(1, { duration: 130 }));
+    setTimeout(after, 220);
   }
 
   if (checking) {
@@ -174,11 +193,11 @@ export default function LockScreen({ onUnlock }) {
           <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
           <Text style={[styles.subtitle, { color: theme.textMuted }]}>{subtitle}</Text>
 
-          <View style={[styles.dotsRow, shake && styles.shake]}>
+          <Reanimated.View style={[styles.dotsRow, dotsAnimatedStyle]}>
             {Array.from({ length: PIN_LENGTH }).map((_, i) => (
               <View key={i} style={[styles.dot, { borderColor: theme.text, backgroundColor: i < pin.length ? theme.text : "transparent" }]} />
             ))}
-          </View>
+          </Reanimated.View>
 
           {error ? (
             <View style={styles.errorRow}>
@@ -241,7 +260,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: "800", marginBottom: 4 },
   subtitle: { fontSize: 12, marginBottom: 24 },
   dotsRow: { flexDirection: "row", gap: 14 },
-  shake: { transform: [{ translateX: 0 }] },
   dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1.5 },
   errorRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14 },
   errorText: { fontSize: 11 },

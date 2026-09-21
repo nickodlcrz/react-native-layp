@@ -93,6 +93,25 @@ export const DEFAULT_SAVINGS_ACCOUNTS = [
   { id: "maribank", name: "Maribank", color: ACCENT.sky, interestRate: 0 },
 ];
 
+// One-tap starting points for the two rate structures people actually
+// asked for by name, editable afterward like any other rate -- these are
+// promo rates as of when this was written and WILL drift, so applying a
+// preset is a starting point, not a promise; the account's own rate
+// field is still the source of truth and can be typed over any time.
+// GoTyme's posted savings rate is flat regardless of balance. Maribank's
+// is tiered and applied per bracket (the first ₱1M earns the lower rate,
+// only the portion above ₱1M earns the higher one) -- not "the whole
+// balance jumps to the higher rate once you cross ₱1M". The top
+// bracket's `upTo` uses a large finite number rather than Infinity --
+// interestTiers gets saved to AsyncStorage as JSON, and JSON.stringify
+// silently turns Infinity into null, which would corrupt the tier on
+// the very next app reload.
+const UNBOUNDED = 999999999999;
+export const INTEREST_PRESETS = [
+  { id: "gotyme", label: "GoTyme (3.00% flat)", interestRate: 3.0, interestTiers: null },
+  { id: "maribank", label: "Maribank (3.25% / 3.75% > \u20B11M)", interestRate: 3.25, interestTiers: [{ upTo: 1000000, rate: 3.25 }, { upTo: UNBOUNDED, rate: 3.75 }] },
+];
+
 export const CATEGORIES = [
   { id: "school", label: "School", color: ACCENT.sky },
   { id: "errands", label: "Errands", color: ACCENT.leaf },

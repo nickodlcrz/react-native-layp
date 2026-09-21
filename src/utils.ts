@@ -255,6 +255,39 @@ function daysBetween(fromISO: string, toISO: string): number {
   return Math.round((to.getTime() - from.getTime()) / 86400000);
 }
 
+function addDaysISO(fromISO: string, n: number): string {
+  const d = new Date(fromISO + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return toLocalISO(d);
+}
+
+// A rate can be a flat number (% per year) or, for a tiered account like
+// Maribank's real promo structure, an array of brackets applied
+// marginally -- the portion of the balance up to each bracket's `upTo`
+// earns that bracket's rate, same as how the tiers actually work, not
+// "the whole balance gets bumped to the top rate once you cross it".
+// `upTo` on the last bracket should be Infinity. Returns the interest
+// earned for ONE day on the given balance.
+export function dailyInterestForBalance(balance: number, rate?: number | { upTo: number; rate: number }[]): number {
+  if (balance <= 0) return 0;
+  if (Array.isArray(rate)) {
+    let remaining = balance;
+    let prevCap = 0;
+    let total = 0;
+    for (const tier of rate) {
+      if (remaining <= 0) break;
+      const portion = Math.max(0, Math.min(remaining, tier.upTo - prevCap));
+      total += portion * (tier.rate / 100 / 365);
+      remaining -= portion;
+      prevCap = tier.upTo;
+    }
+    return total;
+  }
+  const r = Number(rate) || 0;
+  if (r <= 0) return 0;
+  return balance * (r / 100 / 365);
+}
+
 // This savings account's own balance -- deposits/withdrawals tagged to it,
 // plus any interest it's actually been credited so far.
 export function savingsAccountBalance(savingsAccountId: string, savingsLog: SavingsLogEntry[], interestLog: any[] = []): number {
@@ -278,33 +311,55 @@ export function savingsAccountInterestEarned(savingsAccountId: string, interestL
 
 // Works out how many days' worth of daily interest a savings account has
 // missed since it last accrued, and returns ONE lump interestLog entry
-// covering all of them at once (using the account's *current* balance as
-// the base for every one of those days). That's an approximation -- the
-// real balance may have moved day to day if money was added or withdrawn
-// in between -- but a reasonable one for a personal tracker that isn't
-// trying to replicate a bank's own ledger, and it means opening the app
-// after a few days away still credits everything that was missed instead
-// of only "today". Returns null when there's nothing to accrue (no rate
-// set, a zero/negative balance, or it's already been credited today).
+// covering all of them at once. Walks day by day from the last accrual
+// date to today, pricing EACH day off the account's actual balance as of
+// that day (from savingsLog/interestLog up to that point) rather than
+// projecting today's balance backward across the whole gap -- so a
+// deposit or withdrawal partway through a multi-day gap is reflected
+// correctly instead of over/under-crediting every day in the gap by the
+// same (wrong) amount. This is what actually matches how GoTyme/Maribank
+// price daily interest, and the day-by-day math keeps the single
+// lump-sum entry auditable (its `days` field says how many days it
+// covers) without needing a separate ledger line per day. Returns null
+// when there's nothing to accrue (no rate set, a zero/negative balance,
+// or it's already been credited today).
 export function accrueSavingsAccountInterest(
-  account: { id: string; interestRate?: number; lastAccrualDate?: string },
+  account: { id: string; interestRate?: number; interestTiers?: { upTo: number; rate: number }[]; lastAccrualDate?: string },
   savingsLog: SavingsLogEntry[],
   interestLog: any[],
   today: string
 ): { id: string; savingsAccountId: string; amount: number; date: string; days: number } | null {
-  const rate = Number(account.interestRate) || 0;
-  if (rate <= 0) return null;
-  const balance = savingsAccountBalance(account.id, savingsLog, interestLog);
-  if (balance <= 0) return null;
+  const rateSpec = account.interestTiers?.length ? account.interestTiers : Number(account.interestRate) || 0;
+  const hasRate = Array.isArray(rateSpec) ? rateSpec.length > 0 : rateSpec > 0;
+  if (!hasRate) return null;
 
   const priorEntries = interestLog.filter((x) => x.savingsAccountId === account.id);
   const mostRecent = priorEntries.reduce((latest: string | null, x) => (!latest || x.date > latest ? x.date : latest), null);
   const lastDate = mostRecent || account.lastAccrualDate || null;
-  const days = lastDate ? daysBetween(lastDate, today) : 1;
+  if (!lastDate) {
+    // First time this account has ever had a rate -- nothing "missed"
+    // yet to walk back through, so just price one day off today's
+    // balance to get accrual started.
+    const balance = savingsAccountBalance(account.id, savingsLog, interestLog);
+    const amount = Math.round(dailyInterestForBalance(balance, rateSpec) * 100) / 100;
+    if (amount <= 0) return null;
+    return { id: uid(), savingsAccountId: account.id, amount, date: today, days: 1 };
+  }
+
+  const days = daysBetween(lastDate, today);
   if (days <= 0) return null;
 
-  const dailyRate = rate / 100 / 365;
-  const amount = Math.round(balance * dailyRate * days * 100) / 100;
+  let total = 0;
+  for (let i = 1; i <= days; i++) {
+    const asOf = addDaysISO(lastDate, i);
+    const balanceThatDay = savingsAccountBalance(
+      account.id,
+      savingsLog.filter((s) => s.date <= asOf),
+      interestLog.filter((x) => x.date <= asOf)
+    );
+    total += dailyInterestForBalance(balanceThatDay, rateSpec);
+  }
+  const amount = Math.round(total * 100) / 100;
   if (amount <= 0) return null;
 
   return { id: uid(), savingsAccountId: account.id, amount, date: today, days };
@@ -321,34 +376,51 @@ export function accountInterestEarned(accountId: string, moneyLog: MoneyLogEntry
     .reduce((s, m) => s + Number(m.amount), 0);
 }
 
-// Same daily-catch-up mechanic as accrueSavingsAccountInterest, but for a
-// regular budget account (e.g. a Maribank account used for everyday
-// spending that still earns interest on whatever's sitting in it, without
-// the money ever being moved into a separate savings account). Returns a
-// plain moneyLog-shaped entry (category "interest") rather than a
-// separate interestLog entry -- that's what makes it show up in the
-// account's normal income total instead of needing its own display
-// wiring. Returns null when there's nothing to accrue (no rate set, a
-// zero/negative balance, or it's already been credited today).
+// Same day-by-day catch-up mechanic as accrueSavingsAccountInterest, but
+// for a regular budget account (e.g. a Maribank account used for
+// everyday spending that still earns interest on whatever's sitting in
+// it, without the money ever being moved into a separate savings
+// account). Returns a plain moneyLog-shaped entry (category "interest")
+// rather than a separate interestLog entry -- that's what makes it show
+// up in the account's normal income total instead of needing its own
+// display wiring. Returns null when there's nothing to accrue (no rate
+// set, a zero/negative balance, or it's already been credited today).
 export function accrueAccountInterest(
-  account: { id: string; interestRate?: number; lastAccrualDate?: string },
+  account: { id: string; interestRate?: number; interestTiers?: { upTo: number; rate: number }[]; lastAccrualDate?: string },
   ctx: Partial<FinancialContext>,
   moneyLog: MoneyLogEntry[],
   today: string
 ): { id: string; account: string; amount: number; category: string; note: string; date: string; days: number; createdAt: number } | null {
-  const rate = Number(account.interestRate) || 0;
-  if (rate <= 0) return null;
-  const balance = computeAccountBalance(account.id, { ...ctx, moneyLog });
-  if (balance <= 0) return null;
+  const rateSpec = account.interestTiers?.length ? account.interestTiers : Number(account.interestRate) || 0;
+  const hasRate = Array.isArray(rateSpec) ? rateSpec.length > 0 : rateSpec > 0;
+  if (!hasRate) return null;
 
   const priorEntries = moneyLog.filter((m) => m.account === account.id && m.category === "interest");
   const mostRecent = priorEntries.reduce((latest: string | null, m: any) => (!latest || m.date > latest ? m.date : latest), null);
   const lastDate = mostRecent || account.lastAccrualDate || null;
-  const days = lastDate ? daysBetween(lastDate, today) : 1;
+  if (!lastDate) {
+    const balance = computeAccountBalance(account.id, { ...ctx, moneyLog });
+    const amount = Math.round(dailyInterestForBalance(balance, rateSpec) * 100) / 100;
+    if (amount <= 0) return null;
+    return { id: uid(), account: account.id, amount, category: "interest", note: "Interest earned", date: today, days: 1, createdAt: Date.now() };
+  }
+
+  const days = daysBetween(lastDate, today);
   if (days <= 0) return null;
 
-  const dailyRate = rate / 100 / 365;
-  const amount = Math.round(balance * dailyRate * days * 100) / 100;
+  let total = 0;
+  for (let i = 1; i <= days; i++) {
+    const asOf = addDaysISO(lastDate, i);
+    const balanceThatDay = computeAccountBalance(account.id, {
+      ...ctx,
+      moneyLog: moneyLog.filter((m) => m.date <= asOf),
+      expenses: (ctx.expenses || []).filter((e) => e.date <= asOf),
+      transfers: (ctx.transfers || []).filter((t) => t.date <= asOf),
+      savingsLog: (ctx.savingsLog || []).filter((s) => s.date <= asOf),
+    });
+    total += dailyInterestForBalance(balanceThatDay, rateSpec);
+  }
+  const amount = Math.round(total * 100) / 100;
   if (amount <= 0) return null;
 
   return { id: uid(), account: account.id, amount, category: "interest", note: "Interest earned", date: today, days, createdAt: Date.now() };

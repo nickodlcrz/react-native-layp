@@ -1,15 +1,24 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
-import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet, Eye, EyeOff } from "lucide-react-native";
+import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet, Eye, EyeOff, ShieldAlert, X } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
 import { totalBalance, netWorth as selectNetWorth, safeToSpend as selectSafeToSpend, monthlySummary, billCoverageByAccount } from "../selectors";
 import { getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday, minutesRemaining, minutesSinceMidnight } from "../school";
 import AnimatedNumber from "../components/AnimatedNumber";
 import EmptyState from "../components/EmptyState";
+import { shouldShowBackupReminder, dismissBackupReminder } from "../backupReminder";
 
-function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden }) {
+function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden, onGoToBackup }) {
   const { theme } = useTheme();
+  const [showBackupBanner, setShowBackupBanner] = useState(false);
+  useEffect(() => {
+    shouldShowBackupReminder().then(setShowBackupBanner).catch(() => {});
+  }, []);
+  function dismissBanner() {
+    setShowBackupBanner(false);
+    dismissBackupReminder().catch(() => {});
+  }
   const ctx = useMemo(
     () => ({ moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }),
     [moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers]
@@ -59,6 +68,19 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <Text style={[styles.h1, { color: theme.text }]}>Overview</Text>
+
+      {showBackupBanner && (
+        <Pressable onPress={onGoToBackup} style={[styles.backupBanner, { backgroundColor: theme.card, borderColor: ACCENT.gold }]}>
+          <ShieldAlert size={16} color={ACCENT.gold} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.backupBannerTitle, { color: theme.text }]}>It's been a while since your last backup</Text>
+            <Text style={[styles.backupBannerSub, { color: theme.textMuted }]}>Everything here only lives on this device. Tap to export one from Settings.</Text>
+          </View>
+          <Pressable onPress={dismissBanner} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Dismiss backup reminder">
+            <X size={14} color={theme.textMuted} />
+          </Pressable>
+        </Pressable>
+      )}
 
       {/* Total money, animated */}
       <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
@@ -285,6 +307,9 @@ function MonthRow({ icon: Icon, color, label, value, theme, last }) {
 
 const styles = StyleSheet.create({
   h1: { fontSize: 20, fontWeight: "700", marginBottom: 12 },
+  backupBanner: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 14 },
+  backupBannerTitle: { fontSize: 12.5, fontWeight: "700" },
+  backupBannerSub: { fontSize: 10.5, lineHeight: 14, marginTop: 2 },
   heroCard: { borderRadius: 20, padding: 18, marginBottom: 16 },
   heroLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   heroLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase" },

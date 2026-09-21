@@ -13,7 +13,7 @@ import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DE
 import Reanimated, { FadeOut } from "react-native-reanimated";
 import { DURATION } from "./src/animation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { loadState, saveState } from "./src/storage";
+import { loadState, saveState, clearUnreadableLegacyState } from "./src/storage";
 import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
 import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest, accrueAccountInterest } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
@@ -21,6 +21,7 @@ import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
 import { isNativeAlarmAvailable, getAlarmStatus, openExactAlarmSettings, openBatteryOptimizationSettings } from "./modules/layp-alarm";
 import LockScreen from "./src/screens/LockScreen";
+import RecoveryScreen from "./src/screens/RecoveryScreen";
 import ClassAlarmScreen from "./src/components/ClassAlarmScreen";
 import { ConfirmModalHost } from "./src/components/ConfirmModal";
 import { getAutoLockMinutes, setAutoLockMinutes, AUTO_LOCK_OPTIONS, DEFAULT_AUTO_LOCK_MINUTES } from "./src/autoLockPreference";
@@ -135,6 +136,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   const [budgetSubTab, setBudgetSubTab] = useState("overview");
   const [showDailyBudget, setShowDailyBudget] = useState(false);
   const [ready, setReady] = useState(false);
+  const [needsRecovery, setNeedsRecovery] = useState(false);
   const [todos, setTodos] = useState([]);
   const [bills, setBills] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -378,6 +380,15 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
       }
       await cleanupDuplicateDailyBudgetNotifications();
       const s = await loadState();
+      if (s?.__totalCorruption) {
+        // Stop here -- don't populate any state from this, since there's
+        // nothing usable in it. RecoveryScreen takes over the render
+        // below until the person either restores a backup file or
+        // explicitly chooses to start fresh.
+        setNeedsRecovery(true);
+        setReady(true);
+        return;
+      }
       if (s) {
         setTodos(s.todos || []);
         setBills(s.bills || []);
@@ -714,6 +725,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   // School, Budget, and Summary to all re-render and recompute along with it.
   const goToSchool = useCallback(() => setTab("school"), []);
   const goToTodo = useCallback(() => setTab("todo"), []);
+  const goToSummary = useCallback(() => setTab("summary"), []);
   const clearPrefillSubject = useCallback(() => setPrefillSubjectId(null), []);
   const goToTodoForSubject = useCallback((subjectId) => { setPrefillSubjectId(subjectId); setTab("todo"); }, []);
   const restoreBackup = useCallback((data) => {
@@ -750,6 +762,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             onViewSchedule={goToSchool}
             onViewTodos={goToTodo}
             budgetHidden={budgetHidden} onToggleBudgetHidden={toggleBudgetHidden}
+            onGoToBackup={goToSummary}
           />
         );
       case "todo":
@@ -826,6 +839,18 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg, alignItems: "center", justifyContent: "center" }]}>
         <Text style={{ color: theme.textMuted }}>Loading LAYP...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (needsRecovery) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+        <RecoveryScreen
+          theme={theme}
+          onRestore={(data) => { restoreBackup(data); clearUnreadableLegacyState(); setNeedsRecovery(false); }}
+          onSkip={() => { clearUnreadableLegacyState(); setNeedsRecovery(false); }}
+        />
       </SafeAreaView>
     );
   }
@@ -929,7 +954,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             // became smooth.
             <View key={t} style={[{ flex: 1 }, tab !== t && { display: "none" }]} pointerEvents={tab === t ? "auto" : "none"}>
               <ErrorBoundary resetKey={t}>
-                <TabTransition transitionKey={tab === t ? "active" : "inactive"} direction={tabDirection} style={styles.content}>
+                <TabTransition transitionKey={tab === t ? "active" : "inactive"} style={styles.content}>
                   {renderTabContent(t)}
                 </TabTransition>
               </ErrorBoundary>

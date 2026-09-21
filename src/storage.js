@@ -50,6 +50,7 @@ async function readMeta() {
 async function loadSplitState() {
   const pairs = await AsyncStorage.multiGet(DOMAIN_KEYS.map(domainKey));
   const state = {};
+  const corruptedKeys = [];
   for (const [key, raw] of pairs) {
     if (raw == null) continue;
     const name = key.slice(PREFIX.length);
@@ -59,8 +60,15 @@ async function loadSplitState() {
       // One bad key shouldn't take down the whole app -- skip it and let
       // the caller's own defaulting (e.g. `s.todos || []`) fill the gap.
       console.error(`Failed to parse stored value for "${name}"`, e);
+      corruptedKeys.push(name);
     }
   }
+  // Smuggled onto the same object rather than changing loadState()'s
+  // return shape -- every call site does `s.todos || []` etc. directly
+  // off what loadState() returns, and no real domain is ever named
+  // `__corruptedKeys`, so this rides along for free without touching
+  // every one of those call sites.
+  if (corruptedKeys.length) state.__corruptedKeys = corruptedKeys;
   return state;
 }
 
@@ -73,14 +81,37 @@ async function migrateFromLegacyIfNeeded() {
   const meta = await readMeta();
   if (meta?.version) return null; // already migrated
 
+  let raw;
   try {
-    const raw = await AsyncStorage.getItem(LEGACY_KEY);
-    if (!raw) {
-      // Fresh install -- nothing to migrate, just stamp the current version.
-      await AsyncStorage.setItem(META_KEY, JSON.stringify({ version: SCHEMA_VERSION }));
-      return null;
-    }
-    const legacyState = JSON.parse(raw);
+    raw = await AsyncStorage.getItem(LEGACY_KEY);
+  } catch (e) {
+    console.error("Reading legacy storage key failed", e);
+    return null;
+  }
+  if (!raw) {
+    // Fresh install -- nothing to migrate, just stamp the current version.
+    await AsyncStorage.setItem(META_KEY, JSON.stringify({ version: SCHEMA_VERSION }));
+    return null;
+  }
+
+  let legacyState;
+  try {
+    legacyState = JSON.parse(raw);
+  } catch (e) {
+    // The whole single-blob record is unreadable -- this used to fall
+    // through to the catch below, log it, and return null, which
+    // loadState() then treats exactly like "nothing stored yet": the app
+    // just quietly starts over with empty defaults, with zero indication
+    // that there was actually a full budget/task history sitting right
+    // there in storage. LEGACY_KEY and META_KEY are deliberately left
+    // untouched here (unlike the success path below) so nothing is lost
+    // and this is retried on next launch too -- the caller surfaces a
+    // recovery screen instead of silently discarding it.
+    console.error("Legacy backup blob is corrupted -- cannot migrate", e);
+    return { __totalCorruption: true };
+  }
+
+  try {
     const pairs = DOMAIN_KEYS
       .filter((name) => legacyState[name] !== undefined)
       .map((name) => [domainKey(name), JSON.stringify(legacyState[name])]);
@@ -97,12 +128,25 @@ async function migrateFromLegacyIfNeeded() {
 export async function loadState() {
   try {
     const migrated = await migrateFromLegacyIfNeeded();
-    if (migrated) return migrated;
+    if (migrated) return migrated; // includes the __totalCorruption case
     const state = await loadSplitState();
     return Object.keys(state).length ? state : null;
   } catch (e) {
     console.error("loadState failed", e);
     return null;
+  }
+}
+
+// Called only from the "Start fresh" escape hatch on RecoveryScreen, after
+// a total-corruption load -- removes the unreadable legacy blob and stamps
+// the current schema version so the next launch doesn't hit the same
+// __totalCorruption path again and get stuck re-prompting forever.
+export async function clearUnreadableLegacyState() {
+  try {
+    await AsyncStorage.removeItem(LEGACY_KEY);
+    await AsyncStorage.setItem(META_KEY, JSON.stringify({ version: SCHEMA_VERSION }));
+  } catch (e) {
+    console.error("clearUnreadableLegacyState failed", e);
   }
 }
 

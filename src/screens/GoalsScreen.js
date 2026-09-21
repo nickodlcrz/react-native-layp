@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import { Plus, X, Pencil, Trash2, PiggyBank, Sparkles, ArrowLeftRight, AlertTriangle } from "lucide-react-native";
-import { useTheme, ACCENT, PALETTE } from "../theme";
+import { useTheme, ACCENT, PALETTE, INTEREST_PRESETS } from "../theme";
 import {
   peso, uid, todayISO, fmtDay, goalProgress, unallocatedSavings, savingsAccountBalance,
   savingsAccountInterestEarned, addSavingsAccount, removeSavingsAccount, computeAccountBalance,
@@ -10,6 +10,7 @@ import {
 import { validate, goalSchema } from "../validation";
 import CalendarPicker from "../components/CalendarPicker";
 import Chip from "../components/Chip";
+import AnimatedProgressBar from "../components/AnimatedProgressBar";
 import { confirmDelete } from "../components/ConfirmModal";
 import EmptyState from "../components/EmptyState";
 
@@ -172,21 +173,41 @@ export default function GoalsScreen({
                         <Trash2 size={14} color={theme.textMuted} />
                       </Pressable>
                     </View>
-                    <View style={styles.savAccRateRow}>
-                      <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>Interest rate (% per year)</Text>
-                      <TextInput
-                        value={sa.interestRate != null && sa.interestRate !== 0 ? String(sa.interestRate) : ""}
-                        onChangeText={(v) => {
-                          const cleaned = v.replace(/[^0-9.]/g, "");
-                          setSavingsAccounts((prev) => prev.map((x) => (x.id === sa.id ? { ...x, interestRate: cleaned === "" ? 0 : Number(cleaned) } : x)));
-                        }}
-                        placeholder="0"
-                        placeholderTextColor={theme.textMuted}
-                        keyboardType="decimal-pad"
-                        style={[styles.savAccRateInput, { backgroundColor: theme.bg, color: theme.text }]}
-                      />
-                      <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>%</Text>
+                    <View style={styles.presetRow}>
+                      {INTEREST_PRESETS.map((p) => (
+                        <Pressable
+                          key={p.id}
+                          onPress={() => setSavingsAccounts((prev) => prev.map((x) => (x.id === sa.id ? { ...x, interestRate: p.interestRate, interestTiers: p.interestTiers } : x)))}
+                          style={[styles.presetChip, { borderColor: theme.line }]}
+                        >
+                          <Text style={[styles.presetChipText, { color: theme.textMuted }]}>{p.label}</Text>
+                        </Pressable>
+                      ))}
                     </View>
+                    {sa.interestTiers?.length ? (
+                      <View style={styles.savAccRateRow}>
+                        <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>Tiered rate applied ({sa.interestTiers.map((t) => `${t.rate}%`).join(" / ")})</Text>
+                        <Pressable onPress={() => setSavingsAccounts((prev) => prev.map((x) => (x.id === sa.id ? { ...x, interestTiers: null } : x)))}>
+                          <Text style={[styles.presetChipText, { color: ACCENT.sky, fontWeight: "700" }]}>Use flat rate instead</Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <View style={styles.savAccRateRow}>
+                        <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>Interest rate (% per year)</Text>
+                        <TextInput
+                          value={sa.interestRate != null && sa.interestRate !== 0 ? String(sa.interestRate) : ""}
+                          onChangeText={(v) => {
+                            const cleaned = v.replace(/[^0-9.]/g, "");
+                            setSavingsAccounts((prev) => prev.map((x) => (x.id === sa.id ? { ...x, interestRate: cleaned === "" ? 0 : Number(cleaned), interestTiers: null } : x)));
+                          }}
+                          placeholder="0"
+                          placeholderTextColor={theme.textMuted}
+                          keyboardType="decimal-pad"
+                          style={[styles.savAccRateInput, { backgroundColor: theme.bg, color: theme.text }]}
+                        />
+                        <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>%</Text>
+                      </View>
+                    )}
                     {earned > 0 && (
                       <View style={styles.savAccEarnedRow}>
                         <Sparkles size={11} color={ACCENT.gold} />
@@ -230,8 +251,8 @@ export default function GoalsScreen({
                   </View>
                 </View>
                 <Text style={[styles.goalAmounts, { color: theme.textMuted }]}>{peso(prog.current)} / {peso(prog.target)}</Text>
-                <View style={[styles.track, { backgroundColor: theme.bg, marginTop: 4 }]}>
-                  <View style={[styles.trackFill, { width: `${Math.min(100, prog.percent)}%`, backgroundColor: met ? ACCENT.leaf : ACCENT.sky }]} />
+                <View style={{ marginTop: 4 }}>
+                  <AnimatedProgressBar percent={prog.percent} color={met ? ACCENT.leaf : ACCENT.sky} trackColor={theme.bg} />
                 </View>
                 <View style={styles.goalFooterRow}>
                   <Text style={[styles.goalFooterText, { color: theme.textMuted }]}>{prog.percent.toFixed(1)}%</Text>
@@ -404,6 +425,9 @@ const styles = StyleSheet.create({
   accountEditBalance: { fontSize: 11, fontFamily: "monospace" },
   accountHint: { fontSize: 9, lineHeight: 13 },
   savAccRow: { borderBottomWidth: 1, borderBottomColor: "#00000010", paddingBottom: 8, marginBottom: 8 },
+  presetRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingLeft: 18, marginBottom: 6 },
+  presetChip: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  presetChipText: { fontSize: 10, fontWeight: "600" },
   savAccRateRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 18 },
   savAccRateLabel: { fontSize: 10.5, fontWeight: "600" },
   savAccRateInput: { width: 56, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, fontSize: 12, fontWeight: "700", textAlign: "center" },
@@ -413,8 +437,6 @@ const styles = StyleSheet.create({
   goalHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   goalName: { fontSize: 13, fontWeight: "700" },
   goalAmounts: { fontSize: 11, marginTop: 2, fontFamily: "monospace" },
-  track: { height: 6, borderRadius: 3, overflow: "hidden" },
-  trackFill: { height: 6, borderRadius: 3 },
   goalFooterRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
   goalFooterText: { fontSize: 10 },
   goalRecommend: { fontSize: 10.5, fontWeight: "600", marginTop: 6 },

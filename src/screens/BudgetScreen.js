@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
+import Reanimated, { FadeOut, Layout as ReanimatedLayout } from "react-native-reanimated";
+import { DURATION } from "../animation";
 import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Receipt, Sparkles, Eye, EyeOff } from "lucide-react-native";
-import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES } from "../theme";
+import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES, INTEREST_PRESETS } from "../theme";
 import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsAccountBalance, addAccount as pushAccount, isPositiveAmount, nextRecurringDate, accountInterestEarned } from "../utils";
 import Chip from "../components/Chip";
 import SegmentedTabs from "../components/SegmentedTabs";
@@ -391,21 +393,41 @@ function BudgetScreen({
                   </Pressable>
                 )}
               </View>
-              <View style={styles.savAccRateRow}>
-                <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>Interest rate (% per year, optional)</Text>
-                <TextInput
-                  value={a.interestRate != null && a.interestRate !== 0 ? String(a.interestRate) : ""}
-                  onChangeText={(v) => {
-                    const cleaned = v.replace(/[^0-9.]/g, "");
-                    setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, interestRate: cleaned === "" ? 0 : Number(cleaned) } : x)));
-                  }}
-                  placeholder="0"
-                  placeholderTextColor={theme.textMuted}
-                  keyboardType="decimal-pad"
-                  style={[styles.savAccRateInput, { backgroundColor: theme.bg, color: theme.text }]}
-                />
-                <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>%</Text>
+              <View style={styles.presetRow}>
+                {INTEREST_PRESETS.map((p) => (
+                  <Pressable
+                    key={p.id}
+                    onPress={() => setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, interestRate: p.interestRate, interestTiers: p.interestTiers } : x)))}
+                    style={[styles.presetChip, { borderColor: theme.line }]}
+                  >
+                    <Text style={[styles.presetChipText, { color: theme.textMuted }]}>{p.label}</Text>
+                  </Pressable>
+                ))}
               </View>
+              {a.interestTiers?.length ? (
+                <View style={styles.savAccRateRow}>
+                  <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>Tiered rate applied ({a.interestTiers.map((t) => `${t.rate}%`).join(" / ")})</Text>
+                  <Pressable onPress={() => setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, interestTiers: null } : x)))}>
+                    <Text style={[styles.presetChipText, { color: ACCENT.sky, fontWeight: "700" }]}>Use flat rate instead</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={styles.savAccRateRow}>
+                  <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>Interest rate (% per year, optional)</Text>
+                  <TextInput
+                    value={a.interestRate != null && a.interestRate !== 0 ? String(a.interestRate) : ""}
+                    onChangeText={(v) => {
+                      const cleaned = v.replace(/[^0-9.]/g, "");
+                      setAccounts((prev) => prev.map((x) => (x.id === a.id ? { ...x, interestRate: cleaned === "" ? 0 : Number(cleaned), interestTiers: null } : x)));
+                    }}
+                    placeholder="0"
+                    placeholderTextColor={theme.textMuted}
+                    keyboardType="decimal-pad"
+                    style={[styles.savAccRateInput, { backgroundColor: theme.bg, color: theme.text }]}
+                  />
+                  <Text style={[styles.savAccRateLabel, { color: theme.textMuted }]}>%</Text>
+                </View>
+              )}
               {earned > 0 && (
                 <View style={styles.savAccEarnedRow}>
                   <Sparkles size={11} color={ACCENT.gold} />
@@ -459,7 +481,7 @@ function BudgetScreen({
           const remaining = Number(b.amount) - paidSoFar;
           const isPartial = !b.paid && paidSoFar > 0.005;
           return (
-            <View key={b.id}>
+            <Reanimated.View key={b.id} layout={ReanimatedLayout.duration(DURATION)} exiting={FadeOut.duration(DURATION * 0.75)}>
             <View style={[styles.row, { backgroundColor: theme.card, borderColor: theme.line, opacity: b.paid ? 0.6 : 1 }]}>
               <Pressable onPress={() => togglePaid(b)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={b.paid ? "Mark unpaid" : "Mark paid in full"}>{b.paid ? <CheckCircle2 size={19} color={ACCENT.leaf} /> : <PiggyBank size={19} color={ACCENT.gold} />}</Pressable>
               <Pressable style={{ flex: 1 }} onPress={() => !b.paid && startEditBill(b)}>
@@ -517,7 +539,7 @@ function BudgetScreen({
                 </View>
               </View>
             )}
-            </View>
+            </Reanimated.View>
           );
         })
       )}
@@ -658,6 +680,9 @@ const styles = StyleSheet.create({
   accountEditBalance: { fontSize: 11, fontFamily: "monospace" },
   accountHint: { fontSize: 9, lineHeight: 13, marginTop: 6 },
   savAccRateRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingLeft: 18 },
+  presetRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingLeft: 18, marginBottom: 6 },
+  presetChip: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  presetChipText: { fontSize: 10, fontWeight: "600" },
   savAccRateLabel: { fontSize: 10.5, fontWeight: "600" },
   savAccRateInput: { width: 56, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4, fontSize: 12, fontWeight: "700", textAlign: "center" },
   savAccEarnedRow: { flexDirection: "row", alignItems: "center", gap: 4, paddingLeft: 18, marginTop: 4 },
