@@ -31,6 +31,8 @@ const DOMAIN_KEYS = [
   "academicPeriods", "subjects", "scheduleEntries", "schoolDefaults",
   "cancelledClasses", "recurringIncome", "spendingLimits",
   "savingsAccounts", "interestLog",
+  "reminders",
+  "gfName", "gfLikes", "gfDislikes", "gfDates", "gfNotes", "gfGiftIdeas", "gfPromises",
 ];
 
 function domainKey(name) {

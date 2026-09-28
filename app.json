@@ -15,6 +15,7 @@
         "backgroundColor": "#F3F4F0"
       },
       "package": "com.layp.app",
+    "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"

@@ -102,7 +102,7 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
 
       <KeyboardAvoidingView
         style={styles.centerWrap}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         pointerEvents="box-none"
       >
         <Animated.View

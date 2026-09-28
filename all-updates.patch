@@ -1,0 +1,3202 @@
+diff --git a/App.js b/App.js
+index ccb0f4a..b8dd78e 100644
+--- a/App.js
++++ b/App.js
+@@ -7,14 +7,15 @@ import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, Bac
+ import { GestureHandlerRootView } from "react-native-gesture-handler";
+ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+ import { StatusBar } from "expo-status-bar";
+-import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap } from "lucide-react-native";
++import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap, Heart } from "lucide-react-native";
+ 
+ import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_SAVINGS_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
+ import Reanimated, { FadeOut } from "react-native-reanimated";
+ import { DURATION } from "./src/animation";
+ import AsyncStorage from "@react-native-async-storage/async-storage";
+ import { loadState, saveState, clearUnreadableLegacyState } from "./src/storage";
+-import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
++import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, cancelTodoAlarm, rescheduleTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, TODO_STARTED_YES_ACTION, TODO_STARTED_NOT_YET_ACTION, TODO_PASSED_YES_ACTION, TODO_PASSED_NOT_YET_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener, sweepExpiredDailyNotifications } from "./src/notifications";
++import { isScheduledPopupDue, markScheduledPopupShown, isFrequencyPopupDue, markFrequencyPopupShown } from "./src/reminderLogic";
+ import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest, accrueAccountInterest } from "./src/utils";
+ import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
+ import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
+@@ -35,6 +36,8 @@ import TabTransition from "./src/components/TabTransition";
+ import SwipeNavigator from "./src/components/SwipeNavigator";
+ import ErrorBoundary from "./src/components/ErrorBoundary";
+ import TabBar from "./src/components/TabBar";
++import GFScreen from "./src/screens/GFScreen";
++import RemindPopup from "./src/components/RemindPopup";
+ 
+ // Single source of truth for which tabs exist, their order, icons, and
+ // labels -- the old version had this order duplicated as a bare array of
+@@ -100,7 +103,7 @@ export default function App() {
+             sitting on LAYP's own lock screen would never trigger the
+             in-app popup at all -- only the OS notification would still
+             fire, since that's scheduled independently of app state. */}
+-        <AppShell onLock={handleLock} autoLockMinutes={autoLockMinutes} onChangeAutoLockMinutes={updateAutoLockMinutes} />
++        <AppShell onLock={handleLock} unlocked={unlocked} autoLockMinutes={autoLockMinutes} onChangeAutoLockMinutes={updateAutoLockMinutes} />
+         {!unlocked && (
+           // Rendered as an overlay, not a replacement -- see the zIndex
+           // note on ClassAlarmScreen for why a class alarm can still show
+@@ -118,7 +121,7 @@ export default function App() {
+   );
+ }
+ 
+-function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
++function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLockMinutes }) {
+   const systemScheme = useColorScheme();
+   const [dark, setDark] = useState(systemScheme === "dark");
+   const [tab, setTabRaw] = useState("home");
+@@ -145,6 +148,23 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+   const [savingsLog, setSavingsLog] = useState([]);
+   const [goals, setGoals] = useState([]); // savings goals: name, target amount, target date
+   const [loans, setLoans] = useState([]); // lent / borrowed tracker
++  // General "Remember" quick-capture list (Todo tab) -- separate from
++  // todos since these are notes/reminders rather than tasks with a
++  // completion workflow.
++  const [reminders, setReminders] = useState([]);
++  // The GF module -- a heart-icon-gated panel of relationship info, kept
++  // as its own set of domains (rather than folded into an existing one)
++  // since none of it is financial or task data. gfOpen controls the
++  // full-screen panel itself; GFScreen re-verifies the PIN every time it
++  // opens (see its own effect), so no "unlocked" flag needs to live here.
++  const [gfOpen, setGfOpen] = useState(false);
++  const [gfName, setGfName] = useState("Her");
++  const [gfLikes, setGfLikes] = useState([]);
++  const [gfDislikes, setGfDislikes] = useState([]);
++  const [gfDates, setGfDates] = useState([]);
++  const [gfNotes, setGfNotes] = useState([]);
++  const [gfGiftIdeas, setGfGiftIdeas] = useState([]);
++  const [gfPromises, setGfPromises] = useState([]);
+   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
+   // Whether budget/money figures (Home's Total money + Safe to spend,
+   // Budget Overview's Current budget) are masked out -- e.g. showing the
+@@ -323,6 +343,46 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+           setTab("school");
+         }
+       }
++      if (data.type === "todo") {
++        if (actionId === TODO_STARTED_YES_ACTION) {
++          if (notifId) await dismissNotification(notifId);
++          setTodos((prev) => prev.map((t) => (t.id === data.todoId && t.status === "not_started" ? { ...t, status: "wip" } : t)));
++          return;
++        }
++        if (actionId === TODO_PASSED_YES_ACTION) {
++          if (notifId) await dismissNotification(notifId);
++          const t = todos.find((x) => x.id === data.todoId);
++          if (t && !t.completed) {
++            // Mirrors TodoScreen's own toggle() completion path -- cancel
++            // whatever's still armed for it (reminders and any native
++            // alarm) rather than leaving them to fire against a task
++            // that's already done.
++            await cancelTodoNotifications(t.notificationIds);
++            await cancelTodoAlarm(t.id);
++            setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, completed: true, completedAt: new Date().toISOString() } : x)));
++          }
++          return;
++        }
++        if (actionId === TODO_STARTED_NOT_YET_ACTION || actionId === TODO_PASSED_NOT_YET_ACTION) {
++          // Acknowledged, nothing to change -- the next occurrence will
++          // simply ask again.
++          if (notifId) await dismissNotification(notifId);
++          return;
++        }
++        // A plain tap (not an action button).
++        setTab("todo");
++        return;
++      }
++
++      if (data.type === "reminder") {
++        setTab("todo");
++        return;
++      }
++
++      if (data.type === "gfPromise" || data.type === "gfDate") {
++        setGfOpen(true);
++        return;
++      }
+     };
+   });
+ 
+@@ -360,6 +420,113 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+ 
+   const theme = dark ? DARK : LIGHT;
+ 
++  // Popups due right now, across every source that can produce one:
++  // general Reminders and GF Promises in "popup" mode (a scheduled
++  // date/time-or-daily thing), and GF Notes with a popup frequency set
++  // (an unscheduled "show this again every N hours" thing). Recomputed
++  // fresh each call rather than memoized, since it's only ever invoked
++  // from the two triggers below, never from a render.
++  const [remindPopupVisible, setRemindPopupVisible] = useState(false);
++  const [remindPopupItems, setRemindPopupItems] = useState([]);
++
++  const checkDuePopups = useCallback(() => {
++    const dueReminders = reminders.filter(isScheduledPopupDue);
++    const duePromises = gfPromises.filter(isScheduledPopupDue);
++    const dueNotes = gfNotes.filter(isFrequencyPopupDue);
++    if (!dueReminders.length && !duePromises.length && !dueNotes.length) return;
++    setRemindPopupItems([
++      ...dueReminders.map((r) => ({ id: `reminder:${r.id}`, text: r.text, gf: false })),
++      ...duePromises.map((p) => ({ id: `gfPromise:${p.id}`, text: p.text, gf: true })),
++      ...dueNotes.map((n) => ({ id: `gfNote:${n.id}`, text: n.text, gf: true })),
++    ]);
++    setRemindPopupVisible(true);
++    // Stamps each shown item so it doesn't immediately re-qualify as due
++    // on the very next check -- a one-time (dated) item won't fire again
++    // at all, a repeating one waits out its own cooldown first.
++    if (dueReminders.length) setReminders((prev) => prev.map((r) => (isScheduledPopupDue(r) ? { ...r, ...markScheduledPopupShown(r) } : r)));
++    if (duePromises.length) setGfPromises((prev) => prev.map((p) => (isScheduledPopupDue(p) ? { ...p, ...markScheduledPopupShown(p) } : p)));
++    if (dueNotes.length) setGfNotes((prev) => prev.map((n) => (isFrequencyPopupDue(n) ? { ...n, ...markFrequencyPopupShown() } : n)));
++  }, [reminders, gfPromises, gfNotes]);
++
++  // Checked once right after unlocking (covers cold start and re-entering
++  // the PIN) -- gated on `unlocked` for the same reason as the old
++  // mechanism it replaced: AppShell stays mounted behind the lock screen,
++  // and this popup is a Modal that renders above everything natively
++  // regardless of JS z-index, so without this gate it could appear ON TOP
++  // OF the PIN screen before the person has actually gotten past it.
++  useEffect(() => {
++    if (!ready || !unlocked) return;
++    checkDuePopups();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [ready, unlocked]);
++
++  // Also checked every time the app comes back to the foreground -- an
++  // hourly/3-hourly GF Note or a daily time-only Reminder needs to be
++  // re-evaluated on every reopen, not just the first one of the session.
++  // Reads `unlocked` through a ref rather than depending on it directly,
++  // so this doesn't need to tear down and resubscribe the AppState
++  // listener on every lock/unlock -- it just checks the ref's current
++  // value at the moment the app actually resumes.
++  const unlockedRef = useRef(unlocked);
++  useEffect(() => { unlockedRef.current = unlocked; }, [unlocked]);
++  useEffect(() => {
++    const sub = AppState.addEventListener("change", (next) => {
++      if (next === "active" && unlockedRef.current) checkDuePopups();
++    });
++    return () => sub.remove();
++  }, [checkDuePopups]);
++
++  // Repeating (date-less) reminders/promises can't tell Expo their own
++  // end date -- enforced here instead, swept once on every load.
++  useEffect(() => {
++    if (!ready) return;
++    (async () => {
++      const expiredReminderIds = await sweepExpiredDailyNotifications(reminders);
++      if (expiredReminderIds.length) setReminders((prev) => prev.map((r) => (expiredReminderIds.includes(r.id) ? { ...r, notificationId: null } : r)));
++      const expiredPromiseIds = await sweepExpiredDailyNotifications(gfPromises);
++      if (expiredPromiseIds.length) setGfPromises((prev) => prev.map((p) => (expiredPromiseIds.includes(p.id) ? { ...p, notificationId: null } : p)));
++    })();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [ready]);
++
++  // A repeating task reminder's "due in N days" / "have you started it?"
++  // wording is fixed at schedule time (see the comment on
++  // rescheduleTodoNotifications) -- refreshed here once per calendar day,
++  // for every incomplete task with both a due date and a repeating
++  // reminder, so the wording stays honest as the days actually pass.
++  // Guarded by a ref (not state) since "have I already swept today" is
++  // bookkeeping for this effect alone, not something that should trigger
++  // its own re-render or persist across app restarts -- worst case, it
++  // just re-sweeps once more the next time the app opens.
++  const lastTodoRefreshRef = useRef(null);
++  useEffect(() => {
++    if (!ready) return;
++    const today = todayISO();
++    if (lastTodoRefreshRef.current === today) return;
++    lastTodoRefreshRef.current = today;
++    const stale = todos.filter((t) => !t.completed && t.dueDate && t.reminderEnabled !== false && t.notify && t.notify.type !== "once");
++    if (!stale.length) return;
++    (async () => {
++      const updates = await Promise.all(stale.map(async (t) => {
++        const subject = t.category === "school" && t.subjectId ? activeSubjects.find((s) => s.id === t.subjectId) : undefined;
++        const ids = await rescheduleTodoNotifications(t, subject);
++        return { id: t.id, ids };
++      }));
++      setTodos((prev) => prev.map((t) => {
++        const match = updates.find((u) => u.id === t.id);
++        return match ? { ...t, notificationIds: match.ids } : t;
++      }));
++    })();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [ready, todos]);
++
++
++  const gfMissedCount = useMemo(
++    () => gfPromises.filter((p) => !p.done && p.remindDate && p.remindTime && Date.now() - new Date(`${p.remindDate}T${p.remindTime}:00`).getTime() > 24 * 3600 * 1000).length,
++    [gfPromises]
++  );
++
++
+   useEffect(() => {
+     (async () => {
+       await setupAndroidChannel();
+@@ -417,6 +584,14 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+         setSchoolDefaults(s.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
+         setCancelledClasses(s.cancelledClasses || []);
+         if (typeof s.dark === "boolean") setDark(s.dark);
++        setReminders(s.reminders || []);
++        setGfName(s.gfName || "Her");
++        setGfLikes(s.gfLikes || []);
++        setGfDislikes(s.gfDislikes || []);
++        setGfDates(s.gfDates || []);
++        setGfNotes(s.gfNotes || []);
++        setGfGiftIdeas(s.gfGiftIdeas || []);
++        setGfPromises(s.gfPromises || []);
+ 
+         // Migrate old single "income" number (pre-accounts) into the money log.
+         if (s.moneyLog) {
+@@ -472,9 +647,9 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+   useEffect(() => {
+     if (!ready) return;
+     if (firstLoad.current) { firstLoad.current = false; return; }
+-    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog });
++    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises });
+     setThemePreference(dark);
+-  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog]);
++  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises]);
+ 
+   // Cancellation records only ever need to cover "today" at check time, so
+   // trim anything older than a week on load rather than let this list grow
+@@ -744,10 +919,18 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+     setSchoolDefaults(data.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
+     setRecurringIncome(data.recurringIncome || []);
+     setSpendingLimits(data.spendingLimits || {});
++    setReminders(data.reminders || []);
++    setGfName(data.gfName || "Her");
++    setGfLikes(data.gfLikes || []);
++    setGfDislikes(data.gfDislikes || []);
++    setGfDates(data.gfDates || []);
++    setGfNotes(data.gfNotes || []);
++    setGfGiftIdeas(data.gfGiftIdeas || []);
++    setGfPromises(data.gfPromises || []);
+   }, []);
+   const backupData = useMemo(
+-    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog }),
+-    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog]
++    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises }),
++    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises]
+   );
+ 
+   function renderTabContent(t) {
+@@ -757,7 +940,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+           <HomeScreen
+             accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
+             loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
+-            goals={goals} todos={todos}
++            goals={goals} todos={todos} reminders={reminders}
+             periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries} cancelledClasses={cancelledClasses}
+             onViewSchedule={goToSchool}
+             onViewTodos={goToTodo}
+@@ -772,6 +955,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+             subjects={activeSubjects}
+             prefillSubjectId={prefillSubjectId}
+             onConsumePrefillSubject={clearPrefillSubject}
++            reminders={reminders} setReminders={setReminders}
+           />
+         );
+       case "school":
+@@ -863,6 +1047,22 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+         {classAlarm && (
+           <ClassAlarmScreen alarm={classAlarm} onDismiss={() => setClassAlarm(null)} onSuspend={() => handleSuspendClass(classAlarm.block)} />
+         )}
++        <GFScreen
++          visible={gfOpen}
++          onClose={() => setGfOpen(false)}
++          gfName={gfName} setGfName={setGfName}
++          gfLikes={gfLikes} setGfLikes={setGfLikes}
++          gfDislikes={gfDislikes} setGfDislikes={setGfDislikes}
++          gfDates={gfDates} setGfDates={setGfDates}
++          gfNotes={gfNotes} setGfNotes={setGfNotes}
++          gfGiftIdeas={gfGiftIdeas} setGfGiftIdeas={setGfGiftIdeas}
++          gfPromises={gfPromises} setGfPromises={setGfPromises}
++        />
++        <RemindPopup
++          visible={remindPopupVisible}
++          items={remindPopupItems}
++          onDismiss={() => setRemindPopupVisible(false)}
++        />
+         <View style={styles.header}>
+           <View style={styles.headerLeft}>
+             <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
+@@ -878,6 +1078,14 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
+             <Pressable onPress={onLock} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Lock app">
+               <Lock size={13} color={theme.textMuted} />
+             </Pressable>
++            <Pressable onPress={() => setGfOpen(true)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Open GF">
++              <Heart size={14} color={ACCENT.rose} fill={ACCENT.rose} />
++              {gfMissedCount > 0 && (
++                <View style={styles.gfBadge}>
++                  <Text style={styles.gfBadgeText}>{gfMissedCount > 9 ? "9+" : gfMissedCount}</Text>
++                </View>
++              )}
++            </Pressable>
+             <Pressable onPress={() => setDark((d) => !d)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel={dark ? "Switch to light mode" : "Switch to dark mode"}>
+               {dark ? <Sun size={14} color={ACCENT.gold} /> : <Moon size={14} color={theme.text} />}
+             </Pressable>
+@@ -983,7 +1191,9 @@ const styles = StyleSheet.create({
+   logo: { width: 30, height: 30, borderRadius: 8 },
+   headerTitle: { fontSize: 15, fontWeight: "800", letterSpacing: 0.5 },
+   headerDate: { fontSize: 10, marginTop: 1 },
+-  themeBtn: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", borderWidth: 1 },
++  themeBtn: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", borderWidth: 1, position: "relative" },
++  gfBadge: { position: "absolute", top: -3, right: -3, minWidth: 14, height: 14, borderRadius: 7, backgroundColor: ACCENT.ember, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
++  gfBadgeText: { color: "#fff", fontSize: 8, fontWeight: "800" },
+   banner: { flexDirection: "row", gap: 8, borderRadius: 16, padding: 12, marginHorizontal: 16, marginBottom: 4 },
+   bannerTitle: { color: "#fff", fontSize: 12, fontWeight: "700" },
+   bannerBody: { color: "#ffffffcc", fontSize: 11, marginTop: 2 },
+diff --git a/app.json b/app.json
+index 28bbbea..3c04e56 100644
+--- a/app.json
++++ b/app.json
+@@ -15,6 +15,7 @@
+         "backgroundColor": "#F3F4F0"
+       },
+       "package": "com.layp.app",
++    "softwareKeyboardLayoutMode": "resize",
+       "adaptiveIcon": {
+         "foregroundImage": "./assets/adaptive-icon.png",
+         "backgroundColor": "#000000"
+diff --git a/package.json b/package.json
+index c940561..0d7c3ec 100644
+--- a/package.json
++++ b/package.json
+@@ -19,6 +19,7 @@
+     "expo-document-picker": "~12.0.1",
+     "expo-file-system": "~17.0.1",
+     "expo-haptics": "~13.0.1",
++    "expo-image-picker": "~15.0.7",
+     "expo-local-authentication": "~14.0.1",
+     "expo-notifications": "~0.28.0",
+     "expo-secure-store": "~13.0.2",
+diff --git a/src/backupSchema.js b/src/backupSchema.js
+index 11fc607..6dd3e3c 100644
+--- a/src/backupSchema.js
++++ b/src/backupSchema.js
+@@ -120,6 +120,18 @@ export const backupSchema = z.object({
+   schoolDefaults: z.object({}).passthrough().optional(),
+   savingsAccounts: z.array(savingsAccountSchema).optional(),
+   interestLog: z.array(interestLogEntrySchema).optional(),
++  // Remember (general reminders) and the GF module -- validated loosely
++  // (z.any() items), same as the School domains above, since neither
++  // carries money and a malformed entry here is an inconvenience rather
++  // than a corrupted balance.
++  reminders: z.array(z.any()).optional(),
++  gfName: z.string().optional(),
++  gfLikes: z.array(z.any()).optional(),
++  gfDislikes: z.array(z.any()).optional(),
++  gfDates: z.array(z.any()).optional(),
++  gfNotes: z.array(z.any()).optional(),
++  gfGiftIdeas: z.array(z.any()).optional(),
++  gfPromises: z.array(z.any()).optional(),
+ }).passthrough();
+ 
+ // Parses + validates in one step. Returns { ok: true, data } on success, or
+diff --git a/src/components/EditSheet.js b/src/components/EditSheet.js
+index 03b55df..e9b58c4 100644
+--- a/src/components/EditSheet.js
++++ b/src/components/EditSheet.js
+@@ -102,7 +102,7 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
+ 
+       <KeyboardAvoidingView
+         style={styles.centerWrap}
+-        behavior={Platform.OS === "ios" ? "padding" : undefined}
++        behavior={Platform.OS === "ios" ? "padding" : "height"}
+         pointerEvents="box-none"
+       >
+         <Animated.View
+diff --git a/src/components/RememberList.js b/src/components/RememberList.js
+new file mode 100644
+index 0000000..5e901cc
+--- /dev/null
++++ b/src/components/RememberList.js
+@@ -0,0 +1,355 @@
++import React, { useCallback, useMemo, useState } from "react";
++import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
++import { Plus, CheckCircle2, Circle, Trash2, Bell, Search, Clock3, BellRing, MessageSquare } from "lucide-react-native";
++import { useTheme, ACCENT } from "../theme";
++import { uid, todayISO, fmtDay, fmtTime12 } from "../utils";
++import Chip from "./Chip";
++import SegmentedTabs from "./SegmentedTabs";
++import EmptyState from "./EmptyState";
++import CalendarPicker from "./CalendarPicker";
++import TimePicker from "./TimePicker";
++import EditSheet from "./EditSheet";
++import { confirmDelete } from "./ConfirmModal";
++import { scheduleItemNotification, cancelTodoNotifications } from "../notifications";
++import { isScheduledPopupDue, describeSchedule } from "../reminderLogic";
++
++function isOverdue(r) {
++  if (r.done || !r.remindTime) return false;
++  if (r.remindDate) return new Date(`${r.remindDate}T${r.remindTime}:00`).getTime() <= Date.now();
++  const [h, m] = r.remindTime.split(":").map(Number);
++  const today = new Date(); today.setHours(h, m, 0, 0);
++  return Date.now() >= today.getTime();
++}
++
++// Sort key: dated reminders by their exact moment, time-only (repeating)
++// ones treated as "today at that time" so they interleave sensibly with
++// dated ones instead of always sorting last, and undated notes fall back
++// to most-recently-added.
++function sortKey(r) {
++  if (r.remindDate) return `${r.remindDate}T${r.remindTime || "09:00"}`;
++  if (r.remindTime) return `${todayISO()}T${r.remindTime}`;
++  return null;
++}
++
++export default function RememberList({ reminders, setReminders }) {
++  const { theme } = useTheme();
++  const [showForm, setShowForm] = useState(false);
++  const [editingId, setEditingId] = useState(null);
++  const [statusView, setStatusView] = useState("active");
++  const [searchQuery, setSearchQuery] = useState("");
++  const [activeTag, setActiveTag] = useState(null);
++
++  const allTags = useMemo(() => {
++    const set = new Set();
++    reminders.forEach((r) => (r.tags || []).forEach((t) => set.add(t)));
++    return [...set].sort();
++  }, [reminders]);
++
++  const filtered = useMemo(() => {
++    let list = reminders.filter((r) => (statusView === "done" ? r.done : !r.done));
++    if (activeTag) list = list.filter((r) => (r.tags || []).includes(activeTag));
++    if (searchQuery.trim()) {
++      const q = searchQuery.trim().toLowerCase();
++      list = list.filter((r) => r.text.toLowerCase().includes(q));
++    }
++    if (statusView === "done") return [...list].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
++    return [...list].sort((a, b) => {
++      const ka = sortKey(a), kb = sortKey(b);
++      if (ka && kb) return ka.localeCompare(kb);
++      if (ka) return -1;
++      if (kb) return 1;
++      return (b.createdAt || 0) - (a.createdAt || 0);
++    });
++  }, [reminders, statusView, activeTag, searchQuery]);
++
++  async function saveReminder(data) {
++    const notifTitle = "Reminder";
++    if (editingId) {
++      const prev = reminders.find((r) => r.id === editingId);
++      const merged = { ...prev, ...data, popupFired: false, lastPopupShownDate: null };
++      const notificationId = data.remindMode === "notification"
++        ? await scheduleItemNotification(prev.notificationId, { date: data.remindDate, time: data.remindTime, until: data.remindUntil }, notifTitle, merged.text, { type: "reminder" })
++        : (await cancelTodoNotifications(prev.notificationId ? [prev.notificationId] : []), null);
++      setReminders((list) => list.map((r) => (r.id === editingId ? { ...merged, notificationId } : r)));
++      setEditingId(null);
++    } else {
++      const draft = { id: uid(), ...data, done: false, createdAt: Date.now(), popupFired: false, lastPopupShownDate: null };
++      const notificationId = data.remindMode === "notification"
++        ? await scheduleItemNotification(null, { date: data.remindDate, time: data.remindTime, until: data.remindUntil }, notifTitle, draft.text, { type: "reminder" })
++        : null;
++      setReminders((list) => [...list, { ...draft, notificationId }]);
++    }
++    setShowForm(false);
++  }
++
++  const toggleDone = useCallback(async (r) => {
++    const nowDone = !r.done;
++    if (nowDone && r.notificationId) await cancelTodoNotifications([r.notificationId]);
++    setReminders((list) => list.map((x) => (x.id === r.id ? { ...x, done: nowDone } : x)));
++  }, [setReminders]);
++
++  const remove = useCallback((r) => {
++    confirmDelete("Delete this reminder?", `"${r.text}" will be removed for good.`, async () => {
++      if (r.notificationId) await cancelTodoNotifications([r.notificationId]);
++      setReminders((list) => list.filter((x) => x.id !== r.id));
++    });
++  }, [setReminders]);
++
++  const startEdit = useCallback((r) => { setEditingId(r.id); setShowForm(true); }, []);
++  const startAdd = useCallback(() => { setEditingId(null); setShowForm(true); }, []);
++
++  // Snoozes from *now*, not from the reminder's original time -- "10 min"
++  // means "remind me again in 10 minutes from this moment", which is what
++  // every phone's own alarm snooze does too. Works the same for both
++  // delivery modes: notification mode reschedules the real OS notification,
++  // popup mode just moves the target moment and clears the "already
++  // shown" flags so the due-check picks it up again.
++  const snooze = useCallback(async (r, kind) => {
++    const base = new Date();
++    let next;
++    if (kind === "10m") next = new Date(base.getTime() + 10 * 60 * 1000);
++    else if (kind === "1h") next = new Date(base.getTime() + 60 * 60 * 1000);
++    else {
++      const [h, m] = r.remindTime ? r.remindTime.split(":").map(Number) : [9, 0];
++      next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1, h, m, 0, 0);
++    }
++    const remindDate = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
++    const remindTime = `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
++    const notificationId = r.remindMode === "notification"
++      ? await scheduleItemNotification(r.notificationId, { date: remindDate, time: remindTime }, "Reminder", r.text, { type: "reminder" })
++      : null;
++    setReminders((list) => list.map((x) => (x.id === r.id ? { ...x, remindDate, remindTime, remindUntil: null, notificationId, popupFired: false, lastPopupShownDate: null } : x)));
++  }, [setReminders]);
++
++  const editing = editingId ? reminders.find((r) => r.id === editingId) : null;
++
++  const renderItem = useCallback(({ item: r }) => (
++    <ReminderRow r={r} onToggle={toggleDone} onEdit={startEdit} onRemove={remove} onSnooze={snooze} />
++  ), [toggleDone, startEdit, remove, snooze]);
++
++  return (
++    <>
++    <FlatList
++      style={{ flex: 1 }}
++      contentContainerStyle={{ paddingBottom: 12 }}
++      data={filtered}
++      keyExtractor={(r) => r.id}
++      renderItem={renderItem}
++      initialNumToRender={12}
++      maxToRenderPerBatch={10}
++      windowSize={7}
++      removeClippedSubviews={Platform.OS === "android"}
++      ListEmptyComponent={
++        <EmptyState icon={Bell} text={statusView === "done" ? "Nothing checked off yet." : "Nothing to remember yet -- tap + to add one."} />
++      }
++      ListHeaderComponent={
++        <>
++          <View style={styles.headerRow}>
++            <Text style={[styles.h1, { color: theme.text }]}>Remember</Text>
++            <Pressable onPress={startAdd} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel="Add reminder">
++              <Plus size={16} color="#fff" />
++            </Pressable>
++          </View>
++
++          <View style={[styles.searchRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
++            <Search size={14} color={theme.textMuted} />
++            <TextInput
++              value={searchQuery}
++              onChangeText={setSearchQuery}
++              placeholder="Search"
++              placeholderTextColor={theme.textMuted}
++              style={[styles.searchInput, { color: theme.text }]}
++            />
++          </View>
++
++          {allTags.length > 0 && (
++            <View style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: 8 }}>
++              <Chip label="All" active={!activeTag} onPress={() => setActiveTag(null)} small />
++              {allTags.map((t) => <Chip key={t} label={t} active={activeTag === t} onPress={() => setActiveTag((cur) => (cur === t ? null : t))} small />)}
++            </View>
++          )}
++
++          <SegmentedTabs
++            options={[
++              { key: "active", label: "Active" },
++              { key: "done", label: `Done (${reminders.filter((r) => r.done).length})` },
++            ]}
++            value={statusView}
++            onChange={setStatusView}
++          />
++        </>
++      }
++    />
++
++    <EditSheet visible={showForm} title={editing ? "Edit reminder" : "Remember something"} onClose={() => { setShowForm(false); setEditingId(null); }}>
++      <ReminderForm initial={editing} onSave={saveReminder} onCancel={() => { setShowForm(false); setEditingId(null); }} onDelete={(id) => { setShowForm(false); setEditingId(null); remove({ id, text: editing?.text, notificationId: editing?.notificationId }); }} />
++    </EditSheet>
++    </>
++  );
++}
++
++const ReminderRow = React.memo(function ReminderRow({ r, onToggle, onEdit, onRemove, onSnooze }) {
++  const { theme } = useTheme();
++  const overdue = isOverdue(r);
++  const schedule = describeSchedule(r);
++  return (
++    <Pressable onLongPress={() => onEdit(r)} delayLongPress={350} style={[styles.row, { backgroundColor: theme.card, borderColor: overdue ? ACCENT.gold : theme.line, borderWidth: overdue ? 1.5 : 1 }]}>
++      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
++        <Pressable onPress={() => onToggle(r)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={r.done ? "Mark not done" : "Mark done"}>
++          {r.done ? <CheckCircle2 size={19} color={ACCENT.leaf} /> : <Circle size={19} color={theme.textMuted} />}
++        </Pressable>
++        <View style={{ flex: 1 }}>
++          <Text style={[styles.rowText, { color: theme.text, textDecorationLine: r.done ? "line-through" : "none" }]}>{r.text}</Text>
++          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
++            {schedule && (
++              <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
++                {r.remindMode === "notification" ? <BellRing size={10} color={overdue ? ACCENT.gold : theme.textMuted} /> : <MessageSquare size={10} color={overdue ? ACCENT.gold : theme.textMuted} />}
++                <Text style={[styles.metaText, { color: overdue ? ACCENT.gold : theme.textMuted }]}>{schedule}</Text>
++              </View>
++            )}
++            {(r.tags || []).map((t) => (
++              <View key={t} style={[styles.tag, { backgroundColor: ACCENT.sky + "22" }]}><Text style={[styles.tagText, { color: ACCENT.sky }]}>{t}</Text></View>
++            ))}
++          </View>
++        </View>
++        <Pressable onPress={() => onEdit(r)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit reminder">
++          <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT.sky }}>Edit</Text>
++        </Pressable>
++        <Pressable onPress={() => onRemove(r)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Delete reminder">
++          <Trash2 size={14} color={theme.textMuted} />
++        </Pressable>
++      </View>
++      {!r.done && r.remindTime && (
++        <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
++          <Pressable onPress={() => onSnooze(r, "10m")} style={[styles.snoozeBtn, { backgroundColor: theme.bg }]}><Text style={[styles.snoozeText, { color: theme.text }]}>+10 min</Text></Pressable>
++          <Pressable onPress={() => onSnooze(r, "1h")} style={[styles.snoozeBtn, { backgroundColor: theme.bg }]}><Text style={[styles.snoozeText, { color: theme.text }]}>+1 hour</Text></Pressable>
++          <Pressable onPress={() => onSnooze(r, "tomorrow")} style={[styles.snoozeBtn, { backgroundColor: theme.bg }]}><Text style={[styles.snoozeText, { color: theme.text }]}>Tomorrow</Text></Pressable>
++        </View>
++      )}
++    </Pressable>
++  );
++});
++
++function ReminderForm({ initial, onSave, onCancel, onDelete }) {
++  const { theme } = useTheme();
++  const [text, setText] = useState(initial?.text || "");
++  const [tagsText, setTagsText] = useState((initial?.tags || []).join(", "));
++  const [showReminder, setShowReminder] = useState(!!initial?.remindTime);
++  const [remindMode, setRemindMode] = useState(initial?.remindMode || "notification");
++  const [hasDate, setHasDate] = useState(!!initial?.remindDate);
++  const [date, setDate] = useState(initial?.remindDate || todayISO());
++  const [time, setTime] = useState(initial?.remindTime || "09:00");
++  const [hasUntil, setHasUntil] = useState(!!initial?.remindUntil);
++  const [until, setUntil] = useState(initial?.remindUntil || todayISO());
++  const canSave = text.trim().length > 0;
++
++  function attemptSave() {
++    if (!canSave) return;
++    const tags = tagsText.split(",").map((t) => t.trim()).filter(Boolean);
++    onSave({
++      text: text.trim(), tags,
++      remindMode: showReminder ? remindMode : "none",
++      remindDate: showReminder && hasDate ? date : null,
++      remindTime: showReminder ? time : null,
++      remindUntil: showReminder && !hasDate && hasUntil ? until : null,
++    });
++  }
++
++  return (
++    <View style={styles.formCardBare}>
++      {/* The one field the "quick capture" promise is actually about --
++          everything else below is optional and tucked behind a toggle so
++          jotting something down never requires more than this. */}
++      <TextInput
++        value={text}
++        onChangeText={setText}
++        placeholder="What do you want to remember?"
++        placeholderTextColor={theme.textMuted}
++        autoFocus={!initial}
++        multiline
++        style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]}
++      />
++      <TextInput
++        value={tagsText}
++        onChangeText={setTagsText}
++        placeholder="Tags, comma separated (optional)"
++        placeholderTextColor={theme.textMuted}
++        style={[styles.input, { color: theme.text, backgroundColor: theme.bg, marginBottom: 12 }]}
++      />
++
++      {showReminder ? (
++        <>
++          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Remind me with</Text>
++          <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
++            <Chip label="Notification" color={ACCENT.sky} active={remindMode === "notification"} onPress={() => setRemindMode("notification")} />
++            <Chip label="Popup when app opens" color={ACCENT.plum} active={remindMode === "popup"} onPress={() => setRemindMode("popup")} />
++          </View>
++
++          <Pressable onPress={() => setHasDate((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
++            {hasDate ? <CheckCircle2 size={16} color={ACCENT.sky} /> : <Circle size={16} color={theme.textMuted} />}
++            <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>On a specific date (leave off to repeat daily)</Text>
++          </Pressable>
++
++          <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
++            {hasDate && <CalendarPicker value={date} onChange={setDate} label="Date" />}
++            <TimePicker value={time} onChange={setTime} label="Time" />
++          </View>
++
++          {!hasDate && (
++            <>
++              <Pressable onPress={() => setHasUntil((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
++                {hasUntil ? <CheckCircle2 size={16} color={ACCENT.sky} /> : <Circle size={16} color={theme.textMuted} />}
++                <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>Stop repeating after a date</Text>
++              </Pressable>
++              {hasUntil && <View style={{ marginBottom: 10 }}><CalendarPicker value={until} onChange={setUntil} label="Until" /></View>}
++            </>
++          )}
++
++          <Pressable onPress={() => setShowReminder(false)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} style={{ marginBottom: 12 }}>
++            <Text style={{ fontSize: 11, fontWeight: "700", color: theme.textMuted }}>Remove reminder</Text>
++          </Pressable>
++        </>
++      ) : (
++        <Pressable onPress={() => setShowReminder(true)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
++          <Bell size={13} color={ACCENT.sky} />
++          <Text style={{ fontSize: 11, fontWeight: "700", color: ACCENT.sky }}>+ Set a reminder (optional)</Text>
++        </Pressable>
++      )}
++
++      <View style={styles.formActions}>
++        {initial && onDelete && (
++          <Pressable onPress={() => onDelete(initial.id)} style={[styles.formBtn, styles.formBtnDanger, { borderColor: ACCENT.ember }]} accessibilityLabel="Delete reminder">
++            <Trash2 size={14} color={ACCENT.ember} />
++            <Text style={[styles.formBtnText, { color: ACCENT.ember }]}>Delete</Text>
++          </Pressable>
++        )}
++        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
++        <Pressable onPress={attemptSave} disabled={!canSave} style={[styles.formBtn, { backgroundColor: ACCENT.gold, opacity: canSave ? 1 : 0.5 }]}>
++          <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add to Remember"}</Text>
++        </Pressable>
++      </View>
++    </View>
++  );
++}
++
++const styles = StyleSheet.create({
++  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
++  h1: { fontSize: 20, fontWeight: "700" },
++  roundBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
++  searchRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10 },
++  searchInput: { flex: 1, fontSize: 13 },
++  row: { borderWidth: 1, borderRadius: 16, padding: 13, marginBottom: 8 },
++  rowText: { fontSize: 14, fontWeight: "600" },
++  metaText: { fontSize: 10, fontFamily: "monospace" },
++  tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
++  tagText: { fontSize: 9, fontWeight: "700" },
++  snoozeBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
++  snoozeText: { fontSize: 10, fontWeight: "700" },
++  formCardBare: { paddingTop: 2, paddingBottom: 4 },
++  miniLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 },
++  input: { fontSize: 13, fontWeight: "500", marginBottom: 10, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
++  formActions: { flexDirection: "row", gap: 8 },
++  formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
++  formBtnDanger: { flexDirection: "row", justifyContent: "center", gap: 6, borderWidth: 1, backgroundColor: "transparent" },
++  formBtnText: { fontSize: 12, fontWeight: "700" },
++});
+diff --git a/src/components/RemindPopup.js b/src/components/RemindPopup.js
+new file mode 100644
+index 0000000..4c3c98e
+--- /dev/null
++++ b/src/components/RemindPopup.js
+@@ -0,0 +1,50 @@
++import React from "react";
++import { View, Text, Pressable, Modal, ScrollView, StyleSheet } from "react-native";
++import { Bell, Heart } from "lucide-react-native";
++import { useTheme, ACCENT } from "../theme";
++
++// A flat, scrollable "everything that's due right now" list -- general
++// Reminders in popup mode, GF Notes with a popup frequency set, and GF
++// Promises in popup mode all feed into this one collector (see App.js),
++// so the popup itself just renders whatever it's handed rather than
++// knowing about any one source. Each item is tagged with a small heart
++// icon when it came from the GF module, so it's still clear at a glance
++// where a "call her tonight" came from even mixed in with a plain note.
++export default function RemindPopup({ visible, items, onDismiss }) {
++  const { theme } = useTheme();
++  if (!items?.length) return null;
++  return (
++    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
++      <View style={styles.backdrop}>
++        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
++          <View style={styles.header}>
++            <Bell size={16} color={ACCENT.gold} />
++            <Text style={[styles.title, { color: theme.text }]}>Don't forget</Text>
++          </View>
++          <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ paddingBottom: 4 }}>
++            {items.map((it) => (
++              <View key={it.id} style={[styles.itemRow, { borderColor: theme.line }]}>
++                {it.gf && <Heart size={11} color={ACCENT.rose} fill={ACCENT.rose} />}
++                <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{it.text}</Text>
++              </View>
++            ))}
++          </ScrollView>
++          <Pressable onPress={onDismiss} style={[styles.dismissBtn, { backgroundColor: ACCENT.gold }]}>
++            <Text style={styles.dismissBtnText}>Got it</Text>
++          </Pressable>
++        </View>
++      </View>
++    </Modal>
++  );
++}
++
++const styles = StyleSheet.create({
++  backdrop: { flex: 1, backgroundColor: "#00000066", alignItems: "center", justifyContent: "center", padding: 24 },
++  card: { width: "100%", maxWidth: 360, borderWidth: 1, borderRadius: 18, padding: 16 },
++  header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
++  title: { fontSize: 15, fontWeight: "800", flex: 1 },
++  itemRow: { flexDirection: "row", alignItems: "center", gap: 6, borderBottomWidth: 1, paddingVertical: 8 },
++  itemText: { fontSize: 13, fontWeight: "500" },
++  dismissBtn: { marginTop: 12, borderRadius: 12, alignItems: "center", paddingVertical: 11 },
++  dismissBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
++});
+diff --git a/src/gfImages.js b/src/gfImages.js
+new file mode 100644
+index 0000000..918ab4b
+--- /dev/null
++++ b/src/gfImages.js
+@@ -0,0 +1,55 @@
++import * as ImagePicker from "expo-image-picker";
++import * as FileSystem from "expo-file-system";
++import { uid } from "./utils";
++
++// expo-image-picker hands back a URI that can point into the OS's own
++// cache/picker storage -- fine for immediately previewing the image, but
++// not guaranteed to still exist next time the app launches. Copying it
++// into the app's own document directory (same durability guarantee as
++// everything else LAYP stores) is what makes a Like's or Gift Idea's
++// photo actually persist across sessions, not just until the OS decides
++// to reclaim its cache.
++const GF_IMAGES_DIR = FileSystem.documentDirectory + "gf-images/";
++
++async function ensureDir() {
++  const info = await FileSystem.getInfoAsync(GF_IMAGES_DIR);
++  if (!info.exists) await FileSystem.makeDirectoryAsync(GF_IMAGES_DIR, { intermediates: true });
++}
++
++// Opens the photo library, and returns the persisted local URI of
++// whatever was picked -- or null if the person cancelled or denied the
++// permission prompt. Never throws; a failure here should just mean "no
++// image attached", not a crash.
++export async function pickAndSaveGfImage() {
++  try {
++    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
++    if (!perm.granted) return null;
++    const result = await ImagePicker.launchImageLibraryAsync({
++      mediaTypes: ImagePicker.MediaTypeOptions.Images,
++      quality: 0.6,
++    });
++    if (result.canceled || !result.assets?.[0]) return null;
++    const picked = result.assets[0].uri;
++    await ensureDir();
++    const ext = (picked.split(".").pop() || "jpg").split("?")[0].slice(0, 4);
++    const dest = `${GF_IMAGES_DIR}${uid()}.${ext}`;
++    await FileSystem.copyAsync({ from: picked, to: dest });
++    return dest;
++  } catch (e) {
++    console.error("pickAndSaveGfImage failed", e);
++    return null;
++  }
++}
++
++// Best-effort cleanup when a Like/Gift Idea with an attached photo is
++// deleted -- not calling this wouldn't corrupt anything (it's just an
++// orphaned file sitting in the app's own sandboxed storage), but there's
++// no reason to let it accumulate forever either.
++export async function deleteGfImage(uri) {
++  if (!uri || !uri.startsWith(GF_IMAGES_DIR)) return;
++  try {
++    await FileSystem.deleteAsync(uri, { idempotent: true });
++  } catch (e) {
++    // Already gone -- nothing to do.
++  }
++}
+diff --git a/src/notifications.js b/src/notifications.js
+index 9e71768..a24dccc 100644
+--- a/src/notifications.js
++++ b/src/notifications.js
+@@ -35,6 +35,17 @@ const CLASS_CHECKIN_CATEGORY = "layp-class-checkin-actions";
+ export const DAILY_BUDGET_SAVE_ACTION = "DAILY_BUDGET_SAVE";
+ export const DAILY_BUDGET_KEEP_ACTION = "DAILY_BUDGET_KEEP";
+ const DAILY_BUDGET_CATEGORY = "layp-daily-budget-actions";
++// Lets a task's own reminder ask the actual question that matters for
++// its current stage, right on the notification -- "have you started
++// yet?" while it's still not_started, or "have you passed it already?"
++// once a to_pass task is overdue -- rather than just restating the due
++// date. See reminderVariant() below for which one (if either) applies.
++export const TODO_STARTED_YES_ACTION = "TODO_STARTED_YES";
++export const TODO_STARTED_NOT_YET_ACTION = "TODO_STARTED_NOT_YET";
++const TODO_STARTED_CATEGORY = "layp-todo-started-actions";
++export const TODO_PASSED_YES_ACTION = "TODO_PASSED_YES";
++export const TODO_PASSED_NOT_YET_ACTION = "TODO_PASSED_NOT_YET";
++const TODO_PASSED_CATEGORY = "layp-todo-passed-actions";
+ // Fallback for how long before a class's own alarm the "Do you have class
+ // today?" check-in fires, used only if a subject somehow has no value of
+ // its own. Per-subject (subject.classCheckInMinutes, defaulting from
+@@ -74,6 +85,14 @@ export async function setupNotificationCategories() {
+     { identifier: DAILY_BUDGET_SAVE_ACTION, buttonTitle: "Save to savings" },
+     { identifier: DAILY_BUDGET_KEEP_ACTION, buttonTitle: "Keep for tomorrow" },
+   ]);
++  await Notifications.setNotificationCategoryAsync(TODO_STARTED_CATEGORY, [
++    { identifier: TODO_STARTED_YES_ACTION, buttonTitle: "Yes, started" },
++    { identifier: TODO_STARTED_NOT_YET_ACTION, buttonTitle: "Not yet" },
++  ]);
++  await Notifications.setNotificationCategoryAsync(TODO_PASSED_CATEGORY, [
++    { identifier: TODO_PASSED_YES_ACTION, buttonTitle: "Yes, passed" },
++    { identifier: TODO_PASSED_NOT_YET_ACTION, buttonTitle: "Not yet" },
++  ]);
+ }
+ 
+ export async function dismissNotification(identifier) {
+@@ -181,9 +200,40 @@ function reminderBody(todo, subject) {
+   return detail ? `"${todo.title}" \u2014 ${detail}` : `"${todo.title}"`;
+ }
+ 
++// Picks which flavor of reminder a given occurrence should be:
++//  - status "not_started" with a due date -- "have you started it?", with
++//    Yes/Not yet buttons right on the notification.
++//  - status "to_pass" once actually overdue -- "have you passed it
++//    already?", same Yes/Not yet treatment. Not asked before the due
++//    date passes -- "to_pass" just means it's on track, nothing to
++//    confirm yet.
++//  - anything else (wip, no due date, to_pass but not yet overdue) --
++//    the plain, non-interactive reminderBody() as before.
++// `data` (todo id + type) is attached in every case so a tap on any of
++// these -- action button or the notification body itself -- can be
++// routed and acted on from App.js's response handler.
++function reminderVariant(todo, subject) {
++  const data = { type: "todo", todoId: todo.id };
++  const dleft = todo.dueDate ? daysUntil(todo.dueDate) : null;
++  if (dleft !== null) {
++    const dueWhen = dleft > 1 ? `is due in ${dleft} days`
++      : dleft === 1 ? "is due tomorrow"
++      : dleft === 0 ? "is due today"
++      : `was due ${Math.abs(dleft)} day${Math.abs(dleft) === 1 ? "" : "s"} ago`;
++    if (todo.status === "not_started") {
++      return { body: `"${todo.title}" ${dueWhen}. Have you started it?`, categoryIdentifier: TODO_STARTED_CATEGORY, data };
++    }
++    if (todo.status === "to_pass" && dleft < 0) {
++      return { body: `"${todo.title}" ${dueWhen}. Have you passed it already?`, categoryIdentifier: TODO_PASSED_CATEGORY, data };
++    }
++  }
++  return { body: reminderBody(todo, subject), categoryIdentifier: undefined, data };
++}
++
+ async function scheduleOne(todo, trigger, subject) {
++  const variant = reminderVariant(todo, subject);
+   return safeScheduleNotificationAsync({
+-    content: { title: todo.title, body: reminderBody(todo, subject), sound: true },
++    content: { title: todo.title, body: variant.body, sound: true, data: variant.data, categoryIdentifier: variant.categoryIdentifier },
+     trigger:
+       Platform.OS === "android" ? { ...trigger, channelId: "layp-reminders" } : trigger,
+   });
+@@ -202,6 +252,19 @@ async function scheduleOne(todo, trigger, subject) {
+ // `subject` is optional -- pass the todo's linked school subject (when
+ // todo.category === "school") so the notification body can name the class,
+ // the same way rescheduleTodoAlarm already does for the native alarm.
++//
++// A repeating (daily/weekly/interval/custom) trigger's content is fixed
++// at schedule time -- Expo just keeps re-firing the same notification, it
++// never recomputes the text. That's exactly wrong for reminderVariant()'s
++// "due in N days" / "was due N days ago" wording, which needs to update
++// as the days actually pass. Rather than switch repeating tasks over to
++// one-off-per-day scheduling (which risks running into the OS's total
++// pending-notification budget once several tasks are involved), this is
++// instead handled by re-calling this function once per calendar day for
++// every task with a due date -- see the daily refresh sweep in App.js.
++// That keeps it at one notification per task either way; the tradeoff is
++// that the wording is only as fresh as the last time the app was opened
++// that day, which is a reasonable bar for a daily reminder.
+ export async function rescheduleTodoNotifications(todo, subject) {
+   await cancelTodoNotifications(todo.notificationIds);
+   if (todo.completed || todo.reminderEnabled === false) return [];
+@@ -687,3 +750,110 @@ export async function rescheduleBillNotification(bill) {
+     trigger: Platform.OS === "android" ? { date: fireDate, channelId: "layp-reminders" } : { date: fireDate },
+   });
+ }
++
++// --- Remember (general quick-capture reminders, and the GF module) ---
++//
++// These are all plain one-off notifications -- fire once at a specific
++// moment, no repeating trigger, same shape as rescheduleLoanNotification
++// and rescheduleBillNotification above. Kept generic (title/body passed
++// in) rather than one function per feature, since a reminder note, a
++// promise follow-up, and a lend-adjacent GF note are all really the same
++// "remind me at this moment" primitive underneath.
++
++// One reminder note with an optional fire time. Cancels whatever was
++// previously scheduled for it first (same pattern as every other
++// reschedule* function here) so editing or snoozing a reminder never
++// leaves the old notification still armed alongside the new one.
++export async function rescheduleReminderNotification(previousId, remindAt, title, body, data) {
++  await cancelTodoNotifications(previousId ? [previousId] : []);
++  if (!remindAt) return null;
++  const fireDate = remindAt instanceof Date ? remindAt : new Date(remindAt);
++  if (isNaN(fireDate.getTime()) || fireDate.getTime() <= Date.now()) return null;
++  return safeScheduleNotificationAsync({
++    content: { title, body, sound: true, data },
++    trigger: Platform.OS === "android" ? { date: fireDate, channelId: "layp-reminders" } : { date: fireDate },
++  });
++}
++
++// A promise's own follow-up reminder is the exact same one-off shape as a
++// plain reminder -- kept as a separate name only so call sites read
++// clearly (and so its `data.type` is always stamped consistently for the
++// App.js notification-tap router).
++export async function reschedulePromiseNotification(previousId, dueAt, text) {
++  return rescheduleReminderNotification(previousId, dueAt, "Promise reminder", text, { type: "gfPromise" });
++}
++
++// An important date (birthday, anniversary) gets two heads-up
++// notifications -- 7 days before and 1 day before -- rather than one
++// on the day itself, so there's actually time to act on it. Both past
++// reminders are simply skipped (rescheduleReminderNotification already
++// refuses to schedule anything in the past), so a date added with less
++// than a week of lead time still gets whichever of the two still makes
++// sense. Returns an array of up to two notification ids (nulls filtered
++// out) to store back on the date entry.
++//
++// `mmdd` is "MM-DD" -- important dates repeat every year with no fixed
++// year attached (a birthday isn't tied to one specific year), so this
++// always schedules against the *next* upcoming occurrence rather than a
++// literal stored date.
++export async function rescheduleDateNotifications(previousIds, mmdd, label) {
++  await cancelTodoNotifications(previousIds || []);
++  if (!mmdd) return [];
++  const [mm, dd] = mmdd.split("-").map(Number);
++  if (!mm || !dd) return [];
++  const now = new Date();
++  let next = new Date(now.getFullYear(), mm - 1, dd, 9, 0, 0, 0);
++  if (next.getTime() < now.getTime()) next = new Date(now.getFullYear() + 1, mm - 1, dd, 9, 0, 0, 0);
++  const sevenBefore = new Date(next); sevenBefore.setDate(sevenBefore.getDate() - 7);
++  const oneBefore = new Date(next); oneBefore.setDate(oneBefore.getDate() - 1);
++  const ids = await Promise.all([
++    rescheduleReminderNotification(null, sevenBefore, "Coming up in a week", `${label} is in 7 days`, { type: "gfDate" }),
++    rescheduleReminderNotification(null, oneBefore, "Coming up tomorrow", `${label} is tomorrow`, { type: "gfDate" }),
++  ]);
++  return ids.filter(Boolean);
++}
++
++// A "just a time, no date" reminder repeats every day at that time --
++// Expo's own repeating calendar trigger handles this natively (no need to
++// schedule day-by-day), but it has no concept of an end date. `remindUntil`
++// is therefore enforced on the app side: see sweepExpiredDailyNotifications
++// below, which App.js runs on every load to cancel ones whose `until` has
++// passed. That's a best-effort sweep, not a guarantee, since a repeating
++// notification whose end date passes while the phone never reopens the
++// app will keep firing until the next time the app runs the sweep.
++export async function rescheduleDailyNotification(previousId, time, title, body, data) {
++  await cancelTodoNotifications(previousId ? [previousId] : []);
++  if (!time) return null;
++  const [hour, minute] = time.split(":").map(Number);
++  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
++  return safeScheduleNotificationAsync({
++    content: { title, body, sound: true, data },
++    trigger: { hour, minute, repeats: true, ...(Platform.OS === "android" ? { channelId: "layp-reminders" } : {}) },
++  });
++}
++
++// Unified entry point for the optional-date/time-only reminder model used
++// by both general Remember items and GF Promises: a `date` schedules a
++// single one-off firing (rescheduleReminderNotification); a bare `time`
++// with no `date` repeats daily until cancelled (rescheduleDailyNotification).
++// `until` isn't passed to Expo at all (it can't express one) -- it's
++// enforced by the sweep below instead.
++export async function scheduleItemNotification(previousId, { date, time, until }, title, body, data) {
++  if (date) return rescheduleReminderNotification(previousId, `${date}T${time || "09:00"}:00`, title, body, data);
++  if (time) return rescheduleDailyNotification(previousId, time, title, body, data);
++  await cancelTodoNotifications(previousId ? [previousId] : []);
++  return null;
++}
++
++// Runs on every app load: cancels the *notification* side of any
++// repeating (date-less) reminder/promise whose `remindUntil` has already
++// passed. Doesn't touch the item itself -- App.js decides separately
++// whether an expired item is still worth showing anywhere.
++export async function sweepExpiredDailyNotifications(items) {
++  const today = new Date(); today.setHours(0, 0, 0, 0);
++  const expired = items.filter((it) => !it.remindDate && it.remindUntil && it.notificationId && new Date(`${it.remindUntil}T23:59:59`).getTime() < today.getTime());
++  if (!expired.length) return [];
++  await cancelTodoNotifications(expired.map((it) => it.notificationId));
++  return expired.map((it) => it.id);
++}
++
+diff --git a/src/reminderLogic.js b/src/reminderLogic.js
+new file mode 100644
+index 0000000..61182bc
+--- /dev/null
++++ b/src/reminderLogic.js
+@@ -0,0 +1,89 @@
++// Shared logic for two related but distinct "remind me" mechanisms:
++//
++// 1. Scheduled popups (general Reminders, GF Promises) -- an optional
++//    date + a time, or just a time repeating daily until an optional end
++//    date. Delivery is either a real OS notification or, in "popup" mode,
++//    a due-check run every time the app opens.
++// 2. Frequency popups (GF Notes) -- not tied to a clock time at all, just
++//    "show this again if it's been at least N hours since it was last
++//    shown" (or always, every single open).
++//
++// Kept here instead of duplicated in App.js/RememberList.js/GFScreen.js so
++// the popup collector and each screen's own "is this due" badge can never
++// quietly drift apart.
++
++function todayLocalISO() {
++  const d = new Date();
++  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
++}
++
++// --- Scheduled popups (date optional, time-only repeats daily) ---
++
++// True once the item's popup is due to appear -- for a one-time
++// (dated) item, due once its moment has passed and it hasn't fired yet;
++// for a repeating (date-less) item, due once today's time has passed and
++// today's occurrence hasn't been shown yet (and `remindUntil`, if set,
++// hasn't passed).
++export function isScheduledPopupDue(item) {
++  if (item.remindMode !== "popup" || item.done) return false;
++  const today = todayLocalISO();
++  if (item.remindDate) {
++    if (item.popupFired) return false;
++    return new Date(`${item.remindDate}T${item.remindTime || "09:00"}:00`).getTime() <= Date.now();
++  }
++  if (!item.remindTime) return false;
++  if (item.remindUntil && today > item.remindUntil) return false;
++  if (item.lastPopupShownDate === today) return false;
++  const [h, m] = item.remindTime.split(":").map(Number);
++  const scheduledToday = new Date();
++  scheduledToday.setHours(h, m, 0, 0);
++  return Date.now() >= scheduledToday.getTime();
++}
++
++// The update to apply once a scheduled popup has actually been shown --
++// spread this into the item so a one-time popup doesn't repeat forever,
++// and a repeating one shows at most once per day.
++export function markScheduledPopupShown(item) {
++  const today = todayLocalISO();
++  return item.remindDate ? { popupFired: true } : { lastPopupShownDate: today };
++}
++
++// Human-readable summary of a scheduled item's reminder setup, for list
++// rows -- e.g. "Sep 25, 2:30 PM" or "Daily at 8:00 AM until Oct 1".
++export function describeSchedule(item) {
++  if (!item.remindTime) return null;
++  if (item.remindDate) return `${item.remindDate} ${item.remindTime}`;
++  return `Daily ${item.remindTime}${item.remindUntil ? ` until ${item.remindUntil}` : ""}`;
++}
++
++// --- Frequency popups (GF Notes) ---
++
++export function hoursForFrequency(frequency, customHours) {
++  if (frequency === "1h") return 1;
++  if (frequency === "3h") return 3;
++  if (frequency === "custom") return Math.max(1 / 60, Number(customHours) || 1);
++  return 0; // "always"
++}
++
++export function isFrequencyPopupDue(item) {
++  if (!item.remindPopup?.enabled) return false;
++  const hours = hoursForFrequency(item.remindPopup.frequency, item.remindPopup.customHours);
++  if (hours <= 0) return true; // "always" -- due every single time, no matter when it last showed
++  if (!item.lastPopupShownAt) return true;
++  return Date.now() - item.lastPopupShownAt >= hours * 3600 * 1000;
++}
++
++// The update to apply once a frequency popup has actually been shown --
++// mirrors markScheduledPopupShown above, just keyed to a timestamp
++// instead of "today" since frequency popups can repeat several times a
++// day (every hour, every 3 hours).
++export function markFrequencyPopupShown() {
++  return { lastPopupShownAt: Date.now() };
++}
++
++export const FREQUENCY_OPTIONS = [
++  { key: "always", label: "Always" },
++  { key: "1h", label: "Every hour" },
++  { key: "3h", label: "Every 3 hours" },
++  { key: "custom", label: "Custom" },
++];
+diff --git a/src/screens/BorrowScreen.js b/src/screens/BorrowScreen.js
+index a67f4b1..0bfd22f 100644
+--- a/src/screens/BorrowScreen.js
++++ b/src/screens/BorrowScreen.js
+@@ -1,20 +1,21 @@
+-import React, { useCallback, useMemo, useState } from "react";
+-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
+-import { Plus, X, CheckCircle2, Circle, Trash2, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check, HandCoins } from "lucide-react-native";
++import React, { useCallback, useEffect, useMemo, useState } from "react";
++import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform, Alert } from "react-native";
++import { Plus, X, CheckCircle2, Circle, Trash2, ArrowDownLeft, ArrowUpRight, AlertTriangle, TrendingUp, TrendingDown, Wallet, Check, HandCoins, Receipt, PiggyBank, Pencil, Bell } from "lucide-react-native";
+ import { useTheme, ACCENT } from "../theme";
+-import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount } from "../utils";
++import { peso, uid, todayISO, daysUntil, fmtDay, loanInterest, loanTotalDue, loanTotalPaid, computeAccountBalance, isPositiveAmount, nextRecurringDate } from "../utils";
+ import Chip from "../components/Chip";
+ import SegmentedTabs from "../components/SegmentedTabs";
+ import EmptyState from "../components/EmptyState";
+ import CalendarPicker from "../components/CalendarPicker";
+-import { validate, loanSchema } from "../validation";
+-import { rescheduleLoanNotification, cancelTodoNotifications } from "../notifications";
++import { validate, loanSchema, billSchema } from "../validation";
++import { rescheduleLoanNotification, cancelTodoNotifications, rescheduleBillNotification } from "../notifications";
+ import { confirmDelete } from "../components/ConfirmModal";
+ import EditSheet from "../components/EditSheet";
+ import { useCardPressAnimation, DURATION } from "../animation";
++import { hapticSuccess } from "../haptics";
+ import Reanimated, { FadeOut, Layout as ReanimatedLayout } from "react-native-reanimated";
+ 
+-export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, weeklySummaries, savingsLog = [], accounts, transfers = [] }) {
++export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, setExpenses, weeklySummaries, savingsLog = [], accounts, transfers = [], splits = [], bills = [], setBills }) {
+   const { theme } = useTheme();
+   const [typeView, setTypeView] = useState("lent"); // "lent" = money others owe me, "borrowed" = money I owe others
+   const [statusView, setStatusView] = useState("active");
+@@ -24,6 +25,15 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+   const [paymentAmount, setPaymentAmount] = useState("");
+   const [paymentAccount, setPaymentAccount] = useState(null); // which account the payment was made/received through -- defaults to the loan's own account when the row opens
+ 
++  // Bills -- moved here from Budget Overview so unpaid/paid obligations
++  // (bills) sit alongside unpaid/paid lending (loans) in one place instead
++  // of two separate tabs.
++  const [showBillForm, setShowBillForm] = useState(false);
++  const [editingBillId, setEditingBillId] = useState(null);
++  const [payingBillId, setPayingBillId] = useState(null);
++  const [payAmount, setPayAmount] = useState("");
++  const [billStatusView, setBillStatusView] = useState("unpaid");
++
+   async function saveLoan(data) {
+     if (editingId) {
+       const prev = loans.find((l) => l.id === editingId);
+@@ -91,12 +101,6 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+     .sort((a, b) => statusView === "active" ? (a.dueDate || "9999").localeCompare(b.dueDate || "9999") : (b.settledAt || "").localeCompare(a.settledAt || ""));
+ 
+   const activeTotal = loans.filter((l) => l.type === typeView && !l.settled).reduce((s, l) => s + loanTotalDue(l), 0);
+-  const settledTotal = loans.filter((l) => l.type === typeView && l.settled).reduce((s, l) => s + loanTotalDue(l), 0);
+-  const heroTotal = statusView === "active" ? activeTotal : settledTotal;
+-  const heroLabel = statusView === "active"
+-    ? (typeView === "lent" ? "Total owed to you" : "Total you owe")
+-    : (typeView === "lent" ? "Total repaid to you" : "Total you've repaid");
+-  const heroSub = statusView === "active" ? "across unpaid, active entries (includes interest)" : "across paid, settled entries (includes interest)";
+   const interestEarned = loans.filter((l) => l.type === "lent" && l.settled).reduce((s, l) => s + loanInterest(l), 0);
+   const interestPaid = loans.filter((l) => l.type === "borrowed" && l.settled).reduce((s, l) => s + loanInterest(l), 0);
+   const editingLoan = editingId ? loans.find((l) => l.id === editingId) : null;
+@@ -106,6 +110,136 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+     [moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers]
+   );
+ 
++  // --- Bills (moved here from Budget Overview) ---
++
++  useEffect(() => {
++    // Existing bills from before bill reminders was introduced are scheduled
++    // once, then keep their id for future edits/payment/deletion.
++    const missingReminders = bills.filter((b) => !b.paid && !b.notificationId && b.dueDate && new Date(`${b.dueDate}T09:00:00`).getTime() > Date.now());
++    if (!missingReminders.length) return;
++    (async () => {
++      const ids = await Promise.all(missingReminders.map((b) => rescheduleBillNotification(b)));
++      const idByBill = Object.fromEntries(missingReminders.map((b, i) => [b.id, ids[i]]));
++      setBills((prev) => prev.map((b) => idByBill[b.id] ? { ...b, notificationId: idByBill[b.id] } : b));
++    })();
++  }, [bills, setBills]);
++
++  // For a recurring bill that's just been fully paid, creates the next
++  // occurrence -- same name/amount/category/account/recurrence, due date
++  // advanced by one interval, unpaid, with its own reminder scheduled.
++  // Returns null for a non-recurring bill so callers can spread the result
++  // into their bills update unconditionally.
++  async function spawnNextRecurringBill(bill) {
++    if (!bill.recurring) return null;
++    const next = {
++      id: uid(), name: bill.name, amount: bill.amount, splitId: bill.splitId,
++      account: bill.account, recurring: bill.recurring,
++      dueDate: nextRecurringDate(bill.dueDate, bill.recurring),
++      paid: false, paidAmount: 0, paidAt: null, createdAt: Date.now(),
++    };
++    const notificationId = await rescheduleBillNotification(next);
++    return { ...next, notificationId };
++  }
++
++  async function saveBill(data) {
++    if (editingBillId) {
++      const previous = bills.find((b) => b.id === editingBillId);
++      const updated = { ...previous, ...data };
++      const notificationId = await rescheduleBillNotification(updated);
++      setBills((prev) => prev.map((b) => (b.id === editingBillId ? { ...updated, notificationId } : b)));
++      setEditingBillId(null);
++    } else {
++      const draft = { id: uid(), ...data, paid: false, createdAt: Date.now() };
++      const notificationId = await rescheduleBillNotification(draft);
++      setBills((prev) => [...prev, { ...draft, notificationId }]);
++    }
++    setShowBillForm(false);
++  }
++  async function togglePaid(bill) {
++    if (!bill.paid) {
++      // Full pay from the checkbox -- pays whatever is left on the bill
++      // (the whole amount if nothing's been paid toward it yet, or just the
++      // remaining balance if a partial payment already covered some of it).
++      const remaining = Number(bill.amount) - Number(bill.paidAmount || 0);
++      const available = computeAccountBalance(bill.account, ctx);
++      if (remaining > available) {
++        Alert.alert("Not enough money", `This bill needs ${peso(remaining)} more, but the selected account has ${peso(available)} available.`);
++        return;
++      }
++      if (bill.notificationId) await cancelTodoNotifications([bill.notificationId]);
++      if (remaining > 0.005) {
++        setExpenses((prev) => [...prev, { id: uid(), name: bill.name, amount: remaining, splitId: bill.splitId, account: bill.account, date: todayISO(), source: "bill", billId: bill.id, createdAt: Date.now() }]);
++      }
++      const nextBill = await spawnNextRecurringBill(bill);
++      setBills((prev) => {
++        const updated = prev.map((b) => (b.id === bill.id ? { ...b, paid: true, paidAmount: Number(b.amount), paidAt: todayISO(), notificationId: null } : b));
++        return nextBill ? [...updated, nextBill] : updated;
++      });
++      setPayingBillId(null);
++      hapticSuccess();
++    } else {
++      // Reopening a paid bill clears every expense tied to it (full and
++      // partial alike) and resets the running paid amount back to zero.
++      setExpenses((prev) => prev.filter((e) => e.billId !== bill.id));
++      const reopened = { ...bill, paid: false, paidAmount: 0, paidAt: null, notificationId: null };
++      const notificationId = await rescheduleBillNotification(reopened);
++      setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...reopened, notificationId } : b)));
++    }
++  }
++  // Pays down part of a bill instead of the whole thing -- creates an
++  // expense for just that amount and tracks the running paidAmount on the
++  // bill itself, so the bill stays "unpaid" (with a remaining balance)
++  // until enough partial payments add up to cover it in full.
++  async function payPartial(bill, amountStr) {
++    const amt = Number(amountStr);
++    const remaining = Number(bill.amount) - Number(bill.paidAmount || 0);
++    if (!isPositiveAmount(amt) || amt > remaining + 0.005) {
++      Alert.alert("Invalid amount", `Enter an amount up to ${peso(remaining)} -- that's what's left on this bill.`);
++      return;
++    }
++    const available = computeAccountBalance(bill.account, ctx);
++    if (amt > available) {
++      Alert.alert("Not enough money", `This payment needs ${peso(amt)}, but the selected account has ${peso(available)} available.`);
++      return;
++    }
++    const newPaidAmount = Number(bill.paidAmount || 0) + amt;
++    const fullyPaid = newPaidAmount >= Number(bill.amount) - 0.005;
++    setExpenses((prev) => [...prev, {
++      id: uid(),
++      name: fullyPaid ? bill.name : `${bill.name} (partial)`,
++      amount: amt, splitId: bill.splitId, account: bill.account, date: todayISO(),
++      source: "bill", billId: bill.id, createdAt: Date.now(),
++    }]);
++    if (fullyPaid && bill.notificationId) await cancelTodoNotifications([bill.notificationId]);
++    const nextBill = fullyPaid ? await spawnNextRecurringBill(bill) : null;
++    setBills((prev) => {
++      const updated = prev.map((b) => (b.id === bill.id
++        ? { ...b, paidAmount: newPaidAmount, paid: fullyPaid, paidAt: fullyPaid ? todayISO() : null, notificationId: fullyPaid ? null : b.notificationId }
++        : b));
++      return nextBill ? [...updated, nextBill] : updated;
++    });
++    setPayingBillId(null);
++    setPayAmount("");
++    hapticSuccess();
++  }
++  function removeBill(id) {
++    const bill = bills.find((b) => b.id === id);
++    confirmDelete("Delete this bill?", `"${bill?.name}" will be removed for good.`, async () => {
++      if (bill?.notificationId) await cancelTodoNotifications([bill.notificationId]);
++      setExpenses((prev) => prev.filter((e) => e.billId !== id));
++      setBills((prev) => prev.filter((b) => b.id !== id));
++      if (editingBillId === id) { setEditingBillId(null); setShowBillForm(false); }
++    });
++  }
++  function startEditBill(b) { setEditingBillId(b.id); setShowBillForm(true); }
++
++  const unpaidBills = bills.filter((b) => !b.paid).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
++  const paidBills = bills.filter((b) => b.paid).sort((a, b) => (b.paidAt || "").localeCompare(a.paidAt || ""));
++  // Remaining balance owed, not the original bill amount -- a bill that's
++  // been partially paid down should count only what's actually still left.
++  const unpaidTotal = unpaidBills.reduce((s, b) => s + (Number(b.amount) - Number(b.paidAmount || 0)), 0);
++  const editingBill = editingBillId ? bills.find((b) => b.id === editingBillId) : null;
++
+   const renderItem = useCallback(({ item: l }) => (
+     <LoanRow
+       l={l}
+@@ -137,7 +271,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+       windowSize={7}
+       removeClippedSubviews={Platform.OS === "android"}
+       ListEmptyComponent={
+-        <EmptyState icon={HandCoins} text={statusView === "active" ? `No unpaid ${typeView === "lent" ? "lent" : "borrowed"} entries.` : "Nothing paid off yet."} />
++        <EmptyState icon={HandCoins} text={statusView === "active" ? `No ${typeView === "lent" ? "lent" : "borrowed"} entries yet.` : "Nothing settled yet."} />
+       }
+       ListHeaderComponent={
+         <>
+@@ -149,20 +283,22 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+           </View>
+ 
+           <View style={styles.typeToggle}>
+-            <Pressable onPress={() => setStatusView("active")} style={[styles.typeBtn, { backgroundColor: statusView === "active" ? ACCENT.ember : theme.card, borderColor: theme.line }]} accessibilityRole="tab" accessibilityState={{ selected: statusView === "active" }}>
+-              <Circle size={14} color={statusView === "active" ? "#fff" : theme.textMuted} />
+-              <Text style={[styles.typeBtnText, { color: statusView === "active" ? "#fff" : theme.text }]}>Unpaid</Text>
++            <Pressable onPress={() => setTypeView("lent")} style={[styles.typeBtn, { backgroundColor: typeView === "lent" ? ACCENT.leaf : theme.card, borderColor: theme.line }]} accessibilityRole="tab" accessibilityState={{ selected: typeView === "lent" }}>
++              <ArrowDownLeft size={14} color={typeView === "lent" ? "#fff" : theme.textMuted} />
++              <Text style={[styles.typeBtnText, { color: typeView === "lent" ? "#fff" : theme.text }]}>Owed to me</Text>
+             </Pressable>
+-            <Pressable onPress={() => setStatusView("done")} style={[styles.typeBtn, { backgroundColor: statusView === "done" ? ACCENT.leaf : theme.card, borderColor: theme.line }]} accessibilityRole="tab" accessibilityState={{ selected: statusView === "done" }}>
+-              <CheckCircle2 size={14} color={statusView === "done" ? "#fff" : theme.textMuted} />
+-              <Text style={[styles.typeBtnText, { color: statusView === "done" ? "#fff" : theme.text }]}>Paid</Text>
++            <Pressable onPress={() => setTypeView("borrowed")} style={[styles.typeBtn, { backgroundColor: typeView === "borrowed" ? ACCENT.ember : theme.card, borderColor: theme.line }]} accessibilityRole="tab" accessibilityState={{ selected: typeView === "borrowed" }}>
++              <ArrowUpRight size={14} color={typeView === "borrowed" ? "#fff" : theme.textMuted} />
++              <Text style={[styles.typeBtnText, { color: typeView === "borrowed" ? "#fff" : theme.text }]}>I borrowed</Text>
+             </Pressable>
+           </View>
+ 
+           <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
+-            <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>{heroLabel}</Text>
+-            <Text style={styles.heroValue}>{peso(heroTotal)}</Text>
+-            <Text style={styles.heroSub}>{heroSub}</Text>
++            <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>
++              {typeView === "lent" ? "Total owed to you" : "Total you owe"}
++            </Text>
++            <Text style={styles.heroValue}>{peso(activeTotal)}</Text>
++            <Text style={styles.heroSub}>across active, unsettled entries (includes interest)</Text>
+             <View style={styles.heroDivider} />
+             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+               {typeView === "lent" ? <TrendingUp size={13} color={ACCENT.leaf} /> : <TrendingDown size={13} color={ACCENT.ember} />}
+@@ -176,12 +312,108 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, week
+ 
+           <SegmentedTabs
+             options={[
+-              { key: "lent", label: `Owed to me (${loans.filter((l) => l.type === "lent" && (statusView === "active" ? !l.settled : l.settled)).length})` },
+-              { key: "borrowed", label: `I borrowed (${loans.filter((l) => l.type === "borrowed" && (statusView === "active" ? !l.settled : l.settled)).length})` },
++              { key: "active", label: "Active" },
++              { key: "done", label: `Settled (${loans.filter((l) => l.type === typeView && l.settled).length})` },
+             ]}
+-            value={typeView}
+-            onChange={setTypeView}
++            value={statusView}
++            onChange={setStatusView}
+           />
++
++          {/* Bills -- moved here from Budget Overview, so unpaid/paid
++              obligations (things you owe on a schedule) sit next to
++              unpaid/paid lending in one place. */}
++          <View style={[styles.billsDivider, { borderTopColor: theme.line }]}>
++            <Text style={[styles.h1, { color: theme.text, fontSize: 17 }]}>Bills</Text>
++          </View>
++
++          <View style={styles.chipRow}>
++            <Chip label={`Unpaid (${unpaidBills.length})`} active={billStatusView === "unpaid"} onPress={() => setBillStatusView("unpaid")} small />
++            <Chip label={`Paid (${paidBills.length})`} active={billStatusView === "paid"} onPress={() => setBillStatusView("paid")} small />
++            <View style={{ flex: 1 }} />
++            <Pressable onPress={() => { setEditingBillId(null); setShowBillForm((s) => !s); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark, width: 28, height: 28 }]} accessibilityLabel={showBillForm ? "Close bill form" : "Add bill"}>
++              {showBillForm ? <X size={13} color="#fff" /> : <Plus size={13} color="#fff" />}
++            </Pressable>
++          </View>
++
++          {billStatusView === "unpaid" && unpaidTotal > 0 && (
++            <Text style={[styles.hintText, { color: theme.textMuted }]}>You need <Text style={{ color: ACCENT.ember, fontWeight: "700" }}>{peso(unpaidTotal)}</Text> ready for unpaid bills.</Text>
++          )}
++
++          {showBillForm && <BillForm splits={splits} accounts={accounts} initial={editingBill} onSave={saveBill} onCancel={() => { setShowBillForm(false); setEditingBillId(null); }} />}
++
++          {(billStatusView === "unpaid" ? unpaidBills : paidBills).length === 0 ? (
++            <EmptyState icon={Receipt} text={billStatusView === "unpaid" ? "No bills tracked yet." : "No paid bills yet."} />
++          ) : (
++            (billStatusView === "unpaid" ? unpaidBills : paidBills).map((b) => {
++              const dleft = daysUntil(b.dueDate);
++              const split = splits.find((s) => s.id === b.splitId);
++              const account = accounts.find((a) => a.id === b.account);
++              const paidSoFar = Number(b.paidAmount || 0);
++              const remaining = Number(b.amount) - paidSoFar;
++              const isPartial = !b.paid && paidSoFar > 0.005;
++              return (
++                <Reanimated.View key={b.id} layout={ReanimatedLayout.duration(DURATION)} exiting={FadeOut.duration(DURATION * 0.75)}>
++                <View style={[styles.row, { backgroundColor: theme.card, borderColor: theme.line, borderWidth: 1, opacity: b.paid ? 0.6 : 1 }]}>
++                  <Pressable onPress={() => togglePaid(b)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={b.paid ? "Mark unpaid" : "Mark paid in full"}>{b.paid ? <CheckCircle2 size={19} color={ACCENT.leaf} /> : <PiggyBank size={19} color={ACCENT.gold} />}</Pressable>
++                  <Pressable style={{ flex: 1 }} onPress={() => !b.paid && startEditBill(b)}>
++                    <Text style={[styles.rowTitle, { color: theme.text }]}>{b.name}</Text>
++                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
++                      <Text style={[styles.metaText, { color: theme.textMuted }]}>
++                        {b.paid
++                          ? `${peso(b.amount)} - paid ${fmtDay(b.paidAt)}`
++                          : isPartial
++                          ? `${peso(remaining)} left of ${peso(b.amount)}`
++                          : `${peso(b.amount)}${dleft === 0 ? " - due today" : dleft > 0 ? ` - in ${dleft}d` : ""}`}
++                      </Text>
++                      {!b.paid && dleft < 0 && (
++                        <View style={[styles.tag, { backgroundColor: ACCENT.ember + "22" }]}>
++                          <Text style={[styles.tagText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
++                        </View>
++                      )}
++                      {split && <View style={[styles.tag, { backgroundColor: split.color + "22" }]}><Text style={[styles.tagText, { color: split.color }]}>{split.label}</Text></View>}
++                      {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
++                      {b.recurring && <View style={[styles.tag, { backgroundColor: ACCENT.plum + "22" }]}><Text style={[styles.tagText, { color: ACCENT.plum }]}>{b.recurring === "monthly" ? "Monthly" : "Weekly"}</Text></View>}
++                      {!b.paid && b.notificationId && <Bell size={11} color={theme.textMuted} />}
++                    </View>
++                    {isPartial && (
++                      <View style={[styles.progressTrack, { backgroundColor: theme.bg }]}>
++                        <View style={[styles.progressFill, { width: `${Math.min(100, (paidSoFar / Number(b.amount)) * 100)}%`, backgroundColor: ACCENT.leaf }]} />
++                      </View>
++                    )}
++                  </Pressable>
++                  {!b.paid && (
++                    <Pressable onPress={() => { setPayingBillId((id) => (id === b.id ? null : b.id)); setPayAmount(""); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Pay part of this bill">
++                      <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT.sky }}>Pay part</Text>
++                    </Pressable>
++                  )}
++                  {!b.paid && <Pressable onPress={() => startEditBill(b)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit bill"><Pencil size={14} color={theme.textMuted} /></Pressable>}
++                  <Pressable onPress={() => removeBill(b.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete bill"><Trash2 size={14} color={theme.textMuted} /></Pressable>
++                </View>
++                {payingBillId === b.id && (
++                  <View style={[styles.partialPayRow, { backgroundColor: theme.card, borderColor: theme.line, borderWidth: 1 }]}>
++                    <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Pay toward "{b.name}" -- {peso(remaining)} left</Text>
++                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
++                      <TextInput
++                        value={payAmount}
++                        onChangeText={(v) => setPayAmount(v.replace(/[^0-9.]/g, ""))}
++                        placeholder="0.00" keyboardType="decimal-pad" placeholderTextColor={theme.textMuted}
++                        style={[styles.customInput, { backgroundColor: theme.bg, color: theme.text }]}
++                        autoFocus
++                      />
++                      <Pressable onPress={() => payPartial(b, payAmount)} style={[styles.customConfirm, { backgroundColor: ACCENT.leaf }]} accessibilityLabel="Confirm partial payment">
++                        <Check size={14} color="#fff" />
++                      </Pressable>
++                    </View>
++                    <View style={{ flexDirection: "row", gap: 6, marginTop: 8 }}>
++                      <Chip label={`Pay full (${peso(remaining)})`} small color={ACCENT.gold} onPress={() => payPartial(b, String(remaining))} />
++                      <Chip label="Cancel" small onPress={() => { setPayingBillId(null); setPayAmount(""); }} />
++                    </View>
++                  </View>
++                )}
++                </Reanimated.View>
++              );
++            })
++          )}
+         </>
+       }
+       renderItem={renderItem}
+@@ -328,6 +560,61 @@ const LoanRow = React.memo(function LoanRow({ l, theme, accounts, ctx, payingId,
+   );
+ });
+ 
++function BillForm({ initial, onSave, onCancel, splits, accounts }) {
++  const { theme } = useTheme();
++  const [name, setName] = useState(initial?.name || "");
++  const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
++  const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
++  const [splitId, setSplitId] = useState(initial?.splitId || splits[0]?.id);
++  const [account, setAccount] = useState(initial?.account || accounts[0].id);
++  const [recurring, setRecurring] = useState(initial?.recurring || null);
++  const [errors, setErrors] = useState({});
++
++  function attemptSave() {
++    const { ok, data, errors: fieldErrors } = validate(billSchema, { name, amount, dueDate, splitId, account, recurring });
++    setErrors(fieldErrors);
++    if (ok) onSave(data);
++  }
++
++  return (
++    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
++      <TextInput value={name} onChangeText={setName} placeholder="e.g. Parcel COD, rent, load" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
++      {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
++      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Budget category</Text>
++      <View style={styles.chipWrap}>
++        {splits.map((s) => <Chip key={s.id} label={s.label} color={s.color} active={splitId === s.id} onPress={() => setSplitId(s.id)} small />)}
++      </View>
++      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Pay from</Text>
++      <View style={styles.chipWrap}>
++        {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />)}
++      </View>
++      <View style={{ marginBottom: 12 }}>
++        <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
++        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
++        {errors.amount && <Text style={styles.fieldError}>{errors.amount}</Text>}
++      </View>
++      <View style={{ marginBottom: 12 }}><CalendarPicker value={dueDate} onChange={setDueDate} label="Needed by" /></View>
++      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Repeats</Text>
++      <View style={styles.chipWrap}>
++        <Chip label="One-time" color={ACCENT.teal} active={!recurring} onPress={() => setRecurring(null)} small />
++        <Chip label="Weekly" color={ACCENT.sky} active={recurring === "weekly"} onPress={() => setRecurring("weekly")} small />
++        <Chip label="Monthly" color={ACCENT.plum} active={recurring === "monthly"} onPress={() => setRecurring("monthly")} small />
++      </View>
++      {!!recurring && (
++        <Text style={[styles.hintText, { color: theme.textMuted, marginBottom: 4 }]}>
++          A new {recurring} bill for the same amount will be added automatically once this one's fully paid.
++        </Text>
++      )}
++      <View style={styles.formActions}>
++        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
++        <Pressable onPress={attemptSave} style={[styles.formBtn, { backgroundColor: ACCENT.gold }]}>
++          <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add bill"}</Text>
++        </Pressable>
++      </View>
++    </View>
++  );
++}
++
+ function LoanForm({ initial, type, ctx, accounts, onSave, onCancel, onDelete }) {
+   const { theme } = useTheme();
+   const [person, setPerson] = useState(initial?.person || "");
+@@ -460,4 +747,10 @@ const styles = StyleSheet.create({
+   paymentInput: { flex: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, fontFamily: "monospace", fontSize: 13 },
+   paymentConfirm: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+   paymentHistoryText: { fontSize: 9, marginTop: 6, fontStyle: "italic" },
++  billsDivider: { borderTopWidth: 1, paddingTop: 16, marginTop: 8, marginBottom: 12 },
++  chipRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" },
++  hintText: { fontSize: 11, marginBottom: 8 },
++  partialPayRow: { borderRadius: 14, padding: 12, marginTop: -4, marginBottom: 8 },
++  customInput: { flex: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontFamily: "monospace", fontSize: 13 },
++  customConfirm: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+ });
+diff --git a/src/screens/BudgetScreen.js b/src/screens/BudgetScreen.js
+index b9500a0..528e5cf 100644
+--- a/src/screens/BudgetScreen.js
++++ b/src/screens/BudgetScreen.js
+@@ -1,15 +1,11 @@
+-import React, { useEffect, useMemo, useState } from "react";
++import React, { useMemo, useState } from "react";
+ import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
+-import Reanimated, { FadeOut, Layout as ReanimatedLayout } from "react-native-reanimated";
+-import { DURATION } from "../animation";
+-import { Plus, X, CheckCircle2, PiggyBank, Pencil, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Receipt, Sparkles, Eye, EyeOff } from "lucide-react-native";
++import { Plus, X, CheckCircle2, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Sparkles, Eye, EyeOff } from "lucide-react-native";
+ import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES, INTEREST_PRESETS } from "../theme";
+-import { peso, uid, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsAccountBalance, addAccount as pushAccount, isPositiveAmount, nextRecurringDate, accountInterestEarned } from "../utils";
++import { peso, uid, todayISO, fmtTime12, computeAccountBalance, savingsAccountBalance, addAccount as pushAccount, isPositiveAmount, accountInterestEarned } from "../utils";
+ import Chip from "../components/Chip";
+ import SegmentedTabs from "../components/SegmentedTabs";
+-import EmptyState from "../components/EmptyState";
+ import CalendarPicker from "../components/CalendarPicker";
+-import { validate, billSchema } from "../validation";
+ import { hapticSuccess } from "../haptics";
+ import DailyBudgetScreen from "./DailyBudgetScreen";
+ import SpendingScreen from "./SpendingScreen";
+@@ -17,7 +13,6 @@ import BorrowScreen from "./BorrowScreen";
+ import GoalsScreen from "./GoalsScreen";
+ import ActivityScreen from "./ActivityScreen";
+ import ErrorBoundary from "../components/ErrorBoundary";
+-import { cancelTodoNotifications, rescheduleBillNotification } from "../notifications";
+ import { confirmDelete } from "../components/ConfirmModal";
+ 
+ function matchPresetName(splits) {
+@@ -37,11 +32,6 @@ function BudgetScreen({
+   budgetHidden, onToggleBudgetHidden,
+ }) {
+   const { theme } = useTheme();
+-  const [showBillForm, setShowBillForm] = useState(false);
+-  const [editingBillId, setEditingBillId] = useState(null);
+-  const [payingBillId, setPayingBillId] = useState(null);
+-  const [payAmount, setPayAmount] = useState("");
+-  const [billStatusView, setBillStatusView] = useState("unpaid");
+   const [showAddMoney, setShowAddMoney] = useState(false);
+   const [showTransferForm, setShowTransferForm] = useState(false);
+   const [addAmount, setAddAmount] = useState("");
+@@ -57,127 +47,6 @@ function BudgetScreen({
+     setShowAddMoney(false);
+   }
+ 
+-  useEffect(() => {
+-    // Existing bills from before bill reminders was introduced are scheduled
+-    // once, then keep their id for future edits/payment/deletion.
+-    const missingReminders = bills.filter((b) => !b.paid && !b.notificationId && b.dueDate && new Date(`${b.dueDate}T09:00:00`).getTime() > Date.now());
+-    if (!missingReminders.length) return;
+-    (async () => {
+-      const ids = await Promise.all(missingReminders.map((b) => rescheduleBillNotification(b)));
+-      const idByBill = Object.fromEntries(missingReminders.map((b, i) => [b.id, ids[i]]));
+-      setBills((prev) => prev.map((b) => idByBill[b.id] ? { ...b, notificationId: idByBill[b.id] } : b));
+-    })();
+-  }, [bills, setBills]);
+-
+-  // For a recurring bill that's just been fully paid, creates the next
+-  // occurrence -- same name/amount/category/account/recurrence, due date
+-  // advanced by one interval, unpaid, with its own reminder scheduled.
+-  // Returns null for a non-recurring bill so callers can spread the result
+-  // into their bills update unconditionally.
+-  async function spawnNextRecurringBill(bill) {
+-    if (!bill.recurring) return null;
+-    const next = {
+-      id: uid(), name: bill.name, amount: bill.amount, splitId: bill.splitId,
+-      account: bill.account, recurring: bill.recurring,
+-      dueDate: nextRecurringDate(bill.dueDate, bill.recurring),
+-      paid: false, paidAmount: 0, paidAt: null, createdAt: Date.now(),
+-    };
+-    const notificationId = await rescheduleBillNotification(next);
+-    return { ...next, notificationId };
+-  }
+-
+-  async function saveBill(data) {
+-    if (editingBillId) {
+-      const previous = bills.find((b) => b.id === editingBillId);
+-      const updated = { ...previous, ...data };
+-      const notificationId = await rescheduleBillNotification(updated);
+-      setBills((prev) => prev.map((b) => (b.id === editingBillId ? { ...updated, notificationId } : b)));
+-      setEditingBillId(null);
+-    } else {
+-      const draft = { id: uid(), ...data, paid: false, createdAt: Date.now() };
+-      const notificationId = await rescheduleBillNotification(draft);
+-      setBills((prev) => [...prev, { ...draft, notificationId }]);
+-    }
+-    setShowBillForm(false);
+-  }
+-  async function togglePaid(bill) {
+-    if (!bill.paid) {
+-      // Full pay from the checkbox -- pays whatever is left on the bill
+-      // (the whole amount if nothing's been paid toward it yet, or just the
+-      // remaining balance if a partial payment already covered some of it).
+-      const remaining = Number(bill.amount) - Number(bill.paidAmount || 0);
+-      const available = computeAccountBalance(bill.account, ctx);
+-      if (remaining > available) {
+-        Alert.alert("Not enough money", `This bill needs ${peso(remaining)} more, but the selected account has ${peso(available)} available.`);
+-        return;
+-      }
+-      if (bill.notificationId) await cancelTodoNotifications([bill.notificationId]);
+-      if (remaining > 0.005) {
+-        setExpenses((prev) => [...prev, { id: uid(), name: bill.name, amount: remaining, splitId: bill.splitId, account: bill.account, date: todayISO(), source: "bill", billId: bill.id, createdAt: Date.now() }]);
+-      }
+-      const nextBill = await spawnNextRecurringBill(bill);
+-      setBills((prev) => {
+-        const updated = prev.map((b) => (b.id === bill.id ? { ...b, paid: true, paidAmount: Number(b.amount), paidAt: todayISO(), notificationId: null } : b));
+-        return nextBill ? [...updated, nextBill] : updated;
+-      });
+-      setPayingBillId(null);
+-      hapticSuccess();
+-    } else {
+-      // Reopening a paid bill clears every expense tied to it (full and
+-      // partial alike) and resets the running paid amount back to zero.
+-      setExpenses((prev) => prev.filter((e) => e.billId !== bill.id));
+-      const reopened = { ...bill, paid: false, paidAmount: 0, paidAt: null, notificationId: null };
+-      const notificationId = await rescheduleBillNotification(reopened);
+-      setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...reopened, notificationId } : b)));
+-    }
+-  }
+-  // Pays down part of a bill instead of the whole thing -- creates an
+-  // expense for just that amount and tracks the running paidAmount on the
+-  // bill itself, so the bill stays "unpaid" (with a remaining balance)
+-  // until enough partial payments add up to cover it in full.
+-  async function payPartial(bill, amountStr) {
+-    const amt = Number(amountStr);
+-    const remaining = Number(bill.amount) - Number(bill.paidAmount || 0);
+-    if (!isPositiveAmount(amt) || amt > remaining + 0.005) {
+-      Alert.alert("Invalid amount", `Enter an amount up to ${peso(remaining)} -- that's what's left on this bill.`);
+-      return;
+-    }
+-    const available = computeAccountBalance(bill.account, ctx);
+-    if (amt > available) {
+-      Alert.alert("Not enough money", `This payment needs ${peso(amt)}, but the selected account has ${peso(available)} available.`);
+-      return;
+-    }
+-    const newPaidAmount = Number(bill.paidAmount || 0) + amt;
+-    const fullyPaid = newPaidAmount >= Number(bill.amount) - 0.005;
+-    setExpenses((prev) => [...prev, {
+-      id: uid(),
+-      name: fullyPaid ? bill.name : `${bill.name} (partial)`,
+-      amount: amt, splitId: bill.splitId, account: bill.account, date: todayISO(),
+-      source: "bill", billId: bill.id, createdAt: Date.now(),
+-    }]);
+-    if (fullyPaid && bill.notificationId) await cancelTodoNotifications([bill.notificationId]);
+-    const nextBill = fullyPaid ? await spawnNextRecurringBill(bill) : null;
+-    setBills((prev) => {
+-      const updated = prev.map((b) => (b.id === bill.id
+-        ? { ...b, paidAmount: newPaidAmount, paid: fullyPaid, paidAt: fullyPaid ? todayISO() : null, notificationId: fullyPaid ? null : b.notificationId }
+-        : b));
+-      return nextBill ? [...updated, nextBill] : updated;
+-    });
+-    setPayingBillId(null);
+-    setPayAmount("");
+-    hapticSuccess();
+-  }
+-  function removeBill(id) {
+-    const bill = bills.find((b) => b.id === id);
+-    confirmDelete("Delete this bill?", `"${bill?.name}" will be removed for good.`, async () => {
+-      if (bill?.notificationId) await cancelTodoNotifications([bill.notificationId]);
+-      setExpenses((prev) => prev.filter((e) => e.billId !== id));
+-      setBills((prev) => prev.filter((b) => b.id !== id));
+-      if (editingBillId === id) { setEditingBillId(null); setShowBillForm(false); }
+-    });
+-  }
+-  function startEditBill(b) { setEditingBillId(b.id); setShowBillForm(true); }
+-
+   function removeAccount(id) {
+     const referenced = [
+       ...moneyLog, ...expenses, ...bills, ...savingsLog, ...loans,
+@@ -194,14 +63,6 @@ function BudgetScreen({
+     });
+   }
+ 
+-  const unpaidBills = bills.filter((b) => !b.paid).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+-  const paidBills = bills.filter((b) => b.paid).sort((a, b) => (b.paidAt || "").localeCompare(a.paidAt || ""));
+-  // Remaining balance owed, not the original bill amount -- a bill that's
+-  // been partially paid down should count only what's actually still left.
+-  const unpaidTotal = unpaidBills.reduce((s, b) => s + (Number(b.amount) - Number(b.paidAmount || 0)), 0);
+-  const editingBill = editingBillId ? bills.find((b) => b.id === editingBillId) : null;
+-
+-
+   const rolledTotal = weeklySummaries.reduce((s, w) => s + w.total, 0);
+   const totalSpent = expenses.reduce((s, e) => s + Number(e.amount), 0) + rolledTotal;
+   const ctx = useMemo(
+@@ -267,8 +128,9 @@ function BudgetScreen({
+         <ErrorBoundary resetKey={subTab}>
+         <BorrowScreen
+           loans={loans} setLoans={setLoans}
+-          moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
++          moneyLog={moneyLog} expenses={expenses} setExpenses={setExpenses} weeklySummaries={weeklySummaries}
+           savingsLog={savingsLog} accounts={accounts} transfers={transfers}
++          bills={bills} setBills={setBills} splits={splits}
+         />
+         </ErrorBoundary>
+       ) : subTab === "goals" ? (
+@@ -454,95 +316,6 @@ function BudgetScreen({
+         </View>
+         <Text style={[styles.dailyBudgetChevron, { color: theme.textMuted }]}>{"\u203A"}</Text>
+       </Pressable>
+-
+-      <View style={[styles.chipRow, { marginTop: 4 }]}>
+-        <Chip label={`Unpaid (${unpaidBills.length})`} active={billStatusView === "unpaid"} onPress={() => setBillStatusView("unpaid")} small />
+-        <Chip label={`Paid (${paidBills.length})`} active={billStatusView === "paid"} onPress={() => setBillStatusView("paid")} small />
+-        <View style={{ flex: 1 }} />
+-        <Pressable onPress={() => { setEditingBillId(null); setShowBillForm((s) => !s); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showBillForm ? "Close bill form" : "Add bill"}>
+-          {showBillForm ? <X size={14} color="#fff" /> : <Plus size={14} color="#fff" />}
+-        </Pressable>
+-      </View>
+-
+-      {billStatusView === "unpaid" && unpaidTotal > 0 && (
+-        <Text style={[styles.hintText, { color: theme.textMuted }]}>You need <Text style={{ color: ACCENT.ember, fontWeight: "700" }}>{peso(unpaidTotal)}</Text> ready for unpaid bills.</Text>
+-      )}
+-
+-      {showBillForm && <BillForm splits={splits} accounts={accounts} initial={editingBill} onSave={saveBill} onCancel={() => { setShowBillForm(false); setEditingBillId(null); }} />}
+-
+-      {(billStatusView === "unpaid" ? unpaidBills : paidBills).length === 0 ? (
+-        <EmptyState icon={Receipt} text={billStatusView === "unpaid" ? "No bills tracked yet." : "No paid bills yet."} />
+-      ) : (
+-        (billStatusView === "unpaid" ? unpaidBills : paidBills).map((b) => {
+-          const dleft = daysUntil(b.dueDate);
+-          const split = splits.find((s) => s.id === b.splitId);
+-          const account = accounts.find((a) => a.id === b.account);
+-          const paidSoFar = Number(b.paidAmount || 0);
+-          const remaining = Number(b.amount) - paidSoFar;
+-          const isPartial = !b.paid && paidSoFar > 0.005;
+-          return (
+-            <Reanimated.View key={b.id} layout={ReanimatedLayout.duration(DURATION)} exiting={FadeOut.duration(DURATION * 0.75)}>
+-            <View style={[styles.row, { backgroundColor: theme.card, borderColor: theme.line, opacity: b.paid ? 0.6 : 1 }]}>
+-              <Pressable onPress={() => togglePaid(b)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={b.paid ? "Mark unpaid" : "Mark paid in full"}>{b.paid ? <CheckCircle2 size={19} color={ACCENT.leaf} /> : <PiggyBank size={19} color={ACCENT.gold} />}</Pressable>
+-              <Pressable style={{ flex: 1 }} onPress={() => !b.paid && startEditBill(b)}>
+-                <Text style={[styles.rowTitle, { color: theme.text }]}>{b.name}</Text>
+-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+-                  <Text style={[styles.metaText, { color: theme.textMuted }]}>
+-                    {b.paid
+-                      ? `${peso(b.amount)} - paid ${fmtDay(b.paidAt)}`
+-                      : isPartial
+-                      ? `${peso(remaining)} left of ${peso(b.amount)}`
+-                      : `${peso(b.amount)}${dleft === 0 ? " - due today" : dleft > 0 ? ` - in ${dleft}d` : ""}`}
+-                  </Text>
+-                  {!b.paid && dleft < 0 && (
+-                    <View style={[styles.tag, { backgroundColor: ACCENT.ember + "22" }]}>
+-                      <Text style={[styles.tagText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
+-                    </View>
+-                  )}
+-                  {split && <View style={[styles.tag, { backgroundColor: split.color + "22" }]}><Text style={[styles.tagText, { color: split.color }]}>{split.label}</Text></View>}
+-                  {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
+-                  {b.recurring && <View style={[styles.tag, { backgroundColor: ACCENT.plum + "22" }]}><Text style={[styles.tagText, { color: ACCENT.plum }]}>{b.recurring === "monthly" ? "Monthly" : "Weekly"}</Text></View>}
+-                  {!b.paid && b.notificationId && <Bell size={11} color={theme.textMuted} />}
+-                </View>
+-                {isPartial && (
+-                  <View style={[styles.progressTrack, { backgroundColor: theme.bg }]}>
+-                    <View style={[styles.progressFill, { width: `${Math.min(100, (paidSoFar / Number(b.amount)) * 100)}%`, backgroundColor: ACCENT.leaf }]} />
+-                  </View>
+-                )}
+-              </Pressable>
+-              {!b.paid && (
+-                <Pressable onPress={() => { setPayingBillId((id) => (id === b.id ? null : b.id)); setPayAmount(""); }} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Pay part of this bill">
+-                  <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT.sky }}>Pay part</Text>
+-                </Pressable>
+-              )}
+-              {!b.paid && <Pressable onPress={() => startEditBill(b)} style={{ marginRight: 4 }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Edit bill"><Pencil size={14} color={theme.textMuted} /></Pressable>}
+-              <Pressable onPress={() => removeBill(b.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Delete bill"><Trash2 size={14} color={theme.textMuted} /></Pressable>
+-            </View>
+-            {payingBillId === b.id && (
+-              <View style={[styles.partialPayRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+-                <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Pay toward "{b.name}" -- {peso(remaining)} left</Text>
+-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+-                  <TextInput
+-                    value={payAmount}
+-                    onChangeText={(v) => setPayAmount(v.replace(/[^0-9.]/g, ""))}
+-                    placeholder="0.00" keyboardType="decimal-pad" placeholderTextColor={theme.textMuted}
+-                    style={[styles.customInput, { backgroundColor: theme.bg, color: theme.text }]}
+-                    autoFocus
+-                  />
+-                  <Pressable onPress={() => payPartial(b, payAmount)} style={[styles.customConfirm, { backgroundColor: ACCENT.leaf }]} accessibilityLabel="Confirm partial payment">
+-                    <Check size={14} color="#fff" />
+-                  </Pressable>
+-                </View>
+-                <View style={{ flexDirection: "row", gap: 6, marginTop: 8 }}>
+-                  <Chip label={`Pay full (${peso(remaining)})`} small color={ACCENT.gold} onPress={() => payPartial(b, String(remaining))} />
+-                  <Chip label="Cancel" small onPress={() => { setPayingBillId(null); setPayAmount(""); }} />
+-                </View>
+-              </View>
+-            )}
+-            </Reanimated.View>
+-          );
+-        })
+-      )}
+     </ScrollView>
+       )}
+     </View>
+@@ -550,61 +323,6 @@ function BudgetScreen({
+   );
+ }
+ 
+-function BillForm({ initial, onSave, onCancel, splits, accounts }) {
+-  const { theme } = useTheme();
+-  const [name, setName] = useState(initial?.name || "");
+-  const [amount, setAmount] = useState(initial?.amount != null ? String(initial.amount) : "");
+-  const [dueDate, setDueDate] = useState(initial?.dueDate || todayISO());
+-  const [splitId, setSplitId] = useState(initial?.splitId || splits[0]?.id);
+-  const [account, setAccount] = useState(initial?.account || accounts[0].id);
+-  const [recurring, setRecurring] = useState(initial?.recurring || null);
+-  const [errors, setErrors] = useState({});
+-
+-  function attemptSave() {
+-    const { ok, data, errors: fieldErrors } = validate(billSchema, { name, amount, dueDate, splitId, account, recurring });
+-    setErrors(fieldErrors);
+-    if (ok) onSave(data);
+-  }
+-
+-  return (
+-    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+-      <TextInput value={name} onChangeText={setName} placeholder="e.g. Parcel COD, rent, load" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+-      {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
+-      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Budget category</Text>
+-      <View style={styles.chipWrap}>
+-        {splits.map((s) => <Chip key={s.id} label={s.label} color={s.color} active={splitId === s.id} onPress={() => setSplitId(s.id)} small />)}
+-      </View>
+-      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Pay from</Text>
+-      <View style={styles.chipWrap}>
+-        {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />)}
+-      </View>
+-      <View style={{ marginBottom: 12 }}>
+-        <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
+-        <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+-        {errors.amount && <Text style={styles.fieldError}>{errors.amount}</Text>}
+-      </View>
+-      <View style={{ marginBottom: 12 }}><CalendarPicker value={dueDate} onChange={setDueDate} label="Needed by" /></View>
+-      <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Repeats</Text>
+-      <View style={styles.chipWrap}>
+-        <Chip label="One-time" color={ACCENT.teal} active={!recurring} onPress={() => setRecurring(null)} small />
+-        <Chip label="Weekly" color={ACCENT.sky} active={recurring === "weekly"} onPress={() => setRecurring("weekly")} small />
+-        <Chip label="Monthly" color={ACCENT.plum} active={recurring === "monthly"} onPress={() => setRecurring("monthly")} small />
+-      </View>
+-      {!!recurring && (
+-        <Text style={[styles.hintText, { color: theme.textMuted, marginBottom: 4 }]}>
+-          A new {recurring} bill for the same amount will be added automatically once this one's fully paid.
+-        </Text>
+-      )}
+-      <View style={styles.formActions}>
+-        {initial && <Pressable onPress={onCancel} style={[styles.formBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Cancel"><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>}
+-        <Pressable onPress={attemptSave} style={[styles.formBtn, { backgroundColor: ACCENT.gold }]}>
+-          <Text style={[styles.formBtnText, { color: "#fff" }]}>{initial ? "Save changes" : "Add bill"}</Text>
+-        </Pressable>
+-      </View>
+-    </View>
+-  );
+-}
+-
+ function TransferForm({ accounts, ctx, onSave }) {
+   const { theme } = useTheme();
+   const [fromAccount, setFromAccount] = useState(accounts[0]?.id);
+diff --git a/src/screens/GFScreen.js b/src/screens/GFScreen.js
+new file mode 100644
+index 0000000..51de7cb
+--- /dev/null
++++ b/src/screens/GFScreen.js
+@@ -0,0 +1,702 @@
++import React, { useMemo, useState } from "react";
++import { View, Text, TextInput, Pressable, ScrollView, Modal, StyleSheet, Image } from "react-native";
++import { useSafeAreaInsets } from "react-native-safe-area-context";
++import { Heart, X, Plus, Trash2, CheckCircle2, Circle, Camera, CalendarHeart, StickyNote, HandHeart, Clock3, Edit3 } from "lucide-react-native";
++import { useTheme, ACCENT } from "../theme";
++import { uid, todayISO, fmtTime12 } from "../utils";
++import { verifyPin } from "../security";
++import { pickAndSaveGfImage, deleteGfImage } from "../gfImages";
++import { rescheduleDateNotifications, scheduleItemNotification, cancelTodoNotifications } from "../notifications";
++import { FREQUENCY_OPTIONS } from "../reminderLogic";
++import Chip from "../components/Chip";
++import SegmentedTabs from "../components/SegmentedTabs";
++import EmptyState from "../components/EmptyState";
++import CalendarPicker from "../components/CalendarPicker";
++import TimePicker from "../components/TimePicker";
++import { confirmDelete } from "../components/ConfirmModal";
++
++const LIKE_CATEGORIES = [
++  { id: "food", label: "Food" },
++  { id: "gifts", label: "Gifts" },
++  { id: "places", label: "Places" },
++  { id: "shows", label: "Shows" },
++];
++
++// Important dates are stored as "MM-DD" (no year) -- a birthday or
++// anniversary repeats every year, so there's no real "year" for it to
++// carry. daysUntilNext computes how far away the *next* occurrence is,
++// wrapping into next year once this year's has already passed.
++function daysUntilNext(mmdd) {
++  const [mm, dd] = mmdd.split("-").map(Number);
++  const now = new Date(); now.setHours(0, 0, 0, 0);
++  let next = new Date(now.getFullYear(), mm - 1, dd);
++  if (next.getTime() < now.getTime()) next = new Date(now.getFullYear() + 1, mm - 1, dd);
++  return Math.round((next.getTime() - now.getTime()) / 86400000);
++}
++function fmtMmdd(mmdd) {
++  const [mm, dd] = mmdd.split("-").map(Number);
++  return new Date(2000, mm - 1, dd).toLocaleDateString("en-PH", { month: "long", day: "numeric" });
++}
++
++// A promise is "overdue" the same way a scheduled reminder is -- exact
++// moment passed for a one-time (dated) promise, or today's time-of-day
++// passed and not yet done today for a repeating (date-less) one. This is
++// independent of remindMode (notification vs popup): the in-app "Did you
++// do it?" banner shows either way, since a notification firing doesn't
++// mean the person actually saw or acted on it.
++function isPromiseOverdue(p) {
++  if (p.done || !p.remindTime) return false;
++  if (p.remindDate) return new Date(`${p.remindDate}T${p.remindTime}:00`).getTime() <= Date.now();
++  const [h, m] = p.remindTime.split(":").map(Number);
++  const today = new Date(); today.setHours(h, m, 0, 0);
++  return Date.now() >= today.getTime();
++}
++
++export default function GFScreen({
++  visible, onClose,
++  gfName, setGfName,
++  gfLikes, setGfLikes, gfDislikes, setGfDislikes,
++  gfDates, setGfDates,
++  gfNotes, setGfNotes,
++  gfGiftIdeas, setGfGiftIdeas,
++  gfPromises, setGfPromises,
++}) {
++  const { theme } = useTheme();
++  const insets = useSafeAreaInsets();
++  const [unlocked, setUnlocked] = useState(false);
++  const [pin, setPin] = useState("");
++  const [pinError, setPinError] = useState("");
++  const [tab, setTab] = useState("notes");
++  const [editingName, setEditingName] = useState(false);
++  const [nameDraft, setNameDraft] = useState(gfName || "");
++
++  // Re-locks every time the panel is closed and reopened -- this is the
++  // "reuse your PIN so the list can't be seen by others" requirement:
++  // the app's normal lock screen only gates getting into LAYP at all, so
++  // someone who picks up an already-unlocked phone could otherwise open
++  // this straight from the heart icon with no further check.
++  React.useEffect(() => {
++    if (visible) { setUnlocked(false); setPin(""); setPinError(""); setTab("notes"); }
++  }, [visible]);
++
++  async function submitPin(value) {
++    setPin(value);
++    if (value.length < 4) return;
++    const result = await verifyPin(value);
++    if (result.ok) {
++      setUnlocked(true);
++    } else {
++      setPinError(result.lockedOutMs > 0 ? "Too many attempts. Try again later." : "Wrong PIN.");
++      setPin("");
++    }
++  }
++
++  // Only one-time (dated) promises count toward "missed" -- a repeating
++  // promise recurs by design, so there's no single moment it can be
++  // meaningfully "missed" at.
++  const missedCount = useMemo(
++    () => gfPromises.filter((p) => !p.done && p.remindDate && p.remindTime && Date.now() - new Date(`${p.remindDate}T${p.remindTime}:00`).getTime() > 24 * 3600 * 1000).length,
++    [gfPromises]
++  );
++
++  return (
++    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
++      <View style={[styles.safe, { backgroundColor: theme.bg, paddingTop: insets.top + 8 }]}>
++        <View style={styles.headerRow}>
++          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
++            <Heart size={18} color={ACCENT.rose} fill={ACCENT.rose} />
++            {editingName ? (
++              <TextInput
++                value={nameDraft}
++                onChangeText={setNameDraft}
++                autoFocus
++                onBlur={() => { setGfName(nameDraft.trim() || "Her"); setEditingName(false); }}
++                onSubmitEditing={() => { setGfName(nameDraft.trim() || "Her"); setEditingName(false); }}
++                style={[styles.nameInput, { color: theme.text, borderColor: theme.line }]}
++              />
++            ) : (
++              <Pressable onPress={() => { setNameDraft(gfName || ""); setEditingName(true); }} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
++                <Text style={[styles.h1, { color: theme.text }]}>{gfName || "Her"}</Text>
++                <Edit3 size={12} color={theme.textMuted} />
++              </Pressable>
++            )}
++          </View>
++          <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Close">
++            <X size={20} color={theme.textMuted} />
++          </Pressable>
++        </View>
++
++        {!unlocked ? (
++          <View style={styles.pinWrap}>
++            <Heart size={32} color={ACCENT.rose} fill={ACCENT.rose} style={{ marginBottom: 14 }} />
++            <Text style={[styles.pinLabel, { color: theme.text }]}>Enter your PIN to open this</Text>
++            <TextInput
++              value={pin}
++              onChangeText={submitPin}
++              keyboardType="number-pad"
++              secureTextEntry
++              maxLength={4}
++              autoFocus
++              style={[styles.pinInput, { color: theme.text, borderColor: theme.line, backgroundColor: theme.card }]}
++            />
++            {!!pinError && <Text style={{ color: ACCENT.ember, fontSize: 11, marginTop: 8 }}>{pinError}</Text>}
++          </View>
++        ) : (
++          <>
++            <View style={{ paddingHorizontal: 16 }}>
++              <SegmentedTabs
++                options={[
++                  { key: "notes", label: "Notes" },
++                  { key: "dates", label: "Dates" },
++                  { key: "promises", label: `Promises${missedCount ? ` (${missedCount})` : ""}` },
++                ]}
++                value={tab}
++                onChange={setTab}
++              />
++            </View>
++            <ScrollView style={{ flex: 1, paddingHorizontal: 16 }} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
++              {tab === "notes" && (
++                <NotesTab
++                  gfNotes={gfNotes} setGfNotes={setGfNotes}
++                  gfLikes={gfLikes} setGfLikes={setGfLikes}
++                  gfDislikes={gfDislikes} setGfDislikes={setGfDislikes}
++                  gfGiftIdeas={gfGiftIdeas} setGfGiftIdeas={setGfGiftIdeas}
++                />
++              )}
++              {tab === "dates" && <DatesTab gfDates={gfDates} setGfDates={setGfDates} />}
++              {tab === "promises" && <PromisesTab gfPromises={gfPromises} setGfPromises={setGfPromises} missedCount={missedCount} />}
++            </ScrollView>
++          </>
++        )}
++      </View>
++    </Modal>
++  );
++}
++
++// --- Notes (things she mentioned, Likes, Dislikes, Gift ideas -- one tab,
++// filtered by kind, since none of these are reminders with their own
++// schedule the way Promises are) ---
++
++const NOTE_KINDS = [
++  { id: "notes", label: "Notes" },
++  { id: "likes", label: "Likes" },
++  { id: "dislikes", label: "Dislikes" },
++  { id: "gifts", label: "Gift ideas" },
++];
++
++function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfDislikes, gfGiftIdeas, setGfGiftIdeas }) {
++  const { theme } = useTheme();
++  const [kind, setKind] = useState("notes");
++  const [showForm, setShowForm] = useState(false);
++  const [editingId, setEditingId] = useState(null);
++
++  // Shared form fields -- which ones are shown/used depends on `kind`.
++  const [text, setText] = useState("");
++  const [category, setCategory] = useState("food");
++  const [imageUri, setImageUri] = useState(null);
++  const [popupEnabled, setPopupEnabled] = useState(false);
++  const [frequency, setFrequency] = useState("always");
++  const [customHours, setCustomHours] = useState("2");
++
++  function resetForm() {
++    setText(""); setCategory("food"); setImageUri(null);
++    setPopupEnabled(false); setFrequency("always"); setCustomHours("2");
++    setShowForm(false); setEditingId(null);
++  }
++
++  function startAdd() { resetForm(); setShowForm(true); }
++  function startEdit(item, itemKind) {
++    setKind(itemKind);
++    setEditingId(item.id);
++    setText(item.text);
++    if (itemKind === "likes") { setCategory(item.category); setImageUri(item.imageUri || null); }
++    else if (itemKind === "gifts") setImageUri(item.imageUri || null);
++    else if (itemKind === "notes") {
++      setPopupEnabled(!!item.remindPopup?.enabled);
++      setFrequency(item.remindPopup?.frequency || "always");
++      setCustomHours(item.remindPopup?.customHours != null ? String(item.remindPopup.customHours) : "2");
++    }
++    setShowForm(true);
++  }
++
++  async function attachPhoto() {
++    const uri = await pickAndSaveGfImage();
++    if (uri) setImageUri(uri);
++  }
++
++  function save() {
++    if (!text.trim()) return;
++    if (kind === "notes") {
++      const remindPopup = popupEnabled ? { enabled: true, frequency, customHours: frequency === "custom" ? Number(customHours) || 1 : null } : { enabled: false };
++      if (editingId) {
++        setGfNotes((prev) => prev.map((n) => (n.id === editingId ? { ...n, text: text.trim(), remindPopup, lastPopupShownAt: null } : n)));
++      } else {
++        setGfNotes((prev) => [{ id: uid(), text: text.trim(), remindPopup, lastPopupShownAt: null, createdAt: Date.now() }, ...prev]);
++      }
++    } else if (kind === "likes") {
++      if (editingId) setGfLikes((prev) => prev.map((l) => (l.id === editingId ? { ...l, category, text: text.trim(), imageUri } : l)));
++      else setGfLikes((prev) => [...prev, { id: uid(), category, text: text.trim(), imageUri, createdAt: Date.now() }]);
++    } else if (kind === "dislikes") {
++      if (editingId) setGfDislikes((prev) => prev.map((d) => (d.id === editingId ? { ...d, text: text.trim() } : d)));
++      else setGfDislikes((prev) => [...prev, { id: uid(), text: text.trim(), createdAt: Date.now() }]);
++    } else if (kind === "gifts") {
++      if (editingId) setGfGiftIdeas((prev) => prev.map((g) => (g.id === editingId ? { ...g, text: text.trim(), imageUri } : g)));
++      else setGfGiftIdeas((prev) => [...prev, { id: uid(), text: text.trim(), imageUri, used: false, createdAt: Date.now() }]);
++    }
++    resetForm();
++  }
++
++  function removeNote(item) { confirmDelete("Remove this note?", `"${item.text}" will be removed.`, () => setGfNotes((prev) => prev.filter((n) => n.id !== item.id))); }
++  function removeLike(item) { confirmDelete("Remove this?", `"${item.text}" will be removed.`, () => { if (item.imageUri) deleteGfImage(item.imageUri); setGfLikes((prev) => prev.filter((l) => l.id !== item.id)); }); }
++  function removeDislike(item) { confirmDelete("Remove this?", `"${item.text}" will be removed.`, () => setGfDislikes((prev) => prev.filter((d) => d.id !== item.id))); }
++  function removeGift(item) { confirmDelete("Remove this idea?", `"${item.text}" will be removed.`, () => { if (item.imageUri) deleteGfImage(item.imageUri); setGfGiftIdeas((prev) => prev.filter((g) => g.id !== item.id)); }); }
++  function toggleGiftUsed(item) { setGfGiftIdeas((prev) => prev.map((g) => (g.id === item.id ? { ...g, used: !g.used } : g))); }
++
++  const openGifts = gfGiftIdeas.filter((g) => !g.used);
++  const usedGifts = gfGiftIdeas.filter((g) => g.used);
++
++  return (
++    <View>
++      <View style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: 12 }}>
++        {NOTE_KINDS.map((k) => <Chip key={k.id} label={k.label} active={kind === k.id} onPress={() => { if (!editingId) { resetForm(); setKind(k.id); } }} small />)}
++      </View>
++
++      {kind === "notes" && (
++        gfNotes.length === 0 && !showForm ? (
++          <EmptyState icon={StickyNote} text="Nothing noted yet." />
++        ) : gfNotes.map((n) => (
++          <View key={n.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
++            <View style={{ flex: 1 }}>
++              <Text style={[styles.itemText, { color: theme.text }]}>{n.text}</Text>
++              {n.remindPopup?.enabled && (
++                <Text style={[styles.metaText, { color: theme.textMuted }]}>Popup: {FREQUENCY_OPTIONS.find((f) => f.key === n.remindPopup.frequency)?.label}{n.remindPopup.frequency === "custom" ? ` (every ${n.remindPopup.customHours}h)` : ""}</Text>
++              )}
++            </View>
++            <Pressable onPress={() => startEdit(n, "notes")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit note"><Edit3 size={13} color={theme.textMuted} /></Pressable>
++            <Pressable onPress={() => removeNote(n)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
++          </View>
++        ))
++      )}
++
++      {kind === "likes" && (
++        <>
++          {LIKE_CATEGORIES.map((cat) => {
++            const items = gfLikes.filter((l) => l.category === cat.id);
++            if (!items.length && !showForm) return null;
++            return (
++              <View key={cat.id} style={{ marginBottom: 14 }}>
++                <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>{cat.label}</Text>
++                {items.length === 0 ? (
++                  <Text style={[styles.emptyLine, { color: theme.textMuted }]}>Nothing added yet.</Text>
++                ) : items.map((item) => (
++                  <View key={item.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
++                    {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.thumb} resizeMode="cover" />}
++                    <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{item.text}</Text>
++                    <Pressable onPress={() => startEdit(item, "likes")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit like"><Edit3 size={13} color={theme.textMuted} /></Pressable>
++                    <Pressable onPress={() => removeLike(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
++                  </View>
++                ))}
++              </View>
++            );
++          })}
++          {gfLikes.length === 0 && !showForm && <EmptyState icon={HandHeart} text="Nothing added yet -- start with a favorite food or place." />}
++        </>
++      )}
++
++      {kind === "dislikes" && (
++        gfDislikes.length === 0 && !showForm ? (
++          <EmptyState icon={HandHeart} text="Nothing here yet -- for things to check before repeating." />
++        ) : gfDislikes.map((item) => (
++          <View key={item.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
++            <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{item.text}</Text>
++            <Pressable onPress={() => startEdit(item, "dislikes")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit"><Edit3 size={13} color={theme.textMuted} /></Pressable>
++            <Pressable onPress={() => removeDislike(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
++          </View>
++        ))
++      )}
++
++      {kind === "gifts" && (
++        openGifts.length === 0 && usedGifts.length === 0 && !showForm ? (
++          <EmptyState icon={HandHeart} text="No gift ideas yet -- add one to pull from when a date comes up." />
++        ) : (
++          <>
++            {openGifts.map((g) => (
++              <View key={g.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
++                {g.imageUri && <Image source={{ uri: g.imageUri }} style={styles.thumb} resizeMode="cover" />}
++                <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{g.text}</Text>
++                <Pressable onPress={() => toggleGiftUsed(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Mark as given"><Circle size={16} color={theme.textMuted} /></Pressable>
++                <Pressable onPress={() => startEdit(g, "gifts")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit gift idea"><Edit3 size={13} color={theme.textMuted} /></Pressable>
++                <Pressable onPress={() => removeGift(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
++              </View>
++            ))}
++            {usedGifts.length > 0 && (
++              <>
++                <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 8 }]}>Already given</Text>
++                {usedGifts.map((g) => (
++                  <View key={g.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line, opacity: 0.55 }]}>
++                    {g.imageUri && <Image source={{ uri: g.imageUri }} style={styles.thumb} resizeMode="cover" />}
++                    <Text style={[styles.itemText, { color: theme.text, flex: 1, textDecorationLine: "line-through" }]}>{g.text}</Text>
++                    <Pressable onPress={() => toggleGiftUsed(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Mark as not given"><CheckCircle2 size={16} color={ACCENT.leaf} /></Pressable>
++                    <Pressable onPress={() => removeGift(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
++                  </View>
++                ))}
++              </>
++            )}
++          </>
++        )
++      )}
++
++      {showForm ? (
++        <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
++          {kind === "likes" && (
++            <View style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: 10 }}>
++              {LIKE_CATEGORIES.map((c) => <Chip key={c.id} label={c.label} active={category === c.id} onPress={() => setCategory(c.id)} small />)}
++            </View>
++          )}
++          <TextInput
++            value={text}
++            onChangeText={setText}
++            placeholder={
++              kind === "notes" ? 'e.g. "wants to try that cafe downtown"'
++              : kind === "likes" ? "What does she like?"
++              : kind === "dislikes" ? "What should you avoid repeating?"
++              : "Gift idea"
++            }
++            placeholderTextColor={theme.textMuted}
++            autoFocus
++            multiline={kind === "notes"}
++            style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]}
++          />
++          {(kind === "likes" || kind === "gifts") && (
++            <Pressable onPress={attachPhoto} style={[styles.photoBtn, { borderColor: theme.line }]}>
++              {imageUri ? <Image source={{ uri: imageUri }} style={styles.thumb} resizeMode="cover" /> : <Camera size={14} color={theme.textMuted} />}
++              <Text style={{ fontSize: 11, fontWeight: "700", color: theme.textMuted }}>{imageUri ? "Change photo" : "Add photo (optional, any size)"}</Text>
++            </Pressable>
++          )}
++          {kind === "notes" && (
++            <>
++              <Pressable onPress={() => setPopupEnabled((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: popupEnabled ? 10 : 12, marginTop: 2 }}>
++                {popupEnabled ? <CheckCircle2 size={16} color={ACCENT.rose} /> : <Circle size={16} color={theme.textMuted} />}
++                <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>Pop this up when I open the app</Text>
++              </Pressable>
++              {popupEnabled && (
++                <View style={{ marginBottom: 12 }}>
++                  <Text style={[styles.miniLabel, { color: theme.textMuted }]}>How often</Text>
++                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: frequency === "custom" ? 8 : 0 }}>
++                    {FREQUENCY_OPTIONS.map((f) => <Chip key={f.key} label={f.label} color={ACCENT.rose} active={frequency === f.key} onPress={() => setFrequency(f.key)} small />)}
++                  </View>
++                  {frequency === "custom" && (
++                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
++                      <TextInput value={customHours} onChangeText={(v) => setCustomHours(v.replace(/[^0-9]/g, ""))} keyboardType="number-pad" placeholder="2" placeholderTextColor={theme.textMuted} style={[styles.customHoursInput, { backgroundColor: theme.bg, color: theme.text, borderColor: theme.line }]} />
++                      <Text style={{ fontSize: 11, color: theme.textMuted }}>hours between popups</Text>
++                    </View>
++                  )}
++                </View>
++              )}
++            </>
++          )}
++          <View style={styles.formActions}>
++            <Pressable onPress={resetForm} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>
++            <Pressable onPress={save} style={[styles.formBtn, { backgroundColor: ACCENT.rose }]}><Text style={[styles.formBtnText, { color: "#fff" }]}>{editingId ? "Save changes" : "Add"}</Text></Pressable>
++          </View>
++        </View>
++      ) : (
++        <Pressable onPress={startAdd} style={[styles.addBtn, { borderColor: theme.line }]}>
++          <Plus size={14} color={theme.textMuted} />
++          <Text style={{ fontSize: 12, fontWeight: "700", color: theme.textMuted }}>
++            {kind === "notes" ? "Add a note" : kind === "likes" ? "Add a like" : kind === "dislikes" ? "Add a dislike" : "Add a gift idea"}
++          </Text>
++        </Pressable>
++      )}
++    </View>
++  );
++}
++
++// --- Important dates ---
++
++function DatesTab({ gfDates, setGfDates }) {
++  const { theme } = useTheme();
++  const [showForm, setShowForm] = useState(false);
++  const [editingId, setEditingId] = useState(null);
++  const [label, setLabel] = useState("");
++  const [pickDate, setPickDate] = useState(todayISO());
++
++  const sorted = useMemo(() => [...gfDates].sort((a, b) => daysUntilNext(a.date) - daysUntilNext(b.date)), [gfDates]);
++
++  function resetForm() { setLabel(""); setPickDate(todayISO()); setShowForm(false); setEditingId(null); }
++  function startEdit(item) {
++    setEditingId(item.id);
++    setLabel(item.label);
++    const now = new Date();
++    setPickDate(`${now.getFullYear()}-${item.date}`);
++    setShowForm(true);
++  }
++
++  async function saveDate() {
++    if (!label.trim()) return;
++    const mmdd = pickDate.slice(5); // "YYYY-MM-DD" -> "MM-DD"
++    if (editingId) {
++      const previous = gfDates.find((d) => d.id === editingId);
++      await rescheduleDateNotifications(previous?.notificationIds || [], null, "");
++      const notificationIds = await rescheduleDateNotifications([], mmdd, label.trim());
++      setGfDates((prev) => prev.map((d) => (d.id === editingId ? { ...d, label: label.trim(), date: mmdd, notificationIds } : d)));
++    } else {
++      const notificationIds = await rescheduleDateNotifications([], mmdd, label.trim());
++      setGfDates((prev) => [...prev, { id: uid(), label: label.trim(), date: mmdd, notificationIds }]);
++    }
++    resetForm();
++  }
++  function removeDate(item) {
++    confirmDelete("Remove this date?", `"${item.label}" will be removed.`, async () => {
++      await rescheduleDateNotifications(item.notificationIds || [], null, "");
++      setGfDates((prev) => prev.filter((d) => d.id !== item.id));
++    });
++  }
++
++  return (
++    <View>
++      {sorted.length === 0 && !showForm ? (
++        <EmptyState icon={CalendarHeart} text="No important dates yet -- add a birthday or anniversary." />
++      ) : sorted.map((d) => {
++        const days = daysUntilNext(d.date);
++        return (
++          <View key={d.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
++            <View style={{ flex: 1 }}>
++              <Text style={[styles.itemText, { color: theme.text }]}>{d.label}</Text>
++              <Text style={[styles.metaText, { color: theme.textMuted }]}>{fmtMmdd(d.date)} -- {days === 0 ? "today!" : `in ${days}d`}</Text>
++            </View>
++            <Pressable onPress={() => startEdit(d)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit date"><Edit3 size={13} color={theme.textMuted} /></Pressable>
++            <Pressable onPress={() => removeDate(d)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
++          </View>
++        );
++      })}
++
++      {showForm ? (
++        <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
++          <TextInput value={label} onChangeText={setLabel} placeholder="e.g. Birthday, Anniversary" placeholderTextColor={theme.textMuted} autoFocus style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]} />
++          <View style={{ marginBottom: 4 }}><CalendarPicker value={pickDate} onChange={setPickDate} label="Date (repeats every year)" /></View>
++          <Text style={[styles.hint, { color: theme.textMuted, marginBottom: 10 }]}>You'll get a heads-up 7 days before and 1 day before.</Text>
++          <View style={styles.formActions}>
++            <Pressable onPress={resetForm} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>
++            <Pressable onPress={saveDate} style={[styles.formBtn, { backgroundColor: ACCENT.rose }]}><Text style={[styles.formBtnText, { color: "#fff" }]}>{editingId ? "Save changes" : "Add"}</Text></Pressable>
++          </View>
++        </View>
++      ) : (
++        <Pressable onPress={() => setShowForm(true)} style={[styles.addBtn, { borderColor: theme.line }]}>
++          <Plus size={14} color={theme.textMuted} />
++          <Text style={{ fontSize: 12, fontWeight: "700", color: theme.textMuted }}>Add a date</Text>
++        </Pressable>
++      )}
++    </View>
++  );
++}
++
++// --- Promises ---
++
++function PromisesTab({ gfPromises, setGfPromises, missedCount }) {
++  const { theme } = useTheme();
++  const [showForm, setShowForm] = useState(false);
++  const [editingId, setEditingId] = useState(null);
++  const [text, setText] = useState("");
++  const [remindMode, setRemindMode] = useState("notification");
++  const [hasDate, setHasDate] = useState(true);
++  const [date, setDate] = useState(todayISO());
++  const [time, setTime] = useState("20:00");
++  const [hasUntil, setHasUntil] = useState(false);
++  const [until, setUntil] = useState(todayISO());
++
++  const active = useMemo(() => [...gfPromises.filter((p) => !p.done)].sort((a, b) => {
++    const ka = a.remindDate ? `${a.remindDate}T${a.remindTime || "00:00"}` : a.remindTime ? `9999T${a.remindTime}` : "99999";
++    const kb = b.remindDate ? `${b.remindDate}T${b.remindTime || "00:00"}` : b.remindTime ? `9999T${b.remindTime}` : "99999";
++    return ka.localeCompare(kb);
++  }), [gfPromises]);
++  const done = gfPromises.filter((p) => p.done);
++
++  function resetForm() {
++    setText(""); setRemindMode("notification"); setHasDate(true); setDate(todayISO()); setTime("20:00");
++    setHasUntil(false); setUntil(todayISO());
++    setShowForm(false); setEditingId(null);
++  }
++  function startEdit(p) {
++    setEditingId(p.id);
++    setText(p.text);
++    setRemindMode(p.remindMode || "notification");
++    setHasDate(!!p.remindDate);
++    setDate(p.remindDate || todayISO());
++    setTime(p.remindTime || "20:00");
++    setHasUntil(!!p.remindUntil);
++    setUntil(p.remindUntil || todayISO());
++    setShowForm(true);
++  }
++
++  async function savePromise() {
++    if (!text.trim()) return;
++    const remindDate = hasDate ? date : null;
++    const remindTime = time;
++    const remindUntil = !hasDate && hasUntil ? until : null;
++    if (editingId) {
++      const prev = gfPromises.find((p) => p.id === editingId);
++      const notificationId = remindMode === "notification"
++        ? await scheduleItemNotification(prev.notificationId, { date: remindDate, time: remindTime, until: remindUntil }, "Promise reminder", text.trim(), { type: "gfPromise" })
++        : (await cancelTodoNotifications(prev.notificationId ? [prev.notificationId] : []), null);
++      setGfPromises((list) => list.map((p) => (p.id === editingId ? { ...p, text: text.trim(), remindMode, remindDate, remindTime, remindUntil, notificationId, popupFired: false, lastPopupShownDate: null } : p)));
++    } else {
++      const notificationId = remindMode === "notification"
++        ? await scheduleItemNotification(null, { date: remindDate, time: remindTime, until: remindUntil }, "Promise reminder", text.trim(), { type: "gfPromise" })
++        : null;
++      setGfPromises((list) => [...list, { id: uid(), text: text.trim(), remindMode, remindDate, remindTime, remindUntil, notificationId, done: false, popupFired: false, lastPopupShownDate: null, createdAt: Date.now() }]);
++    }
++    resetForm();
++  }
++  async function markDone(p) {
++    if (p.notificationId) await cancelTodoNotifications([p.notificationId]);
++    setGfPromises((prev) => prev.map((x) => (x.id === p.id ? { ...x, done: true } : x)));
++  }
++  async function snooze(p, kind) {
++    const base = new Date();
++    let next;
++    if (kind === "10m") next = new Date(base.getTime() + 10 * 60 * 1000);
++    else if (kind === "1h") next = new Date(base.getTime() + 60 * 60 * 1000);
++    else next = new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1, 20, 0, 0, 0);
++    const remindDate = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
++    const remindTime = `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
++    const notificationId = p.remindMode === "notification"
++      ? await scheduleItemNotification(p.notificationId, { date: remindDate, time: remindTime }, "Promise reminder", p.text, { type: "gfPromise" })
++      : null;
++    setGfPromises((prev) => prev.map((x) => (x.id === p.id ? { ...x, remindDate, remindTime, remindUntil: null, notificationId, popupFired: false, lastPopupShownDate: null } : x)));
++  }
++  function removePromise(p) {
++    confirmDelete("Delete this promise?", `"${p.text}" will be removed.`, async () => {
++      if (p.notificationId) await cancelTodoNotifications([p.notificationId]);
++      setGfPromises((prev) => prev.filter((x) => x.id !== p.id));
++    });
++  }
++
++  return (
++    <View>
++      {missedCount > 0 && (
++        <View style={[styles.missedBanner, { backgroundColor: ACCENT.ember + "1a", borderColor: ACCENT.ember }]}>
++          <Text style={{ color: ACCENT.ember, fontSize: 12, fontWeight: "700" }}>{missedCount} promise{missedCount === 1 ? "" : "s"} you haven't followed through on</Text>
++        </View>
++      )}
++
++      {active.length === 0 && done.length === 0 && !showForm ? (
++        <EmptyState icon={HandHeart} text='No promises tracked yet -- e.g. "reply in an hour".' />
++      ) : active.map((p) => {
++        const overdue = isPromiseOverdue(p);
++        const schedule = p.remindTime ? (p.remindDate ? `${p.remindDate} ${fmtTime12(p.remindTime)}` : `Daily ${fmtTime12(p.remindTime)}${p.remindUntil ? ` until ${p.remindUntil}` : ""}`) : null;
++        return (
++          <View key={p.id} style={[styles.itemRow, { flexDirection: "column", alignItems: "stretch", backgroundColor: theme.card, borderColor: overdue ? ACCENT.gold : theme.line, borderWidth: overdue ? 1.5 : 1 }]}>
++            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
++              <Pressable onPress={() => markDone(p)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Mark done"><Circle size={18} color={theme.textMuted} /></Pressable>
++              <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{p.text}</Text>
++              <Pressable onPress={() => startEdit(p)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit promise"><Edit3 size={13} color={theme.textMuted} /></Pressable>
++              <Pressable onPress={() => removePromise(p)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
++            </View>
++            {schedule && (
++              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4, marginLeft: 28 }}>
++                <Clock3 size={10} color={overdue ? ACCENT.gold : theme.textMuted} />
++                <Text style={[styles.metaText, { color: overdue ? ACCENT.gold : theme.textMuted }]}>{schedule} -- {p.remindMode === "notification" ? "notification" : "popup"}</Text>
++              </View>
++            )}
++            {overdue && (
++              <View style={{ marginLeft: 28, marginTop: 8 }}>
++                <Text style={{ fontSize: 11, fontWeight: "700", color: theme.text, marginBottom: 6 }}>Did you do it?</Text>
++                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
++                  <Pressable onPress={() => markDone(p)} style={[styles.snoozeBtn, { backgroundColor: ACCENT.leaf }]}><Text style={[styles.snoozeText, { color: "#fff" }]}>Done</Text></Pressable>
++                  <Pressable onPress={() => snooze(p, "10m")} style={[styles.snoozeBtn, { backgroundColor: theme.bg }]}><Text style={[styles.snoozeText, { color: theme.text }]}>+10 min</Text></Pressable>
++                  <Pressable onPress={() => snooze(p, "1h")} style={[styles.snoozeBtn, { backgroundColor: theme.bg }]}><Text style={[styles.snoozeText, { color: theme.text }]}>+1 hour</Text></Pressable>
++                  <Pressable onPress={() => snooze(p, "tomorrow")} style={[styles.snoozeBtn, { backgroundColor: theme.bg }]}><Text style={[styles.snoozeText, { color: theme.text }]}>Tomorrow</Text></Pressable>
++                </View>
++              </View>
++            )}
++          </View>
++        );
++      })}
++
++      {done.length > 0 && (
++        <>
++          <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 8 }]}>Kept</Text>
++          {done.slice(0, 20).map((p) => (
++            <View key={p.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line, opacity: 0.55 }]}>
++              <CheckCircle2 size={16} color={ACCENT.leaf} />
++              <Text style={[styles.itemText, { color: theme.text, flex: 1, textDecorationLine: "line-through" }]}>{p.text}</Text>
++              <Pressable onPress={() => removePromise(p)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
++            </View>
++          ))}
++        </>
++      )}
++
++      {showForm ? (
++        <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
++          <TextInput value={text} onChangeText={setText} placeholder='e.g. "call tonight"' placeholderTextColor={theme.textMuted} autoFocus style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]} />
++
++          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Remind me with</Text>
++          <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
++            <Chip label="Notification" color={ACCENT.rose} active={remindMode === "notification"} onPress={() => setRemindMode("notification")} />
++            <Chip label="Popup when app opens" color={ACCENT.plum} active={remindMode === "popup"} onPress={() => setRemindMode("popup")} />
++          </View>
++
++          <Pressable onPress={() => setHasDate((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
++            {hasDate ? <CheckCircle2 size={16} color={ACCENT.rose} /> : <Circle size={16} color={theme.textMuted} />}
++            <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>On a specific date (leave off to repeat daily)</Text>
++          </Pressable>
++
++          <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
++            {hasDate && <CalendarPicker value={date} onChange={setDate} label="Date" />}
++            <TimePicker value={time} onChange={setTime} label="Time" />
++          </View>
++
++          {!hasDate && (
++            <>
++              <Pressable onPress={() => setHasUntil((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
++                {hasUntil ? <CheckCircle2 size={16} color={ACCENT.rose} /> : <Circle size={16} color={theme.textMuted} />}
++                <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>Stop repeating after a date</Text>
++              </Pressable>
++              {hasUntil && <View style={{ marginBottom: 10 }}><CalendarPicker value={until} onChange={setUntil} label="Until" /></View>}
++            </>
++          )}
++
++          <View style={styles.formActions}>
++            <Pressable onPress={resetForm} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>
++            <Pressable onPress={savePromise} style={[styles.formBtn, { backgroundColor: ACCENT.rose }]}><Text style={[styles.formBtnText, { color: "#fff" }]}>{editingId ? "Save changes" : "Add"}</Text></Pressable>
++          </View>
++        </View>
++      ) : (
++        <Pressable onPress={() => setShowForm(true)} style={[styles.addBtn, { borderColor: theme.line }]}>
++          <Plus size={14} color={theme.textMuted} />
++          <Text style={{ fontSize: 12, fontWeight: "700", color: theme.textMuted }}>Add a promise</Text>
++        </Pressable>
++      )}
++    </View>
++  );
++}
++
++const styles = StyleSheet.create({
++  safe: { flex: 1 },
++  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 12 },
++  h1: { fontSize: 18, fontWeight: "800" },
++  nameInput: { fontSize: 18, fontWeight: "800", borderBottomWidth: 1, minWidth: 100, paddingVertical: 2 },
++  pinWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 30 },
++  pinLabel: { fontSize: 13, fontWeight: "600", marginBottom: 14 },
++  pinInput: { width: 140, borderWidth: 1, borderRadius: 12, textAlign: "center", fontSize: 20, letterSpacing: 10, paddingVertical: 10 },
++  sectionLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 },
++  emptyLine: { fontSize: 11, fontStyle: "italic", marginBottom: 6 },
++  itemRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8 },
++  itemText: { fontSize: 13, fontWeight: "600" },
++  metaText: { fontSize: 10, fontFamily: "monospace" },
++  thumb: { width: 36, height: 36, borderRadius: 8 },
++  formCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 14 },
++  input: { fontSize: 13, fontWeight: "500", marginBottom: 10, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
++  miniLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 },
++  customHoursInput: { width: 60, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, textAlign: "center" },
++  hint: { fontSize: 10.5, lineHeight: 14 },
++  photoBtn: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10, alignSelf: "flex-start" },
++  formActions: { flexDirection: "row", gap: 8 },
++  formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
++  formBtnText: { fontSize: 12, fontWeight: "700" },
++  addBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderStyle: "dashed", borderRadius: 14, paddingVertical: 12, marginBottom: 14 },
++  snoozeBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
++  snoozeText: { fontSize: 10, fontWeight: "700" },
++  missedBanner: { borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 12 },
++});
+diff --git a/src/screens/HomeScreen.js b/src/screens/HomeScreen.js
+index beb722a..4beb580 100644
+--- a/src/screens/HomeScreen.js
++++ b/src/screens/HomeScreen.js
+@@ -1,6 +1,6 @@
+ import React, { useEffect, useMemo, useState } from "react";
+ import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
+-import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet, Eye, EyeOff, ShieldAlert, X } from "lucide-react-native";
++import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet, Eye, EyeOff, ShieldAlert, X, Bell } from "lucide-react-native";
+ import { useTheme, ACCENT, CATEGORIES } from "../theme";
+ import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
+ import { totalBalance, netWorth as selectNetWorth, safeToSpend as selectSafeToSpend, monthlySummary, billCoverageByAccount } from "../selectors";
+@@ -9,7 +9,7 @@ import AnimatedNumber from "../components/AnimatedNumber";
+ import EmptyState from "../components/EmptyState";
+ import { shouldShowBackupReminder, dismissBackupReminder } from "../backupReminder";
+ 
+-function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden, onGoToBackup }) {
++function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], reminders = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden, onGoToBackup }) {
+   const { theme } = useTheme();
+   const [showBackupBanner, setShowBackupBanner] = useState(false);
+   useEffect(() => {
+@@ -40,6 +40,19 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
+     .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"))
+     .slice(0, 3);
+ 
++  // Same "capped at 3, soonest first" pattern as Upcoming Tasks above --
++  // reminders with a set time sort ahead of ones without, so a "call mom
++  // at 5pm" pin doesn't get buried under an undated "buy milk" note.
++  const pinnedReminders = [...reminders]
++    .filter((r) => !r.done)
++    .sort((a, b) => {
++      if (a.remindAt && b.remindAt) return a.remindAt.localeCompare(b.remindAt);
++      if (a.remindAt) return -1;
++      if (b.remindAt) return 1;
++      return (b.createdAt || 0) - (a.createdAt || 0);
++    })
++    .slice(0, 3);
++
+   const totalMoney = totalBalance(accounts, ctx);
+ 
+   const now = new Date();
+@@ -158,6 +171,34 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
+         </View>
+       </Pressable>
+ 
++      {/* Remember -- next 2-3 reminders, soonest first, capped the same
++          way Upcoming Tasks is above. Only shown once there's actually
++          something pinned, so a person who never uses Remember doesn't
++          see a permanently-empty card. */}
++      {pinnedReminders.length > 0 && (
++        <Pressable onPress={onViewTodos} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="View Remember list">
++          <View style={styles.schoolHeader}>
++            <Bell size={14} color={ACCENT.sky} />
++            <Text style={[styles.schoolTitle, { color: theme.text }]}>Remember</Text>
++          </View>
++          <View style={{ gap: 9 }}>
++            {pinnedReminders.map((r, i) => (
++              <View key={r.id} style={[{ flexDirection: "row", alignItems: "center", gap: 8 }, i > 0 && { paddingTop: 9, borderTopWidth: 1, borderTopColor: theme.line }]}>
++                <Circle size={13} color={ACCENT.sky} />
++                <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={1}>{r.text}</Text>
++                {r.remindAt && (
++                  <Text style={[styles.taskDue, { color: theme.textMuted }]}>{fmtDay(r.remindAt.split("T")[0])} {fmtTime12(r.remindAt.split("T")[1].slice(0, 5))}</Text>
++                )}
++              </View>
++            ))}
++          </View>
++          <View style={styles.schoolFooter}>
++            <Text style={[styles.schoolFooterText, { color: ACCENT.gold }]}>View all</Text>
++            <ChevronRight size={12} color={ACCENT.gold} />
++          </View>
++        </Pressable>
++      )}
++
+       {/* Today's Classes -- compact horizontal strip (was a full detailed
+           card; the per-block detail now lives on the School tab, this is
+           just a glanceable "what's today" strip). */}
+diff --git a/src/screens/SpendingScreen.js b/src/screens/SpendingScreen.js
+index dc96a67..18541d9 100644
+--- a/src/screens/SpendingScreen.js
++++ b/src/screens/SpendingScreen.js
+@@ -1,5 +1,5 @@
+-import React, { useCallback, useMemo, useState } from "react";
+-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
++import React, { useCallback, useEffect, useMemo, useState } from "react";
++import { View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet, Platform } from "react-native";
+ import { Plus, X, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search, Filter, Receipt } from "lucide-react-native";
+ import { useTheme, ACCENT, INCOME_CATEGORIES, SPENDING_LABELS } from "../theme";
+ import { peso, uid, todayISO, fmtDay, fmtDaySmart, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview, nextRecurringDate } from "../utils";
+@@ -13,7 +13,7 @@ import CalendarPicker from "../components/CalendarPicker";
+ import { confirmDelete, confirmAction } from "../components/ConfirmModal";
+ import EditSheet from "../components/EditSheet";
+ import { DURATION, SPRING, useCardPressAnimation } from "../animation";
+-import Reanimated from "react-native-reanimated";
++import Reanimated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+ 
+ export default function SpendingScreen({
+   expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [],
+@@ -127,6 +127,11 @@ export default function SpendingScreen({
+   // split/account/label the most recent matching expense used, dated
+   // today.
+   const quickTemplates = useMemo(() => frequentExpenseTemplates(expenses), [expenses]);
++  // Every distinct expense name ever logged, not just the top few -- the
++  // form's search/dropdown searches this instead of the capped list
++  // above, so "reuse it over and over again" actually reaches back
++  // through your whole history, not just the last several.
++  const allExpenseTemplates = useMemo(() => frequentExpenseTemplates(expenses, Infinity), [expenses]);
+   function logAgain(template) {
+     confirmAction({
+       title: "Log this expense again?",
+@@ -547,6 +552,7 @@ export default function SpendingScreen({
+         onCancel={() => { setShowForm(false); setEditingId(null); }}
+         onDelete={remove}
+         quickTemplates={quickTemplates}
++        allTemplates={allExpenseTemplates}
+         onLogAgain={(t) => { logAgain(t); setShowForm(false); }}
+       />
+     </EditSheet>
+@@ -624,7 +630,102 @@ const LedgerEntryRow = React.memo(function LedgerEntryRow({ item, accounts, comp
+   );
+ });
+ 
+-function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ctx, quickTemplates = [], onLogAgain }) {
++// Search-and-dropdown "Log again" -- replaces a wall of chips (one per
++// frequent expense, which stopped being readable once there were more
++// than a handful) with a single search field. Closed, it's just that one
++// field; typing or tapping the chevron opens a scrollable list, matching
++// against every distinct expense name ever logged (not just the top few)
++// so an older, less-frequent expense can still be found and reused.
++function LogAgainPicker({ recentTemplates, allTemplates, onPick }) {
++  const { theme } = useTheme();
++  const [query, setQuery] = useState("");
++  const [open, setOpen] = useState(false);
++  const filtered = useMemo(() => {
++    if (!query.trim()) return recentTemplates;
++    const q = query.trim().toLowerCase();
++    return allTemplates.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 30);
++  }, [query, recentTemplates, allTemplates]);
++
++  return (
++    <View style={{ marginBottom: 14 }}>
++      <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 6 }]}>Log again</Text>
++      <View style={[styles.logAgainSearchRow, { backgroundColor: theme.bg, borderColor: theme.line }]}>
++        <Search size={14} color={theme.textMuted} />
++        <TextInput
++          value={query}
++          onChangeText={(v) => { setQuery(v); setOpen(true); }}
++          onFocus={() => setOpen(true)}
++          placeholder="Search past expenses"
++          placeholderTextColor={theme.textMuted}
++          style={[styles.logAgainSearchInput, { color: theme.text }]}
++        />
++        <Pressable onPress={() => setOpen((o) => !o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={open ? "Hide past expenses" : "Show all past expenses"}>
++          {open ? <ChevronUp size={16} color={theme.textMuted} /> : <ChevronDown size={16} color={theme.textMuted} />}
++        </Pressable>
++      </View>
++      {open && (
++        <View style={[styles.logAgainDropdown, { backgroundColor: theme.card, borderColor: theme.line }]}>
++          {filtered.length === 0 ? (
++            <Text style={[styles.metaText, { color: theme.textMuted, padding: 10 }]}>No matches.</Text>
++          ) : (
++            <ScrollView style={{ maxHeight: 220 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
++              {filtered.map((t) => (
++                <Pressable key={t.id} onPress={() => { onPick(t); setOpen(false); setQuery(""); }} style={[styles.logAgainRow, { borderBottomColor: theme.line }]}>
++                  <Text style={[styles.rowTitle, { color: theme.text, flex: 1 }]} numberOfLines={1}>{t.name}</Text>
++                  <Text style={[styles.metaText, { color: theme.textMuted }]}>{peso(t.amount)}</Text>
++                </Pressable>
++              ))}
++            </ScrollView>
++          )}
++        </View>
++      )}
++    </View>
++  );
++}
++
++// Balance -> spend -> remaining, made visual instead of a single line of
++// text: the top bar is the account's current balance (a fixed reference,
++// always full width); the bottom one is what the balance would become
++// after the typed amount, and animates its width down in real time as
++// the amount changes, so the shrink itself is what communicates the
++// impact rather than just the numbers alone.
++function AccountSpendBar({ label, color, balance, spend, exceeds }) {
++  const { theme } = useTheme();
++  const remaining = balance - spend;
++  const ratio = balance > 0 ? Math.max(0, Math.min(1, remaining / balance)) : 0;
++  const anim = useSharedValue(ratio);
++  useEffect(() => {
++    anim.value = withTiming(ratio, { duration: 220 });
++  }, [ratio]);
++  // A sliver of width even at zero (rather than collapsing to nothing) so
++  // an over-budget amount still reads as "a bar that shrank a lot", not
++  // as the bar having broken/disappeared.
++  const remainingBarStyle = useAnimatedStyle(() => ({ width: `${Math.max(anim.value * 100, spend > 0 ? 2 : 0)}%` }));
++
++  return (
++    <View style={{ marginBottom: 12 }}>
++      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6 }}>
++        <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 0 }]}>{label}</Text>
++        <Text style={[styles.balanceHeadline, { color: theme.text }]}>{peso(balance)}</Text>
++      </View>
++      <View style={[styles.spendBarTrack, { backgroundColor: color }]} />
++      {spend > 0 && (
++        <>
++          <Text style={[styles.metaText, { color: exceeds ? ACCENT.ember : theme.textMuted, marginTop: 8, marginBottom: 6 }]}>
++            {exceeds
++              ? `If you spend ${peso(spend)}, that's ${peso(spend - balance)} more than you have.`
++              : `If you spend ${peso(spend)}, your account balance will be ${peso(remaining)}.`}
++          </Text>
++          <View style={[styles.spendBarTrack, { backgroundColor: theme.bg }]}>
++            <Reanimated.View style={[styles.spendBarFill, remainingBarStyle, { backgroundColor: exceeds ? ACCENT.ember : color }]} />
++          </View>
++        </>
++      )}
++    </View>
++  );
++}
++
++function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ctx, quickTemplates = [], allTemplates = [], onLogAgain }) {
+   const { theme } = useTheme();
+   const [name, setName] = useState(initial?.name || "");
+   const [label, setLabel] = useState(initial?.label || "");
+@@ -637,6 +738,7 @@ function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ct
+   const currentBalance = computeAccountBalance(account, ctx);
+   const available = currentBalance + (initial?.account === account ? Number(initial.amount) : 0);
+   const exceedsBalance = isPositiveAmount(amount) && amountNum > available;
++  const selectedAccount = accounts.find((a) => a.id === account);
+ 
+   function attemptSave() {
+     const { ok, data, errors: fieldErrors } = validate(expenseSchema, { name, label, amount, splitId, account, date });
+@@ -650,14 +752,7 @@ function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ct
+       {/* "Log again" only makes sense while adding a brand-new expense --
+           once you're editing one, quick-repeat templates aren't relevant. */}
+       {!initial && quickTemplates.length > 0 && (
+-        <View style={{ marginBottom: 14 }}>
+-          <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 6 }]}>Log again</Text>
+-          <View style={styles.chipWrap}>
+-            {quickTemplates.map((t) => (
+-              <Chip key={t.id} label={`${t.name} - ${peso(t.amount)}`} small onPress={() => onLogAgain(t)} />
+-            ))}
+-          </View>
+-        </View>
++        <LogAgainPicker recentTemplates={quickTemplates} allTemplates={allTemplates} onPick={onLogAgain} />
+       )}
+       <TextInput value={name} onChangeText={setName} placeholder="What did you spend on?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
+       {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
+@@ -674,14 +769,17 @@ function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ct
+       </View>
+       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Paid from</Text>
+       <View style={styles.chipWrap}>
+-        {accounts.map((a) => {
+-          const bal = computeAccountBalance(a.id, ctx) + (initial?.account === a.id ? Number(initial.amount) : 0);
+-          return <Chip key={a.id} label={`${a.label} - ${peso(bal)}`} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />;
+-        })}
++        {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />)}
+       </View>
+-      <Text style={[styles.metaText, { color: exceedsBalance ? ACCENT.ember : theme.textMuted, marginBottom: 8 }]}>
+-        {peso(available - (isPositiveAmount(amount) ? amountNum : 0))} this will be your balance
+-      </Text>
++      {selectedAccount && (
++        <AccountSpendBar
++          label={selectedAccount.label}
++          color={selectedAccount.color}
++          balance={available}
++          spend={isPositiveAmount(amount) ? amountNum : 0}
++          exceeds={exceedsBalance}
++        />
++      )}
+       <View style={{ marginBottom: 12 }}>
+         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
+         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
+@@ -762,6 +860,13 @@ const styles = StyleSheet.create({
+   h1: { fontSize: 20, fontWeight: "700" },
+   h2: { fontSize: 15, fontWeight: "700" },
+   roundBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
++  logAgainSearchRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
++  logAgainSearchInput: { flex: 1, fontSize: 13 },
++  logAgainDropdown: { borderWidth: 1, borderRadius: 12, marginTop: 6, overflow: "hidden" },
++  logAgainRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1 },
++  balanceHeadline: { fontSize: 14, fontWeight: "800", fontFamily: "monospace" },
++  spendBarTrack: { height: 10, borderRadius: 5, overflow: "hidden" },
++  spendBarFill: { height: 10, borderRadius: 5 },
+   // Hero card: the total-spent figure leads at a much larger size than
+   // anything else on the page, per the "show total spending first, make
+   // it the biggest number" request -- everything else here (budget left,
+diff --git a/src/screens/TodoScreen.js b/src/screens/TodoScreen.js
+index 5ff4a13..3e2f4af 100644
+--- a/src/screens/TodoScreen.js
++++ b/src/screens/TodoScreen.js
+@@ -17,6 +17,7 @@ import { hapticSuccess } from "../haptics";
+ import { confirmDelete } from "../components/ConfirmModal";
+ import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
+ import EditSheet from "../components/EditSheet";
++import RememberList from "../components/RememberList";
+ import { DURATION, SPRING, useCardPressAnimation } from "../animation";
+ import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming, withRepeat } from "react-native-reanimated";
+ 
+@@ -59,15 +60,16 @@ function urgencyTier(t, displayCompleted, dleft) {
+   return "none";
+ }
+ 
+-// Drives a soft, blinking drop-shadow "glow" for the red/yellow urgency
+-// tiers -- border width and color stay put; only the shadow pulses, so it
+-// reads as a glow breathing around the card rather than the card's edge
+-// visibly thickening.
++// Drives a blinking "glow" for the red/yellow urgency tiers -- both the
++// border width and the drop-shadow pulse together, so the effect actually
++// reads on Android too (which ignores shadowColor on elevation, so a
++// shadow-only pulse is close to invisible there -- the border width swing
++// is what carries it cross-platform).
+ function useUrgencyStyle(tier) {
+   const pulse = useSharedValue(0);
+   useEffect(() => {
+     if (tier === "red" || tier === "yellow") {
+-      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 900 }), withTiming(0, { duration: 900 })), -1, true);
++      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 700 }), withTiming(0, { duration: 700 })), -1, true);
+     } else {
+       pulse.value = withTiming(0, { duration: 200 });
+     }
+@@ -76,30 +78,27 @@ function useUrgencyStyle(tier) {
+   return useAnimatedStyle(() => {
+     if (tier === "red") {
+       return {
+-        borderWidth: 1.5,
++        borderWidth: 1.5 + pulse.value * 2,
+         borderColor: ACCENT.ember,
+         shadowColor: ACCENT.ember,
+         shadowOffset: { width: 0, height: 0 },
+-        // Android ignores shadowColor on elevation, so elevation alone
+-        // won't carry the red glow there -- it still gets a subtle,
+-        // pulsing lift, while the colored glow itself is iOS-only. A
+-        // bigger radius (rather than higher opacity alone) is what keeps
+-        // a stronger glow reading as soft instead of harsh -- it spreads
+-        // the light out further rather than making it more solid.
+-        shadowOpacity: 0.16 + pulse.value * 0.34,
+-        shadowRadius: 8 + pulse.value * 10,
+-        elevation: 2 + pulse.value * 2.5,
++        // A bigger radius (rather than higher opacity alone) is what
++        // keeps a stronger glow reading as soft instead of harsh -- it
++        // spreads the light out further rather than making it more solid.
++        shadowOpacity: 0.28 + pulse.value * 0.6,
++        shadowRadius: 10 + pulse.value * 16,
++        elevation: 3 + pulse.value * 6,
+       };
+     }
+     if (tier === "yellow") {
+       return {
+-        borderWidth: 1.5,
++        borderWidth: 1.5 + pulse.value * 2,
+         borderColor: ACCENT.gold,
+         shadowColor: ACCENT.gold,
+         shadowOffset: { width: 0, height: 0 },
+-        shadowOpacity: 0.13 + pulse.value * 0.27,
+-        shadowRadius: 6 + pulse.value * 8,
+-        elevation: 1.5 + pulse.value * 2,
++        shadowOpacity: 0.24 + pulse.value * 0.52,
++        shadowRadius: 8 + pulse.value * 14,
++        elevation: 2 + pulse.value * 5,
+       };
+     }
+     if (tier === "green") {
+@@ -123,8 +122,9 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
+   UIManager.setLayoutAnimationEnabledExperimental(true);
+ }
+ 
+-function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject }) {
++function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject, reminders = [], setReminders }) {
+   const { theme } = useTheme();
++  const [mode, setMode] = useState("tasks"); // "tasks" | "remember" -- Remember is the general quick-capture list, kept separate from Tasks
+   const [showForm, setShowForm] = useState(false);
+   const [editingId, setEditingId] = useState(null);
+   const [filter, setFilter] = useState("all");
+@@ -274,7 +274,19 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
+   ), [subjectsById, toggle, startEdit, remove, toggleSubtask]);
+ 
+   return (
+-    <>
++    <View style={{ flex: 1 }}>
++      <SegmentedTabs
++        options={[
++          { key: "tasks", label: "Tasks" },
++          { key: "remember", label: "Remember" },
++        ]}
++        value={mode}
++        onChange={setMode}
++      />
++      {mode === "remember" ? (
++        <RememberList reminders={reminders} setReminders={setReminders} />
++      ) : (
++        <>
+     <FlatList
+       style={{ flex: 1 }}
+       contentContainerStyle={{ paddingBottom: 12 }}
+@@ -383,7 +395,9 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
+         onDelete={remove}
+       />
+     </EditSheet>
+-    </>
++        </>
++      )}
++    </View>
+   );
+ }
+ 
+@@ -401,6 +415,11 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
+ function useTaskCompletion(t, onToggle) {
+   const [optimisticDone, setOptimisticDone] = useState(false);
+   const popScale = useSharedValue(1);
++  // A brief expanding ring behind the checkmark on completion -- a small
++  // celebratory "done!" flourish, on top of the checkmark's own bounce,
++  // rather than just the icon getting bigger and settling back down.
++  const ringScale = useSharedValue(0);
++  const ringOpacity = useSharedValue(0);
+   const completingRef = useRef(false);
+   const timeoutRef = useRef(null);
+ 
+@@ -419,6 +438,13 @@ function useTaskCompletion(t, onToggle) {
+     );
+   }
+ 
++  function burstRing() {
++    ringScale.value = 0;
++    ringOpacity.value = 0.6;
++    ringScale.value = withTiming(2.4, { duration: 480 });
++    ringOpacity.value = withTiming(0, { duration: 480 });
++  }
++
+   function handleToggle() {
+     if (completingRef.current) return;
+     if (t.completed) { onToggle(t.id); return; }
+@@ -432,6 +458,7 @@ function useTaskCompletion(t, onToggle) {
+     completingRef.current = true;
+     setOptimisticDone(true);
+     pop(1.4);
++    burstRing();
+     timeoutRef.current = setTimeout(() => {
+       onToggle(t.id);
+       completingRef.current = false;
+@@ -440,8 +467,25 @@ function useTaskCompletion(t, onToggle) {
+   }
+ 
+   const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: popScale.value }] }));
++  const ringStyle = useAnimatedStyle(() => ({
++    transform: [{ scale: ringScale.value }],
++    opacity: ringOpacity.value,
++  }));
++
++  return { displayCompleted: t.completed || optimisticDone, popStyle, ringStyle, handleToggle };
++}
+ 
+-  return { displayCompleted: t.completed || optimisticDone, popStyle, handleToggle };
++// Animates the row's fade to 60% opacity smoothly once a task is marked
++// done, instead of it snapping there instantly -- a plain conditional
++// style value on a Reanimated.View only gets the `layout` prop's
++// animation for size/position changes, not for arbitrary style values
++// like opacity, so this needs its own explicit tween.
++function useRowFadeStyle(displayCompleted) {
++  const fade = useSharedValue(displayCompleted ? 0.6 : 1);
++  useEffect(() => {
++    fade.value = withTiming(displayCompleted ? 0.6 : 1, { duration: 320 });
++  }, [displayCompleted]);
++  return useAnimatedStyle(() => ({ opacity: fade.value }));
+ }
+ 
+ // Animates the status progress bar smoothly to its new fraction whenever
+@@ -461,9 +505,10 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
+   const { theme } = useTheme();
+   const cat = CATEGORIES.find((c) => c.id === t.category);
+   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
+-  const { displayCompleted, popStyle, handleToggle } = useTaskCompletion(t, onToggle);
++  const { displayCompleted, popStyle, ringStyle, handleToggle } = useTaskCompletion(t, onToggle);
+   const urgency = urgencyTier(t, displayCompleted, dleft);
+   const urgencyStyle = useUrgencyStyle(urgency);
++  const rowFadeStyle = useRowFadeStyle(displayCompleted);
+   const subtasks = t.subtasks || [];
+   const subDone = subtasks.filter((s) => s.done).length;
+   const effectiveStatusColor = statusColor(t.status);
+@@ -486,16 +531,20 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
+         layout={ReanimatedLayout.duration(DURATION)}
+         style={[
+           styles.detailedRow,
+-          { backgroundColor: theme.card, opacity: displayCompleted ? 0.6 : 1 },
++          { backgroundColor: theme.card },
++          rowFadeStyle,
+           urgencyStyle,
+           pressStyle,
+         ]}
+       >
+         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+           <Pressable onPress={handleToggle} style={{ marginTop: 2 }} accessibilityLabel={displayCompleted ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`} accessibilityRole="checkbox" accessibilityState={{ checked: displayCompleted }}>
+-            <Reanimated.View style={popStyle}>
+-              {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
+-            </Reanimated.View>
++            <View>
++              <Reanimated.View pointerEvents="none" style={[styles.completionRing, ringStyle]} />
++              <Reanimated.View style={popStyle}>
++                {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
++              </Reanimated.View>
++            </View>
+           </Pressable>
+           <View style={{ flex: 1 }}>
+             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+@@ -785,6 +834,7 @@ function TodoForm({ initial, onSave, onCancel, onDelete, subjects = [], presetSu
+ 
+ const styles = StyleSheet.create({
+   detailedRow: { borderRadius: 16, padding: 14, marginBottom: 10 },
++  completionRing: { position: "absolute", top: -3, left: -3, width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: ACCENT.leaf },
+   detailedMetaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" },
+   subProgressTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
+   subProgressFill: { height: 4, borderRadius: 2 },
+diff --git a/src/storage.js b/src/storage.js
+index 2648f7c..fd78454 100644
+--- a/src/storage.js
++++ b/src/storage.js
+@@ -31,6 +31,8 @@ const DOMAIN_KEYS = [
+   "academicPeriods", "subjects", "scheduleEntries", "schoolDefaults",
+   "cancelledClasses", "recurringIncome", "spendingLimits",
+   "savingsAccounts", "interestLog",
++  "reminders",
++  "gfName", "gfLikes", "gfDislikes", "gfDates", "gfNotes", "gfGiftIdeas", "gfPromises",
+ ];
+ 
+ function domainKey(name) {

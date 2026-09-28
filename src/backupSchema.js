@@ -120,6 +120,18 @@ export const backupSchema = z.object({
   schoolDefaults: z.object({}).passthrough().optional(),
   savingsAccounts: z.array(savingsAccountSchema).optional(),
   interestLog: z.array(interestLogEntrySchema).optional(),
+  // Remember (general reminders) and the GF module -- validated loosely
+  // (z.any() items), same as the School domains above, since neither
+  // carries money and a malformed entry here is an inconvenience rather
+  // than a corrupted balance.
+  reminders: z.array(z.any()).optional(),
+  gfName: z.string().optional(),
+  gfLikes: z.array(z.any()).optional(),
+  gfDislikes: z.array(z.any()).optional(),
+  gfDates: z.array(z.any()).optional(),
+  gfNotes: z.array(z.any()).optional(),
+  gfGiftIdeas: z.array(z.any()).optional(),
+  gfPromises: z.array(z.any()).optional(),
 }).passthrough();
 
 // Parses + validates in one step. Returns { ok: true, data } on success, or

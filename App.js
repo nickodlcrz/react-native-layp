@@ -7,14 +7,15 @@ import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, Bac
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap } from "lucide-react-native";
+import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap, Heart } from "lucide-react-native";
 
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_SAVINGS_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
 import Reanimated, { FadeOut } from "react-native-reanimated";
 import { DURATION } from "./src/animation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { loadState, saveState, clearUnreadableLegacyState } from "./src/storage";
-import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener } from "./src/notifications";
+import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, cancelTodoAlarm, rescheduleTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, TODO_STARTED_YES_ACTION, TODO_STARTED_NOT_YET_ACTION, TODO_PASSED_YES_ACTION, TODO_PASSED_NOT_YET_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener, sweepExpiredDailyNotifications } from "./src/notifications";
+import { isScheduledPopupDue, markScheduledPopupShown, isFrequencyPopupDue, isIntervalPopupDue, markFrequencyPopupShown } from "./src/reminderLogic";
 import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest, accrueAccountInterest } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
@@ -35,6 +36,8 @@ import TabTransition from "./src/components/TabTransition";
 import SwipeNavigator from "./src/components/SwipeNavigator";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import TabBar from "./src/components/TabBar";
+import GFScreen from "./src/screens/GFScreen";
+import RemindPopup from "./src/components/RemindPopup";
 
 // Single source of truth for which tabs exist, their order, icons, and
 // labels -- the old version had this order duplicated as a bare array of
@@ -100,7 +103,7 @@ export default function App() {
             sitting on LAYP's own lock screen would never trigger the
             in-app popup at all -- only the OS notification would still
             fire, since that's scheduled independently of app state. */}
-        <AppShell onLock={handleLock} autoLockMinutes={autoLockMinutes} onChangeAutoLockMinutes={updateAutoLockMinutes} />
+        <AppShell onLock={handleLock} unlocked={unlocked} autoLockMinutes={autoLockMinutes} onChangeAutoLockMinutes={updateAutoLockMinutes} />
         {!unlocked && (
           // Rendered as an overlay, not a replacement -- see the zIndex
           // note on ClassAlarmScreen for why a class alarm can still show
@@ -118,7 +121,7 @@ export default function App() {
   );
 }
 
-function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes }) {
+function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLockMinutes }) {
   const systemScheme = useColorScheme();
   const [dark, setDark] = useState(systemScheme === "dark");
   const [tab, setTabRaw] = useState("home");
@@ -145,6 +148,23 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   const [savingsLog, setSavingsLog] = useState([]);
   const [goals, setGoals] = useState([]); // savings goals: name, target amount, target date
   const [loans, setLoans] = useState([]); // lent / borrowed tracker
+  // General "Remember" quick-capture list (Todo tab) -- separate from
+  // todos since these are notes/reminders rather than tasks with a
+  // completion workflow.
+  const [reminders, setReminders] = useState([]);
+  // The GF module -- a heart-icon-gated panel of relationship info, kept
+  // as its own set of domains (rather than folded into an existing one)
+  // since none of it is financial or task data. gfOpen controls the
+  // full-screen panel itself; GFScreen re-verifies the PIN every time it
+  // opens (see its own effect), so no "unlocked" flag needs to live here.
+  const [gfOpen, setGfOpen] = useState(false);
+  const [gfName, setGfName] = useState("Her");
+  const [gfLikes, setGfLikes] = useState([]);
+  const [gfDislikes, setGfDislikes] = useState([]);
+  const [gfDates, setGfDates] = useState([]);
+  const [gfNotes, setGfNotes] = useState([]);
+  const [gfGiftIdeas, setGfGiftIdeas] = useState([]);
+  const [gfPromises, setGfPromises] = useState([]);
   const [accounts, setAccounts] = useState(DEFAULT_ACCOUNTS.map((a) => ({ ...a })));
   // Whether budget/money figures (Home's Total money + Safe to spend,
   // Budget Overview's Current budget) are masked out -- e.g. showing the
@@ -323,6 +343,46 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
           setTab("school");
         }
       }
+      if (data.type === "todo") {
+        if (actionId === TODO_STARTED_YES_ACTION) {
+          if (notifId) await dismissNotification(notifId);
+          setTodos((prev) => prev.map((t) => (t.id === data.todoId && t.status === "not_started" ? { ...t, status: "wip" } : t)));
+          return;
+        }
+        if (actionId === TODO_PASSED_YES_ACTION) {
+          if (notifId) await dismissNotification(notifId);
+          const t = todos.find((x) => x.id === data.todoId);
+          if (t && !t.completed) {
+            // Mirrors TodoScreen's own toggle() completion path -- cancel
+            // whatever's still armed for it (reminders and any native
+            // alarm) rather than leaving them to fire against a task
+            // that's already done.
+            await cancelTodoNotifications(t.notificationIds);
+            await cancelTodoAlarm(t.id);
+            setTodos((prev) => prev.map((x) => (x.id === t.id ? { ...x, completed: true, completedAt: new Date().toISOString() } : x)));
+          }
+          return;
+        }
+        if (actionId === TODO_STARTED_NOT_YET_ACTION || actionId === TODO_PASSED_NOT_YET_ACTION) {
+          // Acknowledged, nothing to change -- the next occurrence will
+          // simply ask again.
+          if (notifId) await dismissNotification(notifId);
+          return;
+        }
+        // A plain tap (not an action button).
+        setTab("todo");
+        return;
+      }
+
+      if (data.type === "reminder") {
+        setTab("todo");
+        return;
+      }
+
+      if (data.type === "gfPromise" || data.type === "gfDate") {
+        setGfOpen(true);
+        return;
+      }
     };
   });
 
@@ -359,6 +419,124 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   const dismissedTodayRef = useRef({});
 
   const theme = dark ? DARK : LIGHT;
+
+  // Popups due right now, across every source that can produce one:
+  // general Reminders and GF Promises in "popup" mode (a scheduled
+  // date/time-or-daily thing), and GF Notes with a popup frequency set
+  // (an unscheduled "show this again every N hours" thing). Recomputed
+  // fresh each call rather than memoized, since it's only ever invoked
+  // from the two triggers below, never from a render.
+  const [remindPopupVisible, setRemindPopupVisible] = useState(false);
+  const [remindPopupItems, setRemindPopupItems] = useState([]);
+
+  const checkDuePopups = useCallback(() => {
+    const dueReminders = reminders.filter(isScheduledPopupDue);
+    // A promise can be popup-due either the "scheduled" way (a specific
+    // date/time, or daily-at-a-time) or the "interval" way (every N
+    // hours, no clock time involved) -- checked separately since they're
+    // mutually exclusive per item (scheduleKind decides which) but both
+    // count as "this promise's popup is due right now".
+    const duePromisesScheduled = gfPromises.filter(isScheduledPopupDue);
+    const duePromisesInterval = gfPromises.filter(isIntervalPopupDue);
+    const duePromises = [...duePromisesScheduled, ...duePromisesInterval];
+    const dueNotes = gfNotes.filter(isFrequencyPopupDue);
+    if (!dueReminders.length && !duePromises.length && !dueNotes.length) return;
+    setRemindPopupItems([
+      ...dueReminders.map((r) => ({ id: `reminder:${r.id}`, text: r.text, gf: false })),
+      ...duePromises.map((p) => ({ id: `gfPromise:${p.id}`, text: p.text, gf: true })),
+      ...dueNotes.map((n) => ({ id: `gfNote:${n.id}`, text: n.text, gf: true })),
+    ]);
+    setRemindPopupVisible(true);
+    // Stamps each shown item so it doesn't immediately re-qualify as due
+    // on the very next check -- a one-time (dated) item won't fire again
+    // at all, a repeating one waits out its own cooldown first.
+    if (dueReminders.length) setReminders((prev) => prev.map((r) => (isScheduledPopupDue(r) ? { ...r, ...markScheduledPopupShown(r) } : r)));
+    if (duePromises.length) setGfPromises((prev) => prev.map((p) => (
+      isScheduledPopupDue(p) ? { ...p, ...markScheduledPopupShown(p) }
+      : isIntervalPopupDue(p) ? { ...p, ...markFrequencyPopupShown() }
+      : p
+    )));
+    if (dueNotes.length) setGfNotes((prev) => prev.map((n) => (isFrequencyPopupDue(n) ? { ...n, ...markFrequencyPopupShown() } : n)));
+  }, [reminders, gfPromises, gfNotes]);
+
+  // Checked once right after unlocking (covers cold start and re-entering
+  // the PIN) -- gated on `unlocked` for the same reason as the old
+  // mechanism it replaced: AppShell stays mounted behind the lock screen,
+  // and this popup is a Modal that renders above everything natively
+  // regardless of JS z-index, so without this gate it could appear ON TOP
+  // OF the PIN screen before the person has actually gotten past it.
+  useEffect(() => {
+    if (!ready || !unlocked) return;
+    checkDuePopups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, unlocked]);
+
+  // Also checked every time the app comes back to the foreground -- an
+  // hourly/3-hourly GF Note or a daily time-only Reminder needs to be
+  // re-evaluated on every reopen, not just the first one of the session.
+  // Reads `unlocked` through a ref rather than depending on it directly,
+  // so this doesn't need to tear down and resubscribe the AppState
+  // listener on every lock/unlock -- it just checks the ref's current
+  // value at the moment the app actually resumes.
+  const unlockedRef = useRef(unlocked);
+  useEffect(() => { unlockedRef.current = unlocked; }, [unlocked]);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active" && unlockedRef.current) checkDuePopups();
+    });
+    return () => sub.remove();
+  }, [checkDuePopups]);
+
+  // Repeating (date-less) reminders/promises can't tell Expo their own
+  // end date -- enforced here instead, swept once on every load.
+  useEffect(() => {
+    if (!ready) return;
+    (async () => {
+      const expiredReminderIds = await sweepExpiredDailyNotifications(reminders);
+      if (expiredReminderIds.length) setReminders((prev) => prev.map((r) => (expiredReminderIds.includes(r.id) ? { ...r, notificationId: null } : r)));
+      const expiredPromiseIds = await sweepExpiredDailyNotifications(gfPromises);
+      if (expiredPromiseIds.length) setGfPromises((prev) => prev.map((p) => (expiredPromiseIds.includes(p.id) ? { ...p, notificationId: null } : p)));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // A repeating task reminder's "due in N days" / "have you started it?"
+  // wording is fixed at schedule time (see the comment on
+  // rescheduleTodoNotifications) -- refreshed here once per calendar day,
+  // for every incomplete task with both a due date and a repeating
+  // reminder, so the wording stays honest as the days actually pass.
+  // Guarded by a ref (not state) since "have I already swept today" is
+  // bookkeeping for this effect alone, not something that should trigger
+  // its own re-render or persist across app restarts -- worst case, it
+  // just re-sweeps once more the next time the app opens.
+  const lastTodoRefreshRef = useRef(null);
+  useEffect(() => {
+    if (!ready) return;
+    const today = todayISO();
+    if (lastTodoRefreshRef.current === today) return;
+    lastTodoRefreshRef.current = today;
+    const stale = todos.filter((t) => !t.completed && t.dueDate && t.reminderEnabled !== false && t.notify && t.notify.type !== "once");
+    if (!stale.length) return;
+    (async () => {
+      const updates = await Promise.all(stale.map(async (t) => {
+        const subject = t.category === "school" && t.subjectId ? activeSubjects.find((s) => s.id === t.subjectId) : undefined;
+        const ids = await rescheduleTodoNotifications(t, subject);
+        return { id: t.id, ids };
+      }));
+      setTodos((prev) => prev.map((t) => {
+        const match = updates.find((u) => u.id === t.id);
+        return match ? { ...t, notificationIds: match.ids } : t;
+      }));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, todos]);
+
+
+  const gfMissedCount = useMemo(
+    () => gfPromises.filter((p) => !p.done && p.remindDate && p.remindTime && Date.now() - new Date(`${p.remindDate}T${p.remindTime}:00`).getTime() > 24 * 3600 * 1000).length,
+    [gfPromises]
+  );
+
 
   useEffect(() => {
     (async () => {
@@ -417,6 +595,14 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
         setSchoolDefaults(s.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
         setCancelledClasses(s.cancelledClasses || []);
         if (typeof s.dark === "boolean") setDark(s.dark);
+        setReminders(s.reminders || []);
+        setGfName(s.gfName || "Her");
+        setGfLikes(s.gfLikes || []);
+        setGfDislikes(s.gfDislikes || []);
+        setGfDates(s.gfDates || []);
+        setGfNotes(s.gfNotes || []);
+        setGfGiftIdeas(s.gfGiftIdeas || []);
+        setGfPromises(s.gfPromises || []);
 
         // Migrate old single "income" number (pre-accounts) into the money log.
         if (s.moneyLog) {
@@ -472,9 +658,9 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
   useEffect(() => {
     if (!ready) return;
     if (firstLoad.current) { firstLoad.current = false; return; }
-    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog });
+    saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises });
     setThemePreference(dark);
-  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog]);
+  }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises]);
 
   // Cancellation records only ever need to cover "today" at check time, so
   // trim anything older than a week on load rather than let this list grow
@@ -744,10 +930,18 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
     setSchoolDefaults(data.schoolDefaults || { ...DEFAULT_SCHOOL_DEFAULTS });
     setRecurringIncome(data.recurringIncome || []);
     setSpendingLimits(data.spendingLimits || {});
+    setReminders(data.reminders || []);
+    setGfName(data.gfName || "Her");
+    setGfLikes(data.gfLikes || []);
+    setGfDislikes(data.gfDislikes || []);
+    setGfDates(data.gfDates || []);
+    setGfNotes(data.gfNotes || []);
+    setGfGiftIdeas(data.gfGiftIdeas || []);
+    setGfPromises(data.gfPromises || []);
   }, []);
   const backupData = useMemo(
-    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog }),
-    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog]
+    () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises }),
+    [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises]
   );
 
   function renderTabContent(t) {
@@ -757,7 +951,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
           <HomeScreen
             accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
             loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
-            goals={goals} todos={todos}
+            goals={goals} todos={todos} reminders={reminders}
             periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries} cancelledClasses={cancelledClasses}
             onViewSchedule={goToSchool}
             onViewTodos={goToTodo}
@@ -772,6 +966,7 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             subjects={activeSubjects}
             prefillSubjectId={prefillSubjectId}
             onConsumePrefillSubject={clearPrefillSubject}
+            reminders={reminders} setReminders={setReminders}
           />
         );
       case "school":
@@ -863,6 +1058,22 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
         {classAlarm && (
           <ClassAlarmScreen alarm={classAlarm} onDismiss={() => setClassAlarm(null)} onSuspend={() => handleSuspendClass(classAlarm.block)} />
         )}
+        <GFScreen
+          visible={gfOpen}
+          onClose={() => setGfOpen(false)}
+          gfName={gfName} setGfName={setGfName}
+          gfLikes={gfLikes} setGfLikes={setGfLikes}
+          gfDislikes={gfDislikes} setGfDislikes={setGfDislikes}
+          gfDates={gfDates} setGfDates={setGfDates}
+          gfNotes={gfNotes} setGfNotes={setGfNotes}
+          gfGiftIdeas={gfGiftIdeas} setGfGiftIdeas={setGfGiftIdeas}
+          gfPromises={gfPromises} setGfPromises={setGfPromises}
+        />
+        <RemindPopup
+          visible={remindPopupVisible}
+          items={remindPopupItems}
+          onDismiss={() => setRemindPopupVisible(false)}
+        />
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
@@ -877,6 +1088,14 @@ function AppShellComponent({ onLock, autoLockMinutes, onChangeAutoLockMinutes })
             </Pressable>
             <Pressable onPress={onLock} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Lock app">
               <Lock size={13} color={theme.textMuted} />
+            </Pressable>
+            <Pressable onPress={() => setGfOpen(true)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Open GF">
+              <Heart size={14} color={ACCENT.rose} fill={ACCENT.rose} />
+              {gfMissedCount > 0 && (
+                <View style={styles.gfBadge}>
+                  <Text style={styles.gfBadgeText}>{gfMissedCount > 9 ? "9+" : gfMissedCount}</Text>
+                </View>
+              )}
             </Pressable>
             <Pressable onPress={() => setDark((d) => !d)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel={dark ? "Switch to light mode" : "Switch to dark mode"}>
               {dark ? <Sun size={14} color={ACCENT.gold} /> : <Moon size={14} color={theme.text} />}
@@ -983,7 +1202,9 @@ const styles = StyleSheet.create({
   logo: { width: 30, height: 30, borderRadius: 8 },
   headerTitle: { fontSize: 15, fontWeight: "800", letterSpacing: 0.5 },
   headerDate: { fontSize: 10, marginTop: 1 },
-  themeBtn: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  themeBtn: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", borderWidth: 1, position: "relative" },
+  gfBadge: { position: "absolute", top: -3, right: -3, minWidth: 14, height: 14, borderRadius: 7, backgroundColor: ACCENT.ember, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
+  gfBadgeText: { color: "#fff", fontSize: 8, fontWeight: "800" },
   banner: { flexDirection: "row", gap: 8, borderRadius: 16, padding: 12, marginHorizontal: 16, marginBottom: 4 },
   bannerTitle: { color: "#fff", fontSize: 12, fontWeight: "700" },
   bannerBody: { color: "#ffffffcc", fontSize: 11, marginTop: 2 },

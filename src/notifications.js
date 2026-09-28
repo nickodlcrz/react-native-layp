@@ -2,6 +2,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { daysUntil, fmtDateLong, fmtTime12, peso } from "./utils";
 import * as LaypAlarm from "../modules/layp-alarm";
+import { hoursForFrequency } from "./reminderLogic";
 
 // Ids for a subject's "class starting now" alarm that were armed through
 // the native Kotlin alarm engine (see modules/layp-alarm) are prefixed so
@@ -35,6 +36,17 @@ const CLASS_CHECKIN_CATEGORY = "layp-class-checkin-actions";
 export const DAILY_BUDGET_SAVE_ACTION = "DAILY_BUDGET_SAVE";
 export const DAILY_BUDGET_KEEP_ACTION = "DAILY_BUDGET_KEEP";
 const DAILY_BUDGET_CATEGORY = "layp-daily-budget-actions";
+// Lets a task's own reminder ask the actual question that matters for
+// its current stage, right on the notification -- "have you started
+// yet?" while it's still not_started, or "have you passed it already?"
+// once a to_pass task is overdue -- rather than just restating the due
+// date. See reminderVariant() below for which one (if either) applies.
+export const TODO_STARTED_YES_ACTION = "TODO_STARTED_YES";
+export const TODO_STARTED_NOT_YET_ACTION = "TODO_STARTED_NOT_YET";
+const TODO_STARTED_CATEGORY = "layp-todo-started-actions";
+export const TODO_PASSED_YES_ACTION = "TODO_PASSED_YES";
+export const TODO_PASSED_NOT_YET_ACTION = "TODO_PASSED_NOT_YET";
+const TODO_PASSED_CATEGORY = "layp-todo-passed-actions";
 // Fallback for how long before a class's own alarm the "Do you have class
 // today?" check-in fires, used only if a subject somehow has no value of
 // its own. Per-subject (subject.classCheckInMinutes, defaulting from
@@ -73,6 +85,14 @@ export async function setupNotificationCategories() {
   await Notifications.setNotificationCategoryAsync(DAILY_BUDGET_CATEGORY, [
     { identifier: DAILY_BUDGET_SAVE_ACTION, buttonTitle: "Save to savings" },
     { identifier: DAILY_BUDGET_KEEP_ACTION, buttonTitle: "Keep for tomorrow" },
+  ]);
+  await Notifications.setNotificationCategoryAsync(TODO_STARTED_CATEGORY, [
+    { identifier: TODO_STARTED_YES_ACTION, buttonTitle: "Yes, started" },
+    { identifier: TODO_STARTED_NOT_YET_ACTION, buttonTitle: "Not yet" },
+  ]);
+  await Notifications.setNotificationCategoryAsync(TODO_PASSED_CATEGORY, [
+    { identifier: TODO_PASSED_YES_ACTION, buttonTitle: "Yes, passed" },
+    { identifier: TODO_PASSED_NOT_YET_ACTION, buttonTitle: "Not yet" },
   ]);
 }
 
@@ -181,9 +201,40 @@ function reminderBody(todo, subject) {
   return detail ? `"${todo.title}" \u2014 ${detail}` : `"${todo.title}"`;
 }
 
+// Picks which flavor of reminder a given occurrence should be:
+//  - status "not_started" with a due date -- "have you started it?", with
+//    Yes/Not yet buttons right on the notification.
+//  - status "to_pass" once actually overdue -- "have you passed it
+//    already?", same Yes/Not yet treatment. Not asked before the due
+//    date passes -- "to_pass" just means it's on track, nothing to
+//    confirm yet.
+//  - anything else (wip, no due date, to_pass but not yet overdue) --
+//    the plain, non-interactive reminderBody() as before.
+// `data` (todo id + type) is attached in every case so a tap on any of
+// these -- action button or the notification body itself -- can be
+// routed and acted on from App.js's response handler.
+function reminderVariant(todo, subject) {
+  const data = { type: "todo", todoId: todo.id };
+  const dleft = todo.dueDate ? daysUntil(todo.dueDate) : null;
+  if (dleft !== null) {
+    const dueWhen = dleft > 1 ? `is due in ${dleft} days`
+      : dleft === 1 ? "is due tomorrow"
+      : dleft === 0 ? "is due today"
+      : `was due ${Math.abs(dleft)} day${Math.abs(dleft) === 1 ? "" : "s"} ago`;
+    if (todo.status === "not_started") {
+      return { body: `"${todo.title}" ${dueWhen}. Have you started it?`, categoryIdentifier: TODO_STARTED_CATEGORY, data };
+    }
+    if (todo.status === "to_pass" && dleft < 0) {
+      return { body: `"${todo.title}" ${dueWhen}. Have you passed it already?`, categoryIdentifier: TODO_PASSED_CATEGORY, data };
+    }
+  }
+  return { body: reminderBody(todo, subject), categoryIdentifier: undefined, data };
+}
+
 async function scheduleOne(todo, trigger, subject) {
+  const variant = reminderVariant(todo, subject);
   return safeScheduleNotificationAsync({
-    content: { title: todo.title, body: reminderBody(todo, subject), sound: true },
+    content: { title: todo.title, body: variant.body, sound: true, data: variant.data, categoryIdentifier: variant.categoryIdentifier },
     trigger:
       Platform.OS === "android" ? { ...trigger, channelId: "layp-reminders" } : trigger,
   });
@@ -202,6 +253,19 @@ async function scheduleOne(todo, trigger, subject) {
 // `subject` is optional -- pass the todo's linked school subject (when
 // todo.category === "school") so the notification body can name the class,
 // the same way rescheduleTodoAlarm already does for the native alarm.
+//
+// A repeating (daily/weekly/interval/custom) trigger's content is fixed
+// at schedule time -- Expo just keeps re-firing the same notification, it
+// never recomputes the text. That's exactly wrong for reminderVariant()'s
+// "due in N days" / "was due N days ago" wording, which needs to update
+// as the days actually pass. Rather than switch repeating tasks over to
+// one-off-per-day scheduling (which risks running into the OS's total
+// pending-notification budget once several tasks are involved), this is
+// instead handled by re-calling this function once per calendar day for
+// every task with a due date -- see the daily refresh sweep in App.js.
+// That keeps it at one notification per task either way; the tradeoff is
+// that the wording is only as fresh as the last time the app was opened
+// that day, which is a reasonable bar for a daily reminder.
 export async function rescheduleTodoNotifications(todo, subject) {
   await cancelTodoNotifications(todo.notificationIds);
   if (todo.completed || todo.reminderEnabled === false) return [];
@@ -687,3 +751,134 @@ export async function rescheduleBillNotification(bill) {
     trigger: Platform.OS === "android" ? { date: fireDate, channelId: "layp-reminders" } : { date: fireDate },
   });
 }
+
+// --- Remember (general quick-capture reminders, and the GF module) ---
+//
+// These are all plain one-off notifications -- fire once at a specific
+// moment, no repeating trigger, same shape as rescheduleLoanNotification
+// and rescheduleBillNotification above. Kept generic (title/body passed
+// in) rather than one function per feature, since a reminder note, a
+// promise follow-up, and a lend-adjacent GF note are all really the same
+// "remind me at this moment" primitive underneath.
+
+// One reminder note with an optional fire time. Cancels whatever was
+// previously scheduled for it first (same pattern as every other
+// reschedule* function here) so editing or snoozing a reminder never
+// leaves the old notification still armed alongside the new one.
+export async function rescheduleReminderNotification(previousId, remindAt, title, body, data) {
+  await cancelTodoNotifications(previousId ? [previousId] : []);
+  if (!remindAt) return null;
+  const fireDate = remindAt instanceof Date ? remindAt : new Date(remindAt);
+  if (isNaN(fireDate.getTime()) || fireDate.getTime() <= Date.now()) return null;
+  return safeScheduleNotificationAsync({
+    content: { title, body, sound: true, data },
+    trigger: Platform.OS === "android" ? { date: fireDate, channelId: "layp-reminders" } : { date: fireDate },
+  });
+}
+
+// A promise's own follow-up reminder is the exact same one-off shape as a
+// plain reminder -- kept as a separate name only so call sites read
+// clearly (and so its `data.type` is always stamped consistently for the
+// App.js notification-tap router).
+export async function reschedulePromiseNotification(previousId, dueAt, text) {
+  return rescheduleReminderNotification(previousId, dueAt, "Promise reminder", text, { type: "gfPromise" });
+}
+
+// An important date (birthday, anniversary) gets two heads-up
+// notifications -- 7 days before and 1 day before -- rather than one
+// on the day itself, so there's actually time to act on it. Both past
+// reminders are simply skipped (rescheduleReminderNotification already
+// refuses to schedule anything in the past), so a date added with less
+// than a week of lead time still gets whichever of the two still makes
+// sense. Returns an array of up to two notification ids (nulls filtered
+// out) to store back on the date entry.
+//
+// `mmdd` is "MM-DD" -- important dates repeat every year with no fixed
+// year attached (a birthday isn't tied to one specific year), so this
+// always schedules against the *next* upcoming occurrence rather than a
+// literal stored date.
+export async function rescheduleDateNotifications(previousIds, mmdd, label) {
+  await cancelTodoNotifications(previousIds || []);
+  if (!mmdd) return [];
+  const [mm, dd] = mmdd.split("-").map(Number);
+  if (!mm || !dd) return [];
+  const now = new Date();
+  let next = new Date(now.getFullYear(), mm - 1, dd, 9, 0, 0, 0);
+  if (next.getTime() < now.getTime()) next = new Date(now.getFullYear() + 1, mm - 1, dd, 9, 0, 0, 0);
+  const sevenBefore = new Date(next); sevenBefore.setDate(sevenBefore.getDate() - 7);
+  const oneBefore = new Date(next); oneBefore.setDate(oneBefore.getDate() - 1);
+  const ids = await Promise.all([
+    rescheduleReminderNotification(null, sevenBefore, "Coming up in a week", `${label} is in 7 days`, { type: "gfDate" }),
+    rescheduleReminderNotification(null, oneBefore, "Coming up tomorrow", `${label} is tomorrow`, { type: "gfDate" }),
+  ]);
+  return ids.filter(Boolean);
+}
+
+// A "just a time, no date" reminder repeats every day at that time --
+// Expo's own repeating calendar trigger handles this natively (no need to
+// schedule day-by-day), but it has no concept of an end date. `remindUntil`
+// is therefore enforced on the app side: see sweepExpiredDailyNotifications
+// below, which App.js runs on every load to cancel ones whose `until` has
+// passed. That's a best-effort sweep, not a guarantee, since a repeating
+// notification whose end date passes while the phone never reopens the
+// app will keep firing until the next time the app runs the sweep.
+export async function rescheduleDailyNotification(previousId, time, title, body, data) {
+  await cancelTodoNotifications(previousId ? [previousId] : []);
+  if (!time) return null;
+  const [hour, minute] = time.split(":").map(Number);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  return safeScheduleNotificationAsync({
+    content: { title, body, sound: true, data },
+    trigger: { hour, minute, repeats: true, ...(Platform.OS === "android" ? { channelId: "layp-reminders" } : {}) },
+  });
+}
+
+// A genuine "every N hours" repeating OS notification -- Expo's
+// seconds-based trigger handles this natively, no day-by-day scheduling
+// needed. Used for scheduleItemNotification's "interval" scheduleKind
+// (currently: a GF Promise set to notify/both with an interval instead
+// of a specific date/time).
+export async function rescheduleIntervalNotification(previousId, hours, title, body, data) {
+  await cancelTodoNotifications(previousId ? [previousId] : []);
+  if (!hours || hours <= 0) return null;
+  return safeScheduleNotificationAsync({
+    content: { title, body, sound: true, data },
+    trigger: { seconds: Math.round(hours * 3600), repeats: true, ...(Platform.OS === "android" ? { channelId: "layp-reminders" } : {}) },
+  });
+}
+
+// Unified entry point for the optional-date/time-only reminder model used
+// by both general Remember items and GF Promises: a `date` schedules a
+// single one-off firing (rescheduleReminderNotification); a bare `time`
+// with no `date` repeats daily until cancelled (rescheduleDailyNotification).
+// `until` isn't passed to Expo at all (it can't express one) -- it's
+// enforced by the sweep below instead.
+//
+// `scheduleKind: "interval"` bypasses date/time entirely in favor of a
+// plain "every N hours" repeat (`interval: { frequency, customHours }`,
+// same shape GF Notes already uses for its popup-only frequency) -- for
+// an item whose remindMode is "notification" or "both", this is what
+// actually arms the OS notification side of that interval.
+export async function scheduleItemNotification(previousId, { date, time, until, scheduleKind, interval }, title, body, data) {
+  if (scheduleKind === "interval") {
+    const hours = hoursForFrequency(interval?.frequency, interval?.customHours) || 1; // "always" isn't offered when a notification is involved, but guard anyway
+    return rescheduleIntervalNotification(previousId, hours, title, body, data);
+  }
+  if (date) return rescheduleReminderNotification(previousId, `${date}T${time || "09:00"}:00`, title, body, data);
+  if (time) return rescheduleDailyNotification(previousId, time, title, body, data);
+  await cancelTodoNotifications(previousId ? [previousId] : []);
+  return null;
+}
+
+// Runs on every app load: cancels the *notification* side of any
+// repeating (date-less) reminder/promise whose `remindUntil` has already
+// passed. Doesn't touch the item itself -- App.js decides separately
+// whether an expired item is still worth showing anywhere.
+export async function sweepExpiredDailyNotifications(items) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const expired = items.filter((it) => !it.remindDate && it.remindUntil && it.notificationId && new Date(`${it.remindUntil}T23:59:59`).getTime() < today.getTime());
+  if (!expired.length) return [];
+  await cancelTodoNotifications(expired.map((it) => it.notificationId));
+  return expired.map((it) => it.id);
+}
+

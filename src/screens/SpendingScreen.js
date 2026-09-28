@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, StyleSheet, Platform } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet, Platform } from "react-native";
 import { Plus, X, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search, Filter, Receipt } from "lucide-react-native";
 import { useTheme, ACCENT, INCOME_CATEGORIES, SPENDING_LABELS } from "../theme";
 import { peso, uid, todayISO, fmtDay, fmtDaySmart, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview, nextRecurringDate } from "../utils";
@@ -13,7 +13,7 @@ import CalendarPicker from "../components/CalendarPicker";
 import { confirmDelete, confirmAction } from "../components/ConfirmModal";
 import EditSheet from "../components/EditSheet";
 import { DURATION, SPRING, useCardPressAnimation } from "../animation";
-import Reanimated from "react-native-reanimated";
+import Reanimated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from "react-native-reanimated";
 
 export default function SpendingScreen({
   expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [],
@@ -24,7 +24,6 @@ export default function SpendingScreen({
   const [editingId, setEditingId] = useState(null);
   const [showMoneyForm, setShowMoneyForm] = useState(false);
   const [historyOpen, setHistoryOpen] = useState({});
-  const [ledgerOpen, setLedgerOpen] = useState(false);
   const [limitsEditorOpen, setLimitsEditorOpen] = useState(false);
   const [comparisonExpanded, setComparisonExpanded] = useState(false);
 
@@ -128,6 +127,11 @@ export default function SpendingScreen({
   // split/account/label the most recent matching expense used, dated
   // today.
   const quickTemplates = useMemo(() => frequentExpenseTemplates(expenses), [expenses]);
+  // Every distinct expense name ever logged, not just the top few -- the
+  // form's search/dropdown searches this instead of the capped list
+  // above, so "reuse it over and over again" actually reaches back
+  // through your whole history, not just the last several.
+  const allExpenseTemplates = useMemo(() => frequentExpenseTemplates(expenses, Infinity), [expenses]);
   function logAgain(template) {
     confirmAction({
       title: "Log this expense again?",
@@ -144,41 +148,83 @@ export default function SpendingScreen({
   // Recently added first: sort by createdAt (fallback to id for old entries
   // saved before createdAt existed).
   const byRecent = (a, b) => (b.createdAt || 0) - (a.createdAt || 0);
-  const todayExpenses = expenses.filter((e) => e.date === today).sort(byRecent);
+
+  // Combined income & outcome ledger: every money-in and money-out event,
+  // including lending/borrowing movements (computed live, not stored
+  // separately), newest first. This is the single source for the "Recent
+  // Activity" list below -- there's no separate spending-only vs.
+  // income/outcome section anymore, it's all one merged, day-grouped feed.
+  const ledger = useMemo(() => {
+    const loanLedgerEntries = loans.flatMap((l) => {
+      const entries = [];
+      const createdEntry = {
+        id: l.id + "-created", createdAt: l.createdAt, date: l.dueDate, account: l.account,
+        amount: l.principal,
+        kind: l.type === "lent" ? "out" : "in",
+        name: l.type === "lent" ? `Lent to ${l.person}` : `Borrowed from ${l.person}`,
+      };
+      entries.push(createdEntry);
+      if (l.settled) {
+        entries.push({
+          id: l.id + "-settled", createdAt: new Date(l.settledAt + "T12:00:00").getTime(), date: l.settledAt, account: l.account,
+          amount: loanTotalDue(l),
+          kind: l.type === "lent" ? "in" : "out",
+          name: l.type === "lent" ? `${l.person} repaid you` : `You repaid ${l.person}`,
+        });
+      }
+      return entries;
+    });
+    return [
+      ...moneyLog.map((m) => ({ ...m, kind: "in" })),
+      ...expenses.map((e) => ({ ...e, kind: "out" })),
+      ...loanLedgerEntries,
+    ].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }, [moneyLog, expenses, loans]);
+  const ledgerTotals = useMemo(() => {
+    let income = 0, outcome = 0;
+    for (const item of ledger) {
+      if (item.kind === "in") income += Number(item.amount);
+      else outcome += Number(item.amount);
+    }
+    return { income, outcome };
+  }, [ledger]);
+
+  const todayEntries = ledger.filter((item) => item.date === today).sort(byRecent);
 
   // Grouped once (not re-filtered per day inside the render loop below) --
-  // for a user with a long history this turns an O(days x expenses) scan
-  // into a single O(expenses) pass.
-  const expensesByDate = useMemo(() => {
+  // for a user with a long history this turns an O(days x entries) scan
+  // into a single O(entries) pass.
+  const entriesByDate = useMemo(() => {
     const map = {};
-    for (const e of expenses) {
-      if (e.date === today) continue;
-      (map[e.date] ||= []).push(e);
+    for (const item of ledger) {
+      if (item.date === today) continue;
+      (map[item.date] ||= []).push(item);
     }
     for (const day of Object.values(map)) day.sort(byRecent);
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expenses, today]);
+  }, [ledger, today]);
   const allPastDates = useMemo(
-    () => Object.keys(expensesByDate).sort((a, b) => b.localeCompare(a)),
-    [expensesByDate]
+    () => Object.keys(entriesByDate).sort((a, b) => b.localeCompare(a)),
+    [entriesByDate]
   );
   // The History section used to render one group per day the user has
-  // *ever* logged an expense on, forever -- for someone who's used the app
+  // *ever* logged something on, forever -- for someone who's used the app
   // for months that's an ever-growing, always-fully-rendered list inside a
   // FlatList header (which doesn't virtualize its own header content).
   // Capped to a window with a "show more" step instead.
   const [historyLimit, setHistoryLimit] = useState(20);
   const pastDates = allPastDates.slice(0, historyLimit);
   // One consistent list of day-groups -- today included as just the most
-  // recent entry rather than a separately-styled section -- so "Recent
-  // Spending" reads as one continuous, uniformly-formatted list instead of
-  // a "Today" block followed by a differently-shaped "History" block.
+  // recent entry rather than a separately-styled section, income sitting
+  // right alongside outcome in the same group -- so "Recent Activity"
+  // reads as one continuous, uniformly-formatted list instead of a
+  // spending-only block followed by a separate income/outcome ledger.
   const recentDays = useMemo(() => {
-    const days = pastDates.map((d) => ({ date: d, expenses: expensesByDate[d] || [], isToday: false }));
-    if (todayExpenses.length > 0) days.unshift({ date: today, expenses: todayExpenses, isToday: true });
+    const days = pastDates.map((d) => ({ date: d, items: entriesByDate[d] || [], isToday: false }));
+    if (todayEntries.length > 0) days.unshift({ date: today, items: todayEntries, isToday: true });
     return days;
-  }, [pastDates, expensesByDate, todayExpenses, today]);
+  }, [pastDates, entriesByDate, todayEntries, today]);
 
   // Search/filter -- matches name or label (case-insensitive substring),
   // optionally narrowed further to one spending label. Active whenever
@@ -227,73 +273,14 @@ export default function SpendingScreen({
     return { categories, previousTotal, monthLabel, previousMonthLabel };
   }, [expenses, splits, now]);
 
-  // Income & outcome ledger: every money-in and money-out event, including
-  // lending/borrowing movements (computed live, not stored separately), newest first.
-  const ledger = useMemo(() => {
-    const loanLedgerEntries = loans.flatMap((l) => {
-      const entries = [];
-      const createdEntry = {
-        id: l.id + "-created", createdAt: l.createdAt, date: l.dueDate, account: l.account,
-        amount: l.principal,
-        kind: l.type === "lent" ? "out" : "in",
-        name: l.type === "lent" ? `Lent to ${l.person}` : `Borrowed from ${l.person}`,
-      };
-      entries.push(createdEntry);
-      if (l.settled) {
-        entries.push({
-          id: l.id + "-settled", createdAt: new Date(l.settledAt + "T12:00:00").getTime(), date: l.settledAt, account: l.account,
-          amount: loanTotalDue(l),
-          kind: l.type === "lent" ? "in" : "out",
-          name: l.type === "lent" ? `${l.person} repaid you` : `You repaid ${l.person}`,
-        });
-      }
-      return entries;
-    });
-    return [
-      ...moneyLog.map((m) => ({ ...m, kind: "in" })),
-      ...expenses.map((e) => ({ ...e, kind: "out" })),
-      ...loanLedgerEntries,
-    ].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  }, [moneyLog, expenses, loans]);
-  const ledgerTotals = useMemo(() => {
-    let income = 0, outcome = 0;
-    for (const item of ledger) {
-      if (item.kind === "in") income += Number(item.amount);
-      else outcome += Number(item.amount);
-    }
-    return { income, outcome };
-  }, [ledger]);
-
-  const renderLedgerItem = useCallback(({ item }) => (
-    <View style={[styles.ledgerRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-      {item.kind === "in" ? <ArrowDownCircle size={16} color={ACCENT.leaf} /> : <ArrowUpCircle size={16} color={ACCENT.ember} />}
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.ledgerTitle, { color: theme.text }]}>{item.name || item.note || "Money added"}</Text>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <Text style={[styles.ledgerDate, { color: theme.textMuted }]}>{fmtDay(item.date)}{item.account ? ` - ${accounts.find((a) => a.id === item.account)?.label || item.account}` : ""}</Text>
-          {item.kind === "in" && item.category && (() => {
-            const cat = INCOME_CATEGORIES.find((c) => c.id === item.category);
-            return cat ? <View style={[styles.tag, { backgroundColor: cat.color + "22" }]}><Text style={[styles.tagText, { color: cat.color }]}>{cat.label}</Text></View> : null;
-          })()}
-        </View>
-      </View>
-      <Text style={[styles.ledgerAmount, { color: item.kind === "in" ? ACCENT.leaf : ACCENT.ember }]}>{item.kind === "in" ? "+" : "-"}{peso(item.amount)}</Text>
-    </View>
-  ), [theme, accounts]);
-
   return (
     <>
     <FlatList
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
-      data={ledgerOpen ? ledger : []}
+      data={[]}
       keyExtractor={(item) => item.id}
-      renderItem={renderLedgerItem}
-      initialNumToRender={14}
-      maxToRenderPerBatch={10}
-      windowSize={7}
-      removeClippedSubviews={Platform.OS === "android"}
-      ListEmptyComponent={ledgerOpen ? <EmptyState icon={Receipt} text="Nothing logged yet." /> : null}
+      renderItem={() => null}
       ListHeaderComponent={
         <>
           <View style={styles.headerRow}>
@@ -483,11 +470,16 @@ export default function SpendingScreen({
             </View>
           ) : (recentDays.length > 0 || weeklySummaries.length > 0) && (
             <View style={{ marginBottom: 16 }}>
-              <Text style={[styles.h2, { color: theme.text, marginBottom: 8 }]}>Recent Spending</Text>
+              <Text style={[styles.h2, { color: theme.text, marginBottom: 4 }]}>Recent Activity</Text>
+              <Text style={[styles.ledgerSubtitle, { color: theme.textMuted, marginBottom: 8 }]}>Every peso in and out, day by day</Text>
+              <View style={styles.ledgerPreviewRow}>
+                <Text style={[styles.ledgerPreviewText, { color: ACCENT.leaf }]}>Income {peso(ledgerTotals.income)}</Text>
+                <Text style={[styles.ledgerPreviewText, { color: ACCENT.ember }]}>Outcome {peso(ledgerTotals.outcome)}</Text>
+              </View>
               <View style={{ gap: 8 }}>
                 {recentDays.length === 0 && <EmptyState icon={Receipt} text="Nothing logged yet." />}
-                {recentDays.map(({ date: d, expenses: dayExpenses, isToday }) => {
-                  const dayTotal = dayExpenses.reduce((s, e) => s + Number(e.amount), 0);
+                {recentDays.map(({ date: d, items: dayItems, isToday }) => {
+                  const dayNet = dayItems.reduce((s, it) => s + (it.kind === "in" ? Number(it.amount) : -Number(it.amount)), 0);
                   // Today defaults open (so what you just logged is visible
                   // right away) until the person deliberately collapses it;
                   // every other day defaults closed. Either way, once
@@ -498,16 +490,19 @@ export default function SpendingScreen({
                       <Pressable onPress={() => setHistoryOpen((prev) => ({ ...prev, [d]: !open }))} style={styles.historyHeader} accessibilityLabel={open ? `Collapse ${fmtDateLong(d)}` : `Expand ${fmtDateLong(d)}`}>
                         <View style={styles.historyHeaderTopRow}>
                           <Text style={[styles.historyDate, { color: theme.text }]}>{isToday ? "Today" : fmtDaySmart(d)}</Text>
-                          <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(dayTotal)}</Text>
+                          <Text style={[styles.historyTotal, { color: dayNet < 0 ? ACCENT.ember : ACCENT.leaf }]}>{dayNet < 0 ? "-" : "+"}{peso(Math.abs(dayNet))}</Text>
                         </View>
                         <View style={styles.historyHeaderBottomRow}>
-                          <Text style={[styles.historyCount, { color: theme.textMuted }]}>{dayExpenses.length} transaction{dayExpenses.length === 1 ? "" : "s"}</Text>
+                          <Text style={[styles.historyCount, { color: theme.textMuted }]}>{dayItems.length} transaction{dayItems.length === 1 ? "" : "s"}</Text>
                           {open ? <ChevronUp size={13} color={theme.textMuted} /> : <ChevronDown size={13} color={theme.textMuted} />}
                         </View>
                       </Pressable>
                       {open && (
                         <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 10 }}>
-                          {dayExpenses.map((e) => <ExpenseRow key={e.id} e={e} splits={splits} accounts={accounts} compact onEdit={startEdit} onRemove={remove} />)}
+                          {dayItems.map((item) => isExpenseEntry(item)
+                            ? <ExpenseRow key={item.id} e={item} splits={splits} accounts={accounts} compact onEdit={startEdit} onRemove={remove} />
+                            : <LedgerEntryRow key={item.id} item={item} accounts={accounts} compact />
+                          )}
                         </View>
                       )}
                     </View>
@@ -536,20 +531,6 @@ export default function SpendingScreen({
               <Text style={[styles.rollupNote, { color: theme.textMuted }]}>ⓘ Older transactions are automatically grouped into weekly summaries.</Text>
             </View>
           )}
-
-          <Pressable onPress={() => setLedgerOpen((o) => !o)} style={styles.ledgerHeader} accessibilityLabel={ledgerOpen ? "Collapse income and outcome" : "Expand income and outcome"}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.h2, { color: theme.text }]}>Income & Outcome</Text>
-              <Text style={[styles.ledgerSubtitle, { color: theme.textMuted }]}>View your financial history</Text>
-            </View>
-            {ledgerOpen ? <ChevronUp size={15} color={theme.textMuted} /> : <ChevronDown size={15} color={theme.textMuted} />}
-          </Pressable>
-          {!ledgerOpen && (
-            <View style={styles.ledgerPreviewRow}>
-              <Text style={[styles.ledgerPreviewText, { color: ACCENT.leaf }]}>Income {peso(ledgerTotals.income)}</Text>
-              <Text style={[styles.ledgerPreviewText, { color: ACCENT.ember }]}>Outcome {peso(ledgerTotals.outcome)}</Text>
-            </View>
-          )}
         </>
       }
     />
@@ -571,6 +552,7 @@ export default function SpendingScreen({
         onCancel={() => { setShowForm(false); setEditingId(null); }}
         onDelete={remove}
         quickTemplates={quickTemplates}
+        allTemplates={allExpenseTemplates}
         onLogAgain={(t) => { logAgain(t); setShowForm(false); }}
       />
     </EditSheet>
@@ -617,7 +599,133 @@ const ExpenseRow = React.memo(function ExpenseRow({ e, splits, accounts, onEdit,
   );
 });
 
-function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ctx, quickTemplates = [], onLogAgain }) {
+// Distinguishes a real logged expense (has a budget category) from a
+// money-added or loan-movement ledger entry, so the merged day groups know
+// which row component -- editable ExpenseRow vs. read-only LedgerEntryRow
+// -- to render for each item.
+function isExpenseEntry(item) {
+  return item.kind === "out" && Object.prototype.hasOwnProperty.call(item, "splitId");
+}
+
+// Read-only row for a non-expense ledger entry (money added, or a
+// lend/borrow movement) inside the merged Recent Activity day groups --
+// same visual rhythm as ExpenseRow, but nothing to edit or delete since
+// these aren't stored as directly-editable records here.
+const LedgerEntryRow = React.memo(function LedgerEntryRow({ item, accounts, compact }) {
+  const { theme } = useTheme();
+  const account = accounts.find((a) => a.id === item.account);
+  const cat = item.kind === "in" && item.category ? INCOME_CATEGORIES.find((c) => c.id === item.category) : null;
+  return (
+    <View style={[styles.row, { backgroundColor: compact ? theme.bg : theme.card }]}>
+      {item.kind === "in" ? <ArrowDownCircle size={15} color={ACCENT.leaf} /> : <ArrowUpCircle size={15} color={ACCENT.ember} />}
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.rowTitle, { color: theme.text }]}>{item.name || item.note || "Money added"}</Text>
+        <View style={{ flexDirection: "row", gap: 4, marginTop: 3, flexWrap: "wrap" }}>
+          {cat && <View style={[styles.tag, { backgroundColor: cat.color + "22" }]}><Text style={[styles.tagText, { color: cat.color }]}>{cat.label}</Text></View>}
+          {account && <View style={[styles.tag, { backgroundColor: account.color + "22" }]}><Text style={[styles.tagText, { color: account.color }]}>{account.label}</Text></View>}
+        </View>
+      </View>
+      <Text style={[styles.amount, { color: item.kind === "in" ? ACCENT.leaf : ACCENT.ember }]}>{item.kind === "in" ? "+" : "-"}{peso(item.amount)}</Text>
+    </View>
+  );
+});
+
+// Search-and-dropdown "Log again" -- replaces a wall of chips (one per
+// frequent expense, which stopped being readable once there were more
+// than a handful) with a single search field. Closed, it's just that one
+// field; typing or tapping the chevron opens a scrollable list, matching
+// against every distinct expense name ever logged (not just the top few)
+// so an older, less-frequent expense can still be found and reused.
+function LogAgainPicker({ recentTemplates, allTemplates, onPick }) {
+  const { theme } = useTheme();
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const filtered = useMemo(() => {
+    if (!query.trim()) return recentTemplates;
+    const q = query.trim().toLowerCase();
+    return allTemplates.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 30);
+  }, [query, recentTemplates, allTemplates]);
+
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 6 }]}>Log again</Text>
+      <View style={[styles.logAgainSearchRow, { backgroundColor: theme.bg, borderColor: theme.line }]}>
+        <Search size={14} color={theme.textMuted} />
+        <TextInput
+          value={query}
+          onChangeText={(v) => { setQuery(v); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search past expenses"
+          placeholderTextColor={theme.textMuted}
+          style={[styles.logAgainSearchInput, { color: theme.text }]}
+        />
+        <Pressable onPress={() => setOpen((o) => !o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={open ? "Hide past expenses" : "Show all past expenses"}>
+          {open ? <ChevronUp size={16} color={theme.textMuted} /> : <ChevronDown size={16} color={theme.textMuted} />}
+        </Pressable>
+      </View>
+      {open && (
+        <View style={[styles.logAgainDropdown, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          {filtered.length === 0 ? (
+            <Text style={[styles.metaText, { color: theme.textMuted, padding: 10 }]}>No matches.</Text>
+          ) : (
+            <ScrollView style={{ maxHeight: 220 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+              {filtered.map((t) => (
+                <Pressable key={t.id} onPress={() => { onPick(t); setOpen(false); setQuery(""); }} style={[styles.logAgainRow, { borderBottomColor: theme.line }]}>
+                  <Text style={[styles.rowTitle, { color: theme.text, flex: 1 }]} numberOfLines={1}>{t.name}</Text>
+                  <Text style={[styles.metaText, { color: theme.textMuted }]}>{peso(t.amount)}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Balance -> spend -> remaining, made visual instead of a single line of
+// text: the top bar is the account's current balance (a fixed reference,
+// always full width); the bottom one is what the balance would become
+// after the typed amount, and animates its width down in real time as
+// the amount changes, so the shrink itself is what communicates the
+// impact rather than just the numbers alone.
+function AccountSpendBar({ label, color, balance, spend, exceeds }) {
+  const { theme } = useTheme();
+  const remaining = balance - spend;
+  const ratio = balance > 0 ? Math.max(0, Math.min(1, remaining / balance)) : 0;
+  const anim = useSharedValue(ratio);
+  useEffect(() => {
+    anim.value = withTiming(ratio, { duration: 260, easing: Easing.out(Easing.quad) });
+  }, [ratio]);
+  // A sliver of width even at zero (rather than collapsing to nothing) so
+  // an over-budget amount still reads as "a bar that shrank a lot", not
+  // as the bar having broken/disappeared.
+  const remainingBarStyle = useAnimatedStyle(() => ({ width: `${Math.max(anim.value * 100, spend > 0 ? 2 : 0)}%` }));
+
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 6 }}>
+        <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 0 }]}>{label}</Text>
+        <Text style={[styles.balanceHeadline, { color: theme.text }]}>{peso(balance)}</Text>
+      </View>
+      <View style={[styles.spendBarTrack, { backgroundColor: color }]} />
+      {spend > 0 && (
+        <>
+          <Text style={[styles.metaText, { color: exceeds ? ACCENT.ember : theme.textMuted, marginTop: 8, marginBottom: 6 }]}>
+            {exceeds
+              ? `If you spend ${peso(spend)}, that's ${peso(spend - balance)} more than you have.`
+              : `If you spend ${peso(spend)}, your account balance will be ${peso(remaining)}.`}
+          </Text>
+          <View style={[styles.spendBarTrack, { backgroundColor: theme.bg }]}>
+            <Reanimated.View style={[styles.spendBarFill, remainingBarStyle, { backgroundColor: exceeds ? ACCENT.ember : color }]} />
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ctx, quickTemplates = [], allTemplates = [], onLogAgain }) {
   const { theme } = useTheme();
   const [name, setName] = useState(initial?.name || "");
   const [label, setLabel] = useState(initial?.label || "");
@@ -630,6 +738,7 @@ function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ct
   const currentBalance = computeAccountBalance(account, ctx);
   const available = currentBalance + (initial?.account === account ? Number(initial.amount) : 0);
   const exceedsBalance = isPositiveAmount(amount) && amountNum > available;
+  const selectedAccount = accounts.find((a) => a.id === account);
 
   function attemptSave() {
     const { ok, data, errors: fieldErrors } = validate(expenseSchema, { name, label, amount, splitId, account, date });
@@ -643,14 +752,7 @@ function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ct
       {/* "Log again" only makes sense while adding a brand-new expense --
           once you're editing one, quick-repeat templates aren't relevant. */}
       {!initial && quickTemplates.length > 0 && (
-        <View style={{ marginBottom: 14 }}>
-          <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 6 }]}>Log again</Text>
-          <View style={styles.chipWrap}>
-            {quickTemplates.map((t) => (
-              <Chip key={t.id} label={`${t.name} - ${peso(t.amount)}`} small onPress={() => onLogAgain(t)} />
-            ))}
-          </View>
-        </View>
+        <LogAgainPicker recentTemplates={quickTemplates} allTemplates={allTemplates} onPick={onLogAgain} />
       )}
       <TextInput value={name} onChangeText={setName} placeholder="What did you spend on?" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
       {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
@@ -667,14 +769,17 @@ function ExpenseForm({ initial, onSave, onCancel, onDelete, splits, accounts, ct
       </View>
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Paid from</Text>
       <View style={styles.chipWrap}>
-        {accounts.map((a) => {
-          const bal = computeAccountBalance(a.id, ctx) + (initial?.account === a.id ? Number(initial.amount) : 0);
-          return <Chip key={a.id} label={`${a.label} - ${peso(bal)}`} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />;
-        })}
+        {accounts.map((a) => <Chip key={a.id} label={a.label} color={a.color} active={account === a.id} onPress={() => setAccount(a.id)} small />)}
       </View>
-      <Text style={[styles.metaText, { color: exceedsBalance ? ACCENT.ember : theme.textMuted, marginBottom: 8 }]}>
-        {peso(available - (isPositiveAmount(amount) ? amountNum : 0))} this will be your balance
-      </Text>
+      {selectedAccount && (
+        <AccountSpendBar
+          label={selectedAccount.label}
+          color={selectedAccount.color}
+          balance={available}
+          spend={isPositiveAmount(amount) ? amountNum : 0}
+          exceeds={exceedsBalance}
+        />
+      )}
       <View style={{ marginBottom: 12 }}>
         <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Amount (P)</Text>
         <TextInput value={amount} onChangeText={(v) => setAmount(v.replace(/[^0-9.]/g, ""))} placeholder="0.00" placeholderTextColor={theme.textMuted} keyboardType="decimal-pad" style={[styles.amountInput, { backgroundColor: theme.bg, color: theme.text }]} />
@@ -755,6 +860,13 @@ const styles = StyleSheet.create({
   h1: { fontSize: 20, fontWeight: "700" },
   h2: { fontSize: 15, fontWeight: "700" },
   roundBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  logAgainSearchRow: { flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  logAgainSearchInput: { flex: 1, fontSize: 13 },
+  logAgainDropdown: { borderWidth: 1, borderRadius: 12, marginTop: 6, overflow: "hidden" },
+  logAgainRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1 },
+  balanceHeadline: { fontSize: 14, fontWeight: "800", fontFamily: "monospace" },
+  spendBarTrack: { height: 10, borderRadius: 5, overflow: "hidden" },
+  spendBarFill: { height: 10, borderRadius: 5 },
   // Hero card: the total-spent figure leads at a much larger size than
   // anything else on the page, per the "show total spending first, make
   // it the biggest number" request -- everything else here (budget left,

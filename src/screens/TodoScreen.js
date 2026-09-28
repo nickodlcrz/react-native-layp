@@ -17,8 +17,9 @@ import { hapticSuccess } from "../haptics";
 import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 import EditSheet from "../components/EditSheet";
+import RememberList from "../components/RememberList";
 import { DURATION, SPRING, useCardPressAnimation } from "../animation";
-import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming, withRepeat } from "react-native-reanimated";
+import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming, withRepeat, Easing } from "react-native-reanimated";
 
 // A task's work status now doubles as the checkbox's progression: tapping
 // the circle steps a task forward through these stages in order, and the
@@ -59,54 +60,49 @@ function urgencyTier(t, displayCompleted, dleft) {
   return "none";
 }
 
-// Drives a soft, blinking drop-shadow "glow" for the red/yellow urgency
-// tiers -- border width and color stay put; only the shadow pulses, so it
-// reads as a glow breathing around the card rather than the card's edge
-// visibly thickening.
+// Drives a blinking "glow" for the red/yellow urgency tiers. The row's
+// own border is completely static (never animated) so the card's size
+// never changes and nothing around it ever shifts -- all of the
+// blink/glow motion lives on a separate halo, absolutely positioned just
+// outside the row's own edges, which can grow/fade freely without
+// affecting layout at all. The halo's own border is a fixed width too
+// (only its opacity/shadow pulse); it's what carries the effect on
+// Android, which ignores colored shadows on elevation and would
+// otherwise render this as close to invisible there.
 function useUrgencyStyle(tier) {
   const pulse = useSharedValue(0);
   useEffect(() => {
     if (tier === "red" || tier === "yellow") {
-      pulse.value = withRepeat(withSequence(withTiming(1, { duration: 900 }), withTiming(0, { duration: 900 })), -1, true);
+      pulse.value = withRepeat(
+        withSequence(
+          withTiming(1, { duration: 900, easing: Easing.inOut(Easing.sin) }),
+          withTiming(0, { duration: 900, easing: Easing.inOut(Easing.sin) })
+        ),
+        -1,
+        true
+      );
     } else {
-      pulse.value = withTiming(0, { duration: 200 });
+      pulse.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.quad) });
     }
   }, [tier]);
 
-  return useAnimatedStyle(() => {
-    if (tier === "red") {
-      return {
-        borderWidth: 1.5,
-        borderColor: ACCENT.ember,
-        shadowColor: ACCENT.ember,
-        shadowOffset: { width: 0, height: 0 },
-        // Android ignores shadowColor on elevation, so elevation alone
-        // won't carry the red glow there -- it still gets a subtle,
-        // pulsing lift, while the colored glow itself is iOS-only. A
-        // bigger radius (rather than higher opacity alone) is what keeps
-        // a stronger glow reading as soft instead of harsh -- it spreads
-        // the light out further rather than making it more solid.
-        shadowOpacity: 0.16 + pulse.value * 0.34,
-        shadowRadius: 8 + pulse.value * 10,
-        elevation: 2 + pulse.value * 2.5,
-      };
-    }
-    if (tier === "yellow") {
-      return {
-        borderWidth: 1.5,
-        borderColor: ACCENT.gold,
-        shadowColor: ACCENT.gold,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.13 + pulse.value * 0.27,
-        shadowRadius: 6 + pulse.value * 8,
-        elevation: 1.5 + pulse.value * 2,
-      };
-    }
-    if (tier === "green") {
-      return { borderWidth: 1.5, borderColor: ACCENT.leaf };
-    }
-    return { borderWidth: 0, borderColor: "transparent" };
+  const rowBorderColor = tier === "red" ? ACCENT.ember : tier === "yellow" ? ACCENT.gold : tier === "green" ? ACCENT.leaf : "transparent";
+  const rowStyle = { borderWidth: tier === "none" ? 0 : 1.5, borderColor: rowBorderColor };
+  const haloColor = tier === "red" ? ACCENT.ember : ACCENT.gold;
+
+  const haloStyle = useAnimatedStyle(() => {
+    if (tier !== "red" && tier !== "yellow") return { opacity: 0 };
+    return {
+      opacity: 0.35 + pulse.value * 0.65,
+      shadowColor: haloColor,
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.3 + pulse.value * 0.6,
+      shadowRadius: 8 + pulse.value * 14,
+      elevation: 2 + pulse.value * 5,
+    };
   });
+
+  return { rowStyle, haloStyle, haloColor, showHalo: tier === "red" || tier === "yellow" };
 }
 function statusProgress(t) {
   if (t.completed) return 1;
@@ -123,8 +119,9 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject }) {
+function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject, reminders = [], setReminders }) {
   const { theme } = useTheme();
+  const [mode, setMode] = useState("tasks"); // "tasks" | "remember" -- Remember is the general quick-capture list, kept separate from Tasks
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [filter, setFilter] = useState("all");
@@ -274,7 +271,19 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
   ), [subjectsById, toggle, startEdit, remove, toggleSubtask]);
 
   return (
-    <>
+    <View style={{ flex: 1 }}>
+      <SegmentedTabs
+        options={[
+          { key: "tasks", label: "Tasks" },
+          { key: "remember", label: "Remember" },
+        ]}
+        value={mode}
+        onChange={setMode}
+      />
+      {mode === "remember" ? (
+        <RememberList reminders={reminders} setReminders={setReminders} />
+      ) : (
+        <>
     <FlatList
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
@@ -383,7 +392,9 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
         onDelete={remove}
       />
     </EditSheet>
-    </>
+        </>
+      )}
+    </View>
   );
 }
 
@@ -401,6 +412,11 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
 function useTaskCompletion(t, onToggle) {
   const [optimisticDone, setOptimisticDone] = useState(false);
   const popScale = useSharedValue(1);
+  // A brief expanding ring behind the checkmark on completion -- a small
+  // celebratory "done!" flourish, on top of the checkmark's own bounce,
+  // rather than just the icon getting bigger and settling back down.
+  const ringScale = useSharedValue(0);
+  const ringOpacity = useSharedValue(0);
   const completingRef = useRef(false);
   const timeoutRef = useRef(null);
 
@@ -419,6 +435,16 @@ function useTaskCompletion(t, onToggle) {
     );
   }
 
+  function burstRing() {
+    ringScale.value = 0;
+    ringOpacity.value = 0.6;
+    // Decelerating (ease-out) rather than linear -- an expanding ring
+    // naturally feels like it's losing momentum as it grows, not
+    // travelling at a constant speed the whole way.
+    ringScale.value = withTiming(2.4, { duration: 480, easing: Easing.out(Easing.quad) });
+    ringOpacity.value = withTiming(0, { duration: 480, easing: Easing.out(Easing.quad) });
+  }
+
   function handleToggle() {
     if (completingRef.current) return;
     if (t.completed) { onToggle(t.id); return; }
@@ -432,6 +458,7 @@ function useTaskCompletion(t, onToggle) {
     completingRef.current = true;
     setOptimisticDone(true);
     pop(1.4);
+    burstRing();
     timeoutRef.current = setTimeout(() => {
       onToggle(t.id);
       completingRef.current = false;
@@ -440,8 +467,25 @@ function useTaskCompletion(t, onToggle) {
   }
 
   const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: popScale.value }] }));
+  const ringStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: ringScale.value }],
+    opacity: ringOpacity.value,
+  }));
 
-  return { displayCompleted: t.completed || optimisticDone, popStyle, handleToggle };
+  return { displayCompleted: t.completed || optimisticDone, popStyle, ringStyle, handleToggle };
+}
+
+// Animates the row's fade to 60% opacity smoothly once a task is marked
+// done, instead of it snapping there instantly -- a plain conditional
+// style value on a Reanimated.View only gets the `layout` prop's
+// animation for size/position changes, not for arbitrary style values
+// like opacity, so this needs its own explicit tween.
+function useRowFadeStyle(displayCompleted) {
+  const fade = useSharedValue(displayCompleted ? 0.6 : 1);
+  useEffect(() => {
+    fade.value = withTiming(displayCompleted ? 0.6 : 1, { duration: 320, easing: Easing.inOut(Easing.quad) });
+  }, [displayCompleted]);
+  return useAnimatedStyle(() => ({ opacity: fade.value }));
 }
 
 // Animates the status progress bar smoothly to its new fraction whenever
@@ -461,9 +505,10 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
   const { theme } = useTheme();
   const cat = CATEGORIES.find((c) => c.id === t.category);
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
-  const { displayCompleted, popStyle, handleToggle } = useTaskCompletion(t, onToggle);
+  const { displayCompleted, popStyle, ringStyle, handleToggle } = useTaskCompletion(t, onToggle);
   const urgency = urgencyTier(t, displayCompleted, dleft);
-  const urgencyStyle = useUrgencyStyle(urgency);
+  const { rowStyle: urgencyRowStyle, haloStyle, haloColor, showHalo } = useUrgencyStyle(urgency);
+  const rowFadeStyle = useRowFadeStyle(displayCompleted);
   const subtasks = t.subtasks || [];
   const subDone = subtasks.filter((s) => s.done).length;
   const effectiveStatusColor = statusColor(t.status);
@@ -482,20 +527,26 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
       accessibilityLabel={`"${t.title}" task`}
       accessibilityHint="Long press to edit"
     >
-      <Reanimated.View
-        layout={ReanimatedLayout.duration(DURATION)}
-        style={[
-          styles.detailedRow,
-          { backgroundColor: theme.card, opacity: displayCompleted ? 0.6 : 1 },
-          urgencyStyle,
-          pressStyle,
-        ]}
-      >
+      <View style={{ position: "relative" }}>
+        {showHalo && <Reanimated.View pointerEvents="none" style={[styles.urgencyHalo, { borderColor: haloColor }, haloStyle]} />}
+        <Reanimated.View
+          layout={ReanimatedLayout.duration(DURATION)}
+          style={[
+            styles.detailedRow,
+            { backgroundColor: theme.card },
+            rowFadeStyle,
+            urgencyRowStyle,
+            pressStyle,
+          ]}
+        >
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
           <Pressable onPress={handleToggle} style={{ marginTop: 2 }} accessibilityLabel={displayCompleted ? `Mark "${t.title}" incomplete` : `Mark "${t.title}" complete`} accessibilityRole="checkbox" accessibilityState={{ checked: displayCompleted }}>
-            <Reanimated.View style={popStyle}>
-              {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
-            </Reanimated.View>
+            <View>
+              <Reanimated.View pointerEvents="none" style={[styles.completionRing, ringStyle]} />
+              <Reanimated.View style={popStyle}>
+                {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
+              </Reanimated.View>
+            </View>
           </Pressable>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -596,6 +647,7 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
           </View>
         </View>
       </Reanimated.View>
+      </View>
     </Pressable>
   );
 });
@@ -785,6 +837,8 @@ function TodoForm({ initial, onSave, onCancel, onDelete, subjects = [], presetSu
 
 const styles = StyleSheet.create({
   detailedRow: { borderRadius: 16, padding: 14, marginBottom: 10 },
+  completionRing: { position: "absolute", top: -3, left: -3, width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: ACCENT.leaf },
+  urgencyHalo: { position: "absolute", top: -5, left: -5, right: -5, bottom: -5, borderRadius: 21, borderWidth: 3 },
   detailedMetaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" },
   subProgressTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
   subProgressFill: { height: 4, borderRadius: 2 },

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
-import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet, Eye, EyeOff, ShieldAlert, X } from "lucide-react-native";
+import { TrendingUp, TrendingDown, PiggyBank, HandCoins, Receipt, AlertTriangle, CircleCheck, Landmark, GraduationCap, ChevronRight, ListTodo, Circle, Wallet, Eye, EyeOff, ShieldAlert, X, Bell } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, savingsTotal as computeSavingsTotal, loanTotalDue, goalProgress } from "../utils";
 import { totalBalance, netWorth as selectNetWorth, safeToSpend as selectSafeToSpend, monthlySummary, billCoverageByAccount } from "../selectors";
@@ -9,7 +9,7 @@ import AnimatedNumber from "../components/AnimatedNumber";
 import EmptyState from "../components/EmptyState";
 import { shouldShowBackupReminder, dismissBackupReminder } from "../backupReminder";
 
-function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden, onGoToBackup }) {
+function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], reminders = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden, onGoToBackup }) {
   const { theme } = useTheme();
   const [showBackupBanner, setShowBackupBanner] = useState(false);
   useEffect(() => {
@@ -38,6 +38,19 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
   const upcomingTasks = todos
     .filter((t) => !t.completed)
     .sort((a, b) => (a.dueDate || "9999-99-99").localeCompare(b.dueDate || "9999-99-99"))
+    .slice(0, 3);
+
+  // Same "capped at 3, soonest first" pattern as Upcoming Tasks above --
+  // reminders with a set time sort ahead of ones without, so a "call mom
+  // at 5pm" pin doesn't get buried under an undated "buy milk" note.
+  const pinnedReminders = [...reminders]
+    .filter((r) => !r.done)
+    .sort((a, b) => {
+      if (a.remindAt && b.remindAt) return a.remindAt.localeCompare(b.remindAt);
+      if (a.remindAt) return -1;
+      if (b.remindAt) return 1;
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    })
     .slice(0, 3);
 
   const totalMoney = totalBalance(accounts, ctx);
@@ -157,6 +170,34 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
           <ChevronRight size={12} color={ACCENT.gold} />
         </View>
       </Pressable>
+
+      {/* Remember -- next 2-3 reminders, soonest first, capped the same
+          way Upcoming Tasks is above. Only shown once there's actually
+          something pinned, so a person who never uses Remember doesn't
+          see a permanently-empty card. */}
+      {pinnedReminders.length > 0 && (
+        <Pressable onPress={onViewTodos} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="View Remember list">
+          <View style={styles.schoolHeader}>
+            <Bell size={14} color={ACCENT.sky} />
+            <Text style={[styles.schoolTitle, { color: theme.text }]}>Remember</Text>
+          </View>
+          <View style={{ gap: 9 }}>
+            {pinnedReminders.map((r, i) => (
+              <View key={r.id} style={[{ flexDirection: "row", alignItems: "center", gap: 8 }, i > 0 && { paddingTop: 9, borderTopWidth: 1, borderTopColor: theme.line }]}>
+                <Circle size={13} color={ACCENT.sky} />
+                <Text style={[styles.taskTitle, { color: theme.text }]} numberOfLines={1}>{r.text}</Text>
+                {r.remindAt && (
+                  <Text style={[styles.taskDue, { color: theme.textMuted }]}>{fmtDay(r.remindAt.split("T")[0])} {fmtTime12(r.remindAt.split("T")[1].slice(0, 5))}</Text>
+                )}
+              </View>
+            ))}
+          </View>
+          <View style={styles.schoolFooter}>
+            <Text style={[styles.schoolFooterText, { color: ACCENT.gold }]}>View all</Text>
+            <ChevronRight size={12} color={ACCENT.gold} />
+          </View>
+        </Pressable>
+      )}
 
       {/* Today's Classes -- compact horizontal strip (was a full detailed
           card; the per-block detail now lives on the School tab, this is
