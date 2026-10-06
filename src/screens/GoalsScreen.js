@@ -71,7 +71,7 @@ export default function GoalsScreen({
     .sort((a, b) => (a.progress.percent >= 100) - (b.progress.percent >= 100) || (a.targetDate || "9999").localeCompare(b.targetDate || "9999"));
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+    <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
       {/* HERO: total savings across every account, same treatment as the
           Overview tab's "Current budget" hero card. */}
       <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>

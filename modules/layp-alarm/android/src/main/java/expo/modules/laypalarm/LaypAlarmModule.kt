@@ -107,6 +107,7 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
       mapOf(
         "exactAlarmsAllowed" to exactAllowed,
         "notificationsEnabled" to notificationsEnabled,
+        "fullScreenAlarmsAllowed" to (if (Build.VERSION.SDK_INT >= 34) nm.canUseFullScreenIntent() else true),
         "ignoringBatteryOptimizations" to ignoringBatteryOptimizations
       )
     }
@@ -114,6 +115,16 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
     AsyncFunction("openExactAlarmSettings") {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+          data = Uri.parse("package:${context.packageName}")
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+      }
+    }
+
+    AsyncFunction("openFullScreenAlarmSettings") {
+      if (Build.VERSION.SDK_INT >= 34) {
+        val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
           data = Uri.parse("package:${context.packageName}")
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }

@@ -21,7 +21,7 @@ export default function RemindPopup({ visible, items, onDismiss }) {
             <Bell size={16} color={ACCENT.gold} />
             <Text style={[styles.title, { color: theme.text }]}>Don't forget</Text>
           </View>
-          <ScrollView style={{ maxHeight: 320 }} contentContainerStyle={{ paddingBottom: 4 }}>
+          <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ maxHeight: 320 }} contentContainerStyle={{ paddingBottom: 4 }}>
             {items.map((it) => (
               <View key={it.id} style={[styles.itemRow, { borderColor: theme.line }]}>
                 {it.gf && <Heart size={11} color={ACCENT.rose} fill={ACCENT.rose} />}

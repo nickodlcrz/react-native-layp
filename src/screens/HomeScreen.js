@@ -80,7 +80,7 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
   const maskedPeso = "\u20B1*****";
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
+    <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <Text style={[styles.h1, { color: theme.text }]}>Overview</Text>
 
       {showBackupBanner && (
@@ -212,7 +212,7 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
           {todaysClasses.length === 0 ? (
             <Text style={[styles.schoolEmpty, { color: theme.textMuted }]}>No classes scheduled today.</Text>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
               {todaysClasses.map((block) => {
                 const isCancelled = cancelledClasses.some((c) => c.date === todayISO() && c.entryId === block.entry.id);
                 const isNow = nowMin >= block.startMin && nowMin < block.endMin;

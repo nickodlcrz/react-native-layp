@@ -35,8 +35,10 @@ class AlarmSoundService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val key = intent?.getStringExtra(AlarmScheduler.EXTRA_KEY)
     val alarm = key?.let { AlarmStore.get(this, it) }
+    if (alarm == null) { stopSelf(); return START_NOT_STICKY }
 
     startForeground(NOTIFICATION_ID, buildNotification(alarm))
+    stopAll()
     startSound()
     startVibration()
     return START_NOT_STICKY
@@ -73,6 +75,8 @@ class AlarmSoundService : Service() {
 
     val fullScreenIntent = Intent(this, AlarmActivity::class.java).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+      putExtra(AlarmScheduler.EXTRA_KEY, alarm?.key)
+      data = android.net.Uri.parse("layp://alarm/${android.net.Uri.encode(alarm?.key.orEmpty())}")
     }
     val fullScreenPending = PendingIntent.getActivity(
       this,
@@ -81,13 +85,16 @@ class AlarmSoundService : Service() {
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
-    return Notification.Builder(this, CHANNEL_ID)
+    val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
+    return builder
       .setContentTitle(title)
       .setContentText(summary)
       .setStyle(Notification.BigTextStyle().bigText(bigText.ifBlank { summary }))
       .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
       .setOngoing(true)
       .setCategory(Notification.CATEGORY_ALARM)
+      .setVisibility(Notification.VISIBILITY_PUBLIC)
+      .setPriority(Notification.PRIORITY_MAX)
       .setFullScreenIntent(fullScreenPending, true)
       .setContentIntent(fullScreenPending)
       .build()

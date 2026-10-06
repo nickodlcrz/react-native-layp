@@ -82,20 +82,23 @@ The outer layout only adds the gap between cards. -->
 
         <TextView
             android:id="@+id/layp_task_status"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:textColor="@color/layp_muted"
             android:textSize="11sp" />
 
         <TextView
             android:id="@+id/layp_task_due"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:fontFamily="sans-serif-medium"
             android:textColor="@color/layp_muted"
             android:textSize="11sp" />
       </LinearLayout>
+      <TextView android:id="@+id/layp_task_countdown" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:textSize="11sp" android:fontFamily="sans-serif-medium" android:textColor="#CCFFFFFF" android:visibility="gone" />
     </LinearLayout>
 
     <FrameLayout

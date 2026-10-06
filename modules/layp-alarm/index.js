@@ -84,6 +84,11 @@ export async function openExactAlarmSettings() {
   await LaypAlarmNative.openExactAlarmSettings();
 }
 
+export async function openFullScreenAlarmSettings() {
+  if (!LaypAlarmNative) return;
+  await LaypAlarmNative.openFullScreenAlarmSettings();
+}
+
 export async function openBatteryOptimizationSettings() {
   if (!LaypAlarmNative) return;
   await LaypAlarmNative.openBatteryOptimizationSettings();

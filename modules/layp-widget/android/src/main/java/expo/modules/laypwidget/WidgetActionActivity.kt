@@ -21,12 +21,14 @@ class WidgetActionActivity : Activity() {
     const val EXTRA_TASK_ID = "taskId"
     const val OP_ADVANCE = "advance"
     const val OP_OPEN = "open"
+    const val OP_ADD_REMINDER = "addReminder"
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     try {
       when (intent.getStringExtra(EXTRA_OP)) {
+        OP_ADD_REMINDER -> startActivity(Intent(this, AddReminderActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         OP_ADVANCE -> advanceTask(intent.getStringExtra(EXTRA_TASK_ID))
         else -> openApp()
       }

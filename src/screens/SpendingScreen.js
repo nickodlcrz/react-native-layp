@@ -307,7 +307,7 @@ export default function SpendingScreen({
 
   return (
     <>
-    <FlatList
+    <FlatList showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
       data={[]}
@@ -672,7 +672,7 @@ function AllActivityModal({ visible, onClose, days, totals, ledger, weeklySummar
           </View>
         </View>
 
-        <FlatList
+        <FlatList showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingBottom: insets.bottom + 24, gap: 8 }}
           data={days}
@@ -845,7 +845,7 @@ function LogAgainPicker({ recentTemplates, allTemplates, onPick }) {
           {filtered.length === 0 ? (
             <Text style={[styles.metaText, { color: theme.textMuted, padding: 10 }]}>No matches.</Text>
           ) : (
-            <ScrollView style={{ maxHeight: 220 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ maxHeight: 220 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
               {filtered.map((t) => (
                 <Pressable key={t.id} onPress={() => { onPick(t); setOpen(false); setQuery(""); }} style={[styles.logAgainRow, { borderBottomColor: theme.line }]}>
                   <Text style={[styles.rowTitle, { color: theme.text, flex: 1 }]} numberOfLines={1}>{t.name}</Text>

@@ -68,6 +68,19 @@ class AlarmActivity : Activity() {
     alarmKey = intent.getStringExtra(AlarmScheduler.EXTRA_KEY)
     alarm = alarmKey?.let { AlarmStore.get(this, it) }
 
+    if (alarm == null) { finish(); return }
+    setContentView(buildContentView(alarm))
+    startClock()
+  }
+
+  override fun onNewIntent(newIntent: Intent) {
+    super.onNewIntent(newIntent)
+    setIntent(newIntent)
+    alarmKey = newIntent.getStringExtra(AlarmScheduler.EXTRA_KEY)
+    alarm = alarmKey?.let { AlarmStore.get(this, it) }
+    if (alarm == null) { finish(); return }
+    clockRunnable?.let { clockHandler.removeCallbacks(it) }
+    setupWindow()
     setContentView(buildContentView(alarm))
     startClock()
   }
@@ -123,6 +136,8 @@ class AlarmActivity : Activity() {
     val root = FrameLayout(this).apply { setBackgroundColor(palette.bg) }
 
     val scroll = ScrollView(this).apply {
+      isVerticalScrollBarEnabled = false
+      isHorizontalScrollBarEnabled = false
       isFillViewport = true
     }
     val content = LinearLayout(this).apply {

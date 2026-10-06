@@ -167,7 +167,7 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
   }
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
+    <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <Text style={[styles.h1, { color: theme.text }]}>Summary</Text>
       <Text style={[styles.sub, { color: theme.textMuted }]}>A plain-text snapshot of your tasks, budget, spending, and borrow tracker -- copy it anywhere.</Text>
 

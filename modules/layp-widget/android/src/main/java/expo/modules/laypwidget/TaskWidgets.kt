@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.app.PendingIntent
+import android.app.AlarmManager
 import android.net.Uri
 import android.os.Bundle
 import android.view.View
@@ -21,17 +22,22 @@ open class TaskWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
     for (id in appWidgetIds) appWidgetManager.updateAppWidget(id, TaskRenderer.build(context, id))
     appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetIds, R.id.layp_task_list)
+    scheduleNextRefresh(context)
   }
 
   override fun onAppWidgetOptionsChanged(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int, newOptions: Bundle) {
     appWidgetManager.updateAppWidget(appWidgetId, TaskRenderer.build(context, appWidgetId))
     appWidgetManager.notifyAppWidgetViewDataChanged(intArrayOf(appWidgetId), R.id.layp_task_list)
+    scheduleNextRefresh(context)
   }
 
-  // "Due tomorrow" turns into "Due today" at midnight.
+  override fun onDisabled(context: Context) { scheduleNextRefresh(context) }
+
+  // Countdown text updates at minute boundaries; dates roll over at midnight.
   override fun onReceive(context: Context, intent: Intent) {
     super.onReceive(context, intent)
     when (intent.action) {
+      ACTION_REFRESH -> refreshAll(context)
       Intent.ACTION_DATE_CHANGED,
       Intent.ACTION_TIME_CHANGED,
       Intent.ACTION_TIMEZONE_CHANGED -> WidgetRefresh.all(context)
@@ -39,6 +45,7 @@ open class TaskWidgetProvider : AppWidgetProvider() {
   }
 
   companion object {
+    const val ACTION_REFRESH = "expo.modules.laypwidget.TASK_WIDGET_REFRESH"
     private val PROVIDERS = listOf(TaskWidget4x4Provider::class.java, TaskWidget4x6Provider::class.java)
 
     fun refreshAll(context: Context) {
@@ -49,6 +56,18 @@ open class TaskWidgetProvider : AppWidgetProvider() {
         for (id in ids) manager.updateAppWidget(id, TaskRenderer.build(context, id))
         manager.notifyAppWidgetViewDataChanged(ids, R.id.layp_task_list)
       }
+      scheduleNextRefresh(context)
+    }
+
+    fun scheduleNextRefresh(context: Context) {
+      val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+      val intent = Intent(context, TaskWidget4x4Provider::class.java).setAction(ACTION_REFRESH)
+      val pi = PendingIntent.getBroadcast(context, 8820, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+      alarm.cancel(pi)
+      if (installedCount(context) == 0 || WidgetStore.displayTasks(context).none { TaskDeadline.timestamp(it.due, it.dueTime) != null }) return
+      val nextMinute = (System.currentTimeMillis() / 60000 + 1) * 60000 + 1000
+      // Best-effort widget updates; Doze may batch these while the phone sleeps.
+      alarm.setAndAllowWhileIdle(AlarmManager.RTC, nextMinute, pi)
     }
 
     fun installedCount(context: Context): Int {
@@ -163,7 +182,11 @@ class TaskListFactory(private val context: Context) : RemoteViewsService.RemoteV
 
     // Same urgency rules as the dot/border on the app's task cards.
     val tier = Urgency.tier(t.status, t.due, today)
-    val dueText = Urgency.dueText(t.due, today)
+    val dueText = Urgency.dueText(t.due, today) + (t.dueTime?.let { " · ${ClassDisplay.time(it)}" } ?: "")
+    val countdown = TaskDeadline.text(t.due, t.dueTime)
+    rv.setTextViewText(R.id.layp_task_countdown, countdown)
+    rv.setTextColor(R.id.layp_task_countdown, Urgency.color(tier, p))
+    rv.setViewVisibility(R.id.layp_task_countdown, if (countdown.isBlank()) View.GONE else View.VISIBLE)
     rv.setTextViewText(R.id.layp_task_due, dueText)
     rv.setViewVisibility(R.id.layp_task_due, if (dueText.isEmpty()) View.GONE else View.VISIBLE)
     rv.setTextColor(R.id.layp_task_due, Urgency.color(tier, p))

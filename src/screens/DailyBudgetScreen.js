@@ -107,7 +107,7 @@ export default function DailyBudgetScreen({
         onChange={setView}
       />
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+      <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
         {view === "review" ? (
           <ReviewView
             review={review} theme={theme} modelName={modelName}

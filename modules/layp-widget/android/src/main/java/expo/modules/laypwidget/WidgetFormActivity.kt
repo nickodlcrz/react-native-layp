@@ -37,6 +37,8 @@ abstract class WidgetFormActivity : Activity() {
     column.addView(View(this).apply { background = rounded(p.line, 3) }, LinearLayout.LayoutParams(dp(40), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(18) })
     buildForm()
     val scroll = ScrollView(this).apply {
+      isVerticalScrollBarEnabled = false
+      isHorizontalScrollBarEnabled = false
       background = rounded(p.surface, 26)
       isFillViewport = true
       addView(column)
@@ -104,7 +106,9 @@ abstract class WidgetFormActivity : Activity() {
       row.addView(chip, LinearLayout.LayoutParams(wrap, wrap).apply { marginEnd = dp(8) })
     }
     select(initial)
-    column.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) }, params())
+    column.addView(HorizontalScrollView(this).apply {
+      isVerticalScrollBarEnabled = false
+      isHorizontalScrollBarEnabled = false; addView(row) }, params())
     return row
   }
   protected fun dateButton(title: String, initial: String?, change: (String?) -> Unit): TextView {
@@ -140,7 +144,9 @@ abstract class WidgetFormActivity : Activity() {
     actions.addView(button(if (clear != null) "Clear" else "Cancel") { clear?.invoke(); dialog.dismiss() }, LinearLayout.LayoutParams(0, wrap, 1f))
     actions.addView(button("Done", true) { save(); dialog.dismiss() }, LinearLayout.LayoutParams(0, wrap, 1f).apply { marginStart = dp(8) })
     content.addView(actions, params())
-    dialog.setContentView(ScrollView(this).apply { addView(content) })
+    dialog.setContentView(ScrollView(this).apply {
+      isVerticalScrollBarEnabled = false
+      isHorizontalScrollBarEnabled = false; addView(content) })
     dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
     dialog.show(); dialog.window?.setLayout((resources.displayMetrics.widthPixels * .92f).toInt(), wrap)
   }

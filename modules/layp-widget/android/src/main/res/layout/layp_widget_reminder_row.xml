@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center" android:padding="8dp">
+  <LinearLayout android:id="@+id/layp_reminder_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center">
+    <ImageView android:layout_width="18dp" android:layout_height="18dp" android:layout_marginEnd="5dp" android:src="@drawable/layp_ic_bell" android:tint="#A5B9FF" android:contentDescription="Reminder" />
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Remember" android:textColor="#FFFFFF" android:textSize="14sp" android:fontFamily="sans-serif-medium" />
+  </LinearLayout>
+  <TextView android:id="@+id/layp_reminder_hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:layout_marginBottom="6dp" android:gravity="center" android:text="Capture a thought" android:textColor="#CCFFFFFF" android:textSize="10sp" />
+  <TextView android:id="@+id/layp_reminder_add" android:layout_width="match_parent" android:layout_height="32dp" android:gravity="center" android:text="+ Add reminder" android:textColor="#DBE4FF" android:textSize="12sp" android:fontFamily="sans-serif-medium" android:background="@drawable/layp_widget_chip_bg_dark" android:contentDescription="Add a general reminder" />
+</LinearLayout>

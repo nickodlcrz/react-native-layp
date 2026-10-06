@@ -68,6 +68,9 @@ object UpcomingRenderer {
 
   fun build(context: Context, widgetId: Int): RemoteViews {
     val views = RemoteViews(context.packageName, R.layout.layp_widget_upcoming)
+    if (AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, UpcomingWidget2x2Provider::class.java)).contains(widgetId)) {
+      SquareWidget.apply(context, views, widgetId, R.id.layp_up_square)
+    }
     val summary = WidgetStore.readSummary(context)
     val p = Palette.resolve(context, summary.theme)
     val (start, end) = WidgetStore.upcomingRange()
@@ -135,9 +138,9 @@ class UpcomingListFactory(private val context: Context) : RemoteViewsService.Rem
       rv.setTextViewText(R.id.layp_up_dow, "")
       rv.setTextViewText(R.id.layp_up_day, "")
     }
-    rv.setInt(R.id.layp_up_badge, "setBackgroundResource", if (firstOfDay && isToday) p.accentPill else 0)
-    rv.setTextColor(R.id.layp_up_dow, if (isToday) p.onAccent else p.muted)
-    rv.setTextColor(R.id.layp_up_day, if (isToday) p.onAccent else p.text)
+    rv.setInt(R.id.layp_up_badge, "setBackgroundResource", if (firstOfDay && isToday) R.drawable.layp_up_today_badge else 0)
+    rv.setTextColor(R.id.layp_up_dow, if (isToday) 0xFFFFFFFF.toInt() else p.muted)
+    rv.setTextColor(R.id.layp_up_day, if (isToday) 0xFFFFFFFF.toInt() else p.text)
 
     // Title in full (it wraps), then the event's type and how soon it is.
     rv.setTextViewText(R.id.layp_up_name, e.title)

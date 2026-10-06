@@ -23,7 +23,8 @@ data class WidgetTask(
   val due: String?,
   val category: String,
   val categoryLabel: String = "",
-  val subject: String = ""
+  val subject: String = "",
+  val dueTime: String? = null
 )
 
 data class WidgetEvent(val date: String, val title: String, val kind: String, val amount: Double?)
@@ -219,7 +220,8 @@ object WidgetStore {
         if (it.isNull("due")) null else it.optString("due", "").ifEmpty { null },
         it.optString("category", ""),
         it.optString("categoryLabel", ""),
-        it.optString("subject", "")
+        it.optString("subject", ""),
+        it.optString("dueTime", "").takeIf { time -> time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) }
       )
     },
     events = events(o.optJSONArray("events")),
@@ -491,7 +493,7 @@ object WidgetStore {
     // pushed a snapshot that includes them).
     val known = tasks.map { it.id }.toSet()
     for (n in pendingTasks(context).sortedBy { it.createdAt }) {
-      if (n.id !in known) tasks.add(WidgetTask(n.id, n.title, TaskStatus.NOT_STARTED, n.due, n.category, TaskMeta.categoryLabel(n.category), readSummary(context).subjects.firstOrNull { it.id == n.subjectId }?.label.orEmpty()))
+      if (n.id !in known) tasks.add(WidgetTask(n.id, n.title, TaskStatus.NOT_STARTED, n.due, n.category, TaskMeta.categoryLabel(n.category), readSummary(context).subjects.firstOrNull { it.id == n.subjectId }?.label.orEmpty(), n.dueTime))
     }
     for (op in taskOps(context).sortedBy { it.at }) {
       val i = tasks.indexOfFirst { it.id == op.taskId }

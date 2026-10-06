@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:gravity="center" android:padding="12dp" android:background="@drawable/layp_widget_glass_dark">
-  <ImageView android:layout_width="24dp" android:layout_height="24dp" android:layout_marginBottom="8dp" android:src="@drawable/layp_ic_bell" android:tint="#A5B9FF" android:contentDescription="Reminder" />
-  <TextView android:id="@+id/layp_reminder_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:text="Remember" android:textColor="#FFFFFF" android:textSize="17sp" android:fontFamily="sans-serif-medium" />
-  <TextView android:id="@+id/layp_reminder_hint" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center" android:text="Capture a thought" android:textColor="#CCFFFFFF" android:textSize="11sp" />
-  <TextView android:id="@+id/layp_reminder_add" android:layout_width="match_parent" android:layout_height="44dp" android:gravity="center" android:text="+ Add reminder" android:textColor="#DBE4FF" android:textSize="13sp" android:fontFamily="sans-serif-medium" android:background="@drawable/layp_widget_chip_bg_dark" android:contentDescription="Add a general reminder" />
-</LinearLayout>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/layp_reminder_square" android:layout_width="match_parent" android:layout_height="match_parent">
+  <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/layp_widget_glass_dark">
+    <ListView android:id="@+id/layp_reminder_list" android:layout_width="match_parent" android:layout_height="match_parent" android:divider="@null" android:scrollbars="none" />
+  </FrameLayout>
+</FrameLayout>

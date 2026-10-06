@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, Modal, ScrollView, StyleSheet } from "react-native";
+import { View, Text, Pressable, Modal, ScrollView, StyleSheet, Platform } from "react-native";
 import { X, Sun, Moon, Lock, Check, Heart, Info } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, ACCENT } from "../theme";
@@ -10,6 +10,7 @@ import SegmentedTabs from "../components/SegmentedTabs";
 import Chip from "../components/Chip";
 import SummaryScreen from "./SummaryScreen";
 import { isNativeWidgetAvailable, requestPinWidget } from "../../modules/layp-widget";
+import { isNativeAlarmAvailable, openFullScreenAlarmSettings, openExactAlarmSettings } from "../../modules/layp-alarm";
 import { showAppDialog } from "../components/AppDialog";
 
 const TABS = [
@@ -46,7 +47,7 @@ export default function SettingsScreen({
         <SegmentedTabs options={TABS} value={tab} onChange={setTab} style={{ marginHorizontal: 16, marginBottom: 12 }} />
 
         {tab === "general" && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
+          <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
             <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>Appearance</Text>
             <View style={styles.themeRow}>
               {[{ id: false, label: "Light", Icon: Sun }, { id: true, label: "Dark", Icon: Moon }].map(({ id, label, Icon }) => {
@@ -83,6 +84,14 @@ export default function SettingsScreen({
               </View>
             </View>
 
+            {isNativeAlarmAvailable() && <>
+              <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 22 }]}>Alarm display</Text>
+              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                <Text style={[styles.hint, { color: theme.textMuted }]}>On Android 14 or newer, allow full-screen alarms to show the ringing screen. You can also tap the ringing notification to open it.</Text>
+                {Platform.OS === "android" && Number(Platform.Version) >= 34 && <Pressable onPress={openFullScreenAlarmSettings} style={{ paddingVertical: 10 }} accessibilityRole="button"><Text style={{ color: ACCENT.gold }}>Full-screen alarm permission</Text></Pressable>}
+                <Pressable onPress={openExactAlarmSettings} style={{ paddingVertical: 10 }} accessibilityRole="button"><Text style={{ color: ACCENT.gold }}>Alarms &amp; reminders permission</Text></Pressable>
+              </View>
+            </>}
             <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 22 }]}>Private features</Text>
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
               <View style={styles.cardHead}>
@@ -119,7 +128,7 @@ export default function SettingsScreen({
         )}
 
         {tab === "widgets" && (
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
+          <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line, marginBottom: 14 }]}>
               <Text style={[styles.cardTitle, { color: theme.text }]}>Add to your home screen</Text>
               <Text style={[styles.hint, { color: theme.textMuted }]}>Dark transparent widgets. Swipe the task list or account grid to see more.</Text>

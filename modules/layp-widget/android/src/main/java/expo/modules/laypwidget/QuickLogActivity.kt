@@ -183,6 +183,8 @@ class QuickLogActivity : Activity() {
 
     // Quick add: +20 +50 +100 +500 add to whatever is typed
     column.addView(HorizontalScrollView(this).apply {
+      isVerticalScrollBarEnabled = false
+      isHorizontalScrollBarEnabled = false
       isHorizontalScrollBarEnabled = false
       addView(LinearLayout(this@QuickLogActivity).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -291,6 +293,8 @@ class QuickLogActivity : Activity() {
     // Rounded-top sheet; scrolls if the keyboard leaves too little room.
     val radius = dp(26).toFloat()
     return ScrollView(this).apply {
+      isVerticalScrollBarEnabled = false
+      isHorizontalScrollBarEnabled = false
       background = GradientDrawable().apply {
         setColor(p.surface)
         cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)

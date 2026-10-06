@@ -89,7 +89,7 @@ function Wheel({ data, selected, format, onSelect }) {
   return (
     <View style={styles.wheelWrap}>
       <View pointerEvents="none" style={[styles.wheelHighlight, { borderColor: theme.line, top: PAD }]} />
-      <ScrollView
+      <ScrollView showsHorizontalScrollIndicator={false}
         ref={listRef}
         showsVerticalScrollIndicator={false}
         snapToInterval={ITEM_HEIGHT}

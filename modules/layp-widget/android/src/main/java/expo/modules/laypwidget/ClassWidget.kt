@@ -13,22 +13,17 @@ import android.widget.RemoteViews
 import java.util.Calendar
 import java.util.Locale
 
-/**
- * 2x2 Today\'s Classes widget.
- *
- * Before a class starts: show the remaining classes today, with the first one
- * highlighted. While a class is running: show only that class and a soft
- * one-second blink. When it ends, the next class becomes the first/highlighted
- * class. If today is finished, the next scheduled class is shown.
- */
+/** A square, scrolling schedule that focuses on the currently ongoing class. */
 class ClassWidgetProvider : AppWidgetProvider() {
   override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
     ids.forEach { manager.updateAppWidget(it, ClassRenderer.build(context, it)) }
+    manager.notifyAppWidgetViewDataChanged(ids, R.id.layp_class_list)
     scheduleNextRefresh(context)
   }
 
   override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) {
     manager.updateAppWidget(id, ClassRenderer.build(context, id))
+    manager.notifyAppWidgetViewDataChanged(intArrayOf(id), R.id.layp_class_list)
     scheduleNextRefresh(context)
   }
 
@@ -49,6 +44,8 @@ class ClassWidgetProvider : AppWidgetProvider() {
       val ids = manager.getAppWidgetIds(ComponentName(context, ClassWidgetProvider::class.java))
       if (ids.isEmpty()) return
       ids.forEach { manager.updateAppWidget(it, ClassRenderer.build(context, it)) }
+      manager.notifyAppWidgetViewDataChanged(ids, R.id.layp_class_list)
+      scheduleNextRefresh(context)
     }
 
     fun installedCount(context: Context): Int =
@@ -58,15 +55,18 @@ class ClassWidgetProvider : AppWidgetProvider() {
       val manager = AppWidgetManager.getInstance(context)
       val ids = manager.getAppWidgetIds(ComponentName(context, ClassWidgetProvider::class.java))
       if (ids.isEmpty()) return
-      val summary = WidgetStore.readSummary(context)
       val nowMin = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
-      val current = summary.classes.firstOrNull { it.dayLabel == "Today" && summary.date == WidgetStore.today() && nowMin >= it.startMin && nowMin < it.endMin }
+      val current = ClassDisplay.ongoing(context)
       val nextMinute = if (current != null) {
-        // While a class is running, update once a minute so elapsed/remaining
-        // time stays live. The animation itself does not need a JS timer.
-        System.currentTimeMillis() + 60_000L
+        // The native countdown runs itself. Redraw at the class end.
+        Calendar.getInstance().apply {
+          set(Calendar.HOUR_OF_DAY, current.endMin / 60)
+          set(Calendar.MINUTE, current.endMin % 60)
+          set(Calendar.SECOND, 0)
+          set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
       } else {
-        val next = summary.classes.firstOrNull { it.startMin > nowMin }
+        val next = ClassDisplay.remaining(context).firstOrNull { it.dayLabel == "Today" && it.startMin > nowMin }
         if (next != null) {
           val cal = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, next.startMin / 60)
@@ -90,7 +90,16 @@ class ClassWidgetProvider : AppWidgetProvider() {
       val alarm = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
       val pi = refreshPendingIntent(context)
       alarm.cancel(pi)
-      alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextMinute, pi)
+      try {
+        if (android.os.Build.VERSION.SDK_INT < 31 || alarm.canScheduleExactAlarms()) {
+          alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextMinute, pi)
+        } else {
+          alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextMinute, pi)
+        }
+      } catch (_: SecurityException) {
+        // The exact-alarm grant can change between checking and scheduling.
+        alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, nextMinute, pi)
+      }
     }
 
     private fun refreshPendingIntent(context: Context): PendingIntent =
@@ -103,127 +112,90 @@ class ClassWidgetProvider : AppWidgetProvider() {
   }
 }
 
-private object ClassRenderer {
-  private val rowIds = intArrayOf(R.id.layp_class_row_0, R.id.layp_class_row_1, R.id.layp_class_row_2, R.id.layp_class_row_3)
-  private val nameIds = intArrayOf(R.id.layp_class_name_0, R.id.layp_class_name_1, R.id.layp_class_name_2, R.id.layp_class_name_3)
-  private val metaIds = intArrayOf(R.id.layp_class_meta_0, R.id.layp_class_meta_1, R.id.layp_class_meta_2, R.id.layp_class_meta_3)
-  private val blinkIds = intArrayOf(R.id.layp_class_blink_0, R.id.layp_class_blink_1, R.id.layp_class_blink_2, R.id.layp_class_blink_3)
-  private val actionIds = intArrayOf(R.id.layp_class_action_0, R.id.layp_class_action_1, R.id.layp_class_action_2, R.id.layp_class_action_3)
-  private const val REQUEST_BASE = 8900
-
-  fun build(context: Context, widgetId: Int): RemoteViews {
-    val v = RemoteViews(context.packageName, R.layout.layp_widget_class)
+internal object ClassDisplay {
+  fun remaining(context: Context): List<WidgetClass> {
     val summary = WidgetStore.readSummary(context)
-    val now = Calendar.getInstance()
-    val nowMin = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-    val pending = WidgetStore.pendingClassSuspends(context)
-      .mapNotNull { pair ->
-        val parts = pair.second.split("|", limit = 2)
-        if (parts.size == 2) parts[0] to parts[1] else null
-      }.toSet()
-
-    // How many rows fit: ~44dp for padding + header, ~42dp per row. Showing
-    // fewer rows than the launcher has room for is fine; showing more gets
-    // the bottom one clipped.
-    val minHeight = AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId)
-      .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 110)
-    val capacity = ((minHeight - 44) / 42).coerceIn(1, 4)
-
-    val classes = summary.classes.filterNot { c -> pending.contains(summary.date to c.entryId) }
-    val ongoing = classes.firstOrNull { it.dayLabel == "Today" && summary.date == WidgetStore.today() && nowMin >= it.startMin && nowMin < it.endMin }
-    val shown = (
-      if (ongoing != null) listOf(ongoing)
-      else if (classes.any { it.dayLabel == "Today" }) classes.filter { it.startMin > nowMin }
-      else classes.take(1)
-    ).take(capacity)
-
-    val stateText = when {
-      ongoing != null -> "LIVE"
-      shown.isEmpty() -> "Done"
-      shown.first().dayLabel != "Today" -> shown.first().dayLabel
-      else -> "Today"
-    }
-    v.setTextViewText(R.id.layp_class_header_state, stateText)
-    v.setInt(R.id.layp_class_header_state, "setBackgroundResource", if (ongoing != null) R.drawable.layp_class_pill_live else R.drawable.layp_class_pill)
-    v.setTextColor(R.id.layp_class_header_state, if (ongoing != null) 0xFF7CF2A8.toInt() else 0xD9FFFFFF.toInt())
-
-    if (shown.isEmpty()) {
-      v.setViewVisibility(R.id.layp_class_empty, View.VISIBLE)
-      v.setTextViewText(R.id.layp_class_empty, if (classes.isEmpty()) "No classes scheduled" else "All done for today")
-    } else {
-      v.setViewVisibility(R.id.layp_class_empty, View.GONE)
-    }
-
-    for (i in rowIds.indices) {
-      if (i >= shown.size) {
-        v.setViewVisibility(rowIds[i], View.GONE)
-        continue
-      }
-      val c = shown[i]
-      val isOngoing = ongoing?.entryId == c.entryId
-      v.setViewVisibility(rowIds[i], View.VISIBLE)
-      v.setInt(
-        rowIds[i], "setBackgroundResource",
-        when {
-          isOngoing -> R.drawable.layp_class_row_live
-          i == 0 -> R.drawable.layp_class_row_highlight
-          else -> R.drawable.layp_class_row
-        }
-      )
-      v.setTextViewText(nameIds[i], c.code)
-
-      val meta = if (isOngoing) {
-        "${elapsedText(nowMin - c.startMin)} elapsed · ${elapsedText(c.endMin - nowMin)} left"
-      } else {
-        buildString {
-          if (c.dayLabel != "Today") append(c.dayLabel).append(" · ")
-          append(formatTime(c.start)).append("–").append(formatTime(c.end))
-          if (c.room.isNotBlank()) append(" · ").append(c.room)
-        }
-      }
-      v.setTextViewText(metaIds[i], meta)
-      v.setViewVisibility(blinkIds[i], if (isOngoing) View.VISIBLE else View.GONE)
-
-      // Every class that is still to come today can be cancelled, not just the
-      // first row. Tapping opens a confirmation popup (see
-      // ClassWidgetActionActivity) -- nothing is cancelled by the tap itself.
-      val cancellable = c.dayLabel == "Today"
-      v.setViewVisibility(actionIds[i], if (cancellable) View.VISIBLE else View.GONE)
-      if (cancellable) {
-        val cancelIntent = Intent(context, ClassWidgetActionActivity::class.java).apply {
-          action = ClassWidgetActionActivity.ACTION
-          putExtra(ClassWidgetActionActivity.EXTRA_ENTRY_ID, c.entryId)
-          putExtra(ClassWidgetActionActivity.EXTRA_DATE, summary.date)
-          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        val pi = PendingIntent.getActivity(
-          context, REQUEST_BASE + widgetId * 8 + i, cancelIntent,
-          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        v.setOnClickPendingIntent(actionIds[i], pi)
-        v.setContentDescription(actionIds[i], "Cancel ${c.code} today")
-      }
-    }
-    WidgetIntents.openApp(context, REQUEST_BASE + 7000 + widgetId)?.let { v.setOnClickPendingIntent(R.id.layp_class_header, it) }
-    return v
+    val suspended = WidgetStore.pendingClassSuspends(context).map { it.second }.toSet()
+    val now = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
+    return summary.classes.filterNot { "${summary.date}|${it.entryId}" in suspended }
+      .filter { it.dayLabel != "Today" || (summary.date == WidgetStore.today() && it.endMin > now) }
   }
-
-  private fun elapsedText(minutes: Int): String {
-    val m = minutes.coerceAtLeast(0)
-    return if (m >= 60) "${m / 60}h ${m % 60}m" else "${m}m"
+  fun ongoing(context: Context): WidgetClass? {
+    val now = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
+    return remaining(context).firstOrNull { it.dayLabel == "Today" && now >= it.startMin && now < it.endMin }
   }
-
-  private fun formatTime(value: String): String {
+  fun time(value: String): String {
     val parts = value.split(":")
     val h = parts.getOrNull(0)?.toIntOrNull() ?: return value
-    val m = parts.getOrNull(1)?.toIntOrNull() ?: 0
-    val am = if (h < 12) "AM" else "PM"
-    val hour = when {
-      h % 12 == 0 -> 12
-      else -> h % 12
-    }
-    return String.format(Locale.US, "%d:%02d %s", hour, m, am)
+    val m = parts.getOrNull(1)?.toIntOrNull() ?: return value
+    return String.format(Locale.US, "%d:%02d %s", if (h % 12 == 0) 12 else h % 12, m, if (h < 12) "AM" else "PM")
   }
+
+}
+
+private object ClassRenderer {
+  fun build(context: Context, widgetId: Int): RemoteViews {
+    val v = RemoteViews(context.packageName, R.layout.layp_widget_class)
+    SquareWidget.apply(context, v, widgetId, R.id.layp_class_square)
+    val ongoing = ClassDisplay.ongoing(context)
+    val classes = ClassDisplay.remaining(context)
+    v.setTextViewText(R.id.layp_class_header_state, if (ongoing != null) "LIVE" else classes.firstOrNull()?.dayLabel.orEmpty())
+    v.setTextColor(R.id.layp_class_header_state, if (ongoing != null) 0xFF9CE8CC.toInt() else 0xCCFFFFFF.toInt())
+    v.setViewVisibility(R.id.layp_class_list, if (classes.isNotEmpty()) View.VISIBLE else View.GONE)
+    v.setViewVisibility(R.id.layp_class_empty, if (classes.isEmpty()) View.VISIBLE else View.GONE)
+    v.setTextViewText(R.id.layp_class_empty, "No more classes today")
+    val service = Intent(context, ClassListService::class.java).apply {
+      putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+      data = android.net.Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
+    }
+    v.setRemoteAdapter(R.id.layp_class_list, service)
+    val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+    v.setPendingIntentTemplate(R.id.layp_class_list, PendingIntent.getActivity(context, 890000 + widgetId, Intent(context, ClassWidgetActionActivity::class.java).setAction(ClassWidgetActionActivity.ACTION), flags))
+    WidgetIntents.openApp(context, 896000 + widgetId)?.let { v.setOnClickPendingIntent(R.id.layp_class_header, it) }
+    return v
+  }
+}
+
+class ClassListService : android.widget.RemoteViewsService() {
+  override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = ClassListFactory(applicationContext)
+}
+
+class ClassListFactory(private val context: Context) : android.widget.RemoteViewsService.RemoteViewsFactory {
+  private var classes: List<WidgetClass> = emptyList()
+  private var ongoing: WidgetClass? = null
+  override fun onCreate() {}
+  override fun onDataSetChanged() {
+    ongoing = ClassDisplay.ongoing(context)
+    classes = ongoing?.let { listOf(it) } ?: ClassDisplay.remaining(context)
+  }
+  override fun onDestroy() {}
+  override fun getCount() = classes.size
+  override fun getViewAt(position: Int): RemoteViews {
+    val live = ongoing
+    if (live != null) {
+      val v = RemoteViews(context.packageName, R.layout.layp_widget_class_live)
+      v.setTextViewText(R.id.layp_class_live_title, "${live.code} is ongoing right now")
+      v.setTextViewText(R.id.layp_class_live_time, "${ClassDisplay.time(live.start)} – ${ClassDisplay.time(live.end)}")
+      val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, live.endMin / 60); set(Calendar.MINUTE, live.endMin % 60); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+      v.setChronometerCountDown(R.id.layp_class_remaining, true)
+      v.setChronometer(R.id.layp_class_remaining, android.os.SystemClock.elapsedRealtime() + end - System.currentTimeMillis(), null, true)
+      v.setOnClickFillInIntent(R.id.layp_class_live_cancel, Intent().putExtra(ClassWidgetActionActivity.EXTRA_ENTRY_ID, live.entryId).putExtra(ClassWidgetActionActivity.EXTRA_DATE, WidgetStore.today()))
+      return v
+    }
+    val v = RemoteViews(context.packageName, R.layout.layp_widget_class_row)
+    val c = classes.getOrNull(position) ?: return v
+    v.setTextViewText(R.id.layp_class_row_name, c.code)
+    v.setTextViewText(R.id.layp_class_row_time, "${ClassDisplay.time(c.start)} – ${ClassDisplay.time(c.end)}")
+    v.setTextViewText(R.id.layp_class_row_room, listOf(c.dayLabel.takeIf { it != "Today" }.orEmpty(), c.room).filter { it.isNotBlank() }.joinToString(" · "))
+    v.setViewVisibility(R.id.layp_class_row_room, if (c.room.isNotBlank() || c.dayLabel != "Today") View.VISIBLE else View.GONE)
+    v.setViewVisibility(R.id.layp_class_row_cancel, if (c.dayLabel == "Today") View.VISIBLE else View.GONE)
+    v.setOnClickFillInIntent(R.id.layp_class_row_cancel, Intent().putExtra(ClassWidgetActionActivity.EXTRA_ENTRY_ID, c.entryId).putExtra(ClassWidgetActionActivity.EXTRA_DATE, WidgetStore.today()))
+    return v
+  }
+  override fun getLoadingView(): RemoteViews? = null
+  override fun getViewTypeCount() = 2
+  override fun getItemId(position: Int) = classes.getOrNull(position)?.entryId?.hashCode()?.toLong() ?: position.toLong()
+  override fun hasStableIds() = true
 }
 
 // Tapping "Cancel" on the Today's Classes widget opens this small confirmation

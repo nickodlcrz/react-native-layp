@@ -119,7 +119,7 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
               ) : null}
             </View>
           </GestureDetector>
-          <ScrollView
+          <ScrollView showsHorizontalScrollIndicator={false}
             style={styles.scroll}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}

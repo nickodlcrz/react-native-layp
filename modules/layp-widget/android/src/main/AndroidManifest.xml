@@ -130,6 +130,8 @@
 
     <!-- Fill the Tasks and Upcoming lists. The bind permission keeps anything
     but the system from talking to them. -->
+    <service android:name=".ReminderListService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
+    <service android:name=".ClassListService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
     <service
         android:name=".TaskListService"
         android:exported="false"

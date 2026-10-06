@@ -231,7 +231,7 @@ function SchoolScreen({
   }
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
+    <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <View style={styles.headerRow}>
         <Text style={[styles.h1, { color: theme.text }]}>School</Text>
         <View style={{ flexDirection: "row", gap: 8 }}>
@@ -592,7 +592,7 @@ function DayView({ subjects, entries, selectedDay, setSelectedDay, onOpen, theme
   const blocks = blocksForWeekday(subjects, entries, selectedDay);
   return (
     <View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+      <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
         {WEEKDAYS.map((d) => (
           <Pressable key={d.id} onPress={() => setSelectedDay(d.id)} style={[styles.dayTab, { backgroundColor: selectedDay === d.id ? theme.neutralDark : theme.card, borderColor: theme.line }]}>
             <Text style={[styles.dayTabText, { color: selectedDay === d.id ? "#fff" : theme.text }]}>{d.label}</Text>
@@ -610,7 +610,7 @@ function DayView({ subjects, entries, selectedDay, setSelectedDay, onOpen, theme
 
 function WeekView({ subjects, entries, onOpen, theme }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false}>
       {WEEKDAYS.map((d) => {
         const blocks = blocksForWeekday(subjects, entries, d.id);
         return (
@@ -658,7 +658,7 @@ function SubjectDetail({ subject, subjectEntries, todos, onBack, onEdit, onDelet
   }
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
+    <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
       <View style={styles.headerRow}>
         <Pressable onPress={onBack} style={{ flexDirection: "row", alignItems: "center", gap: 4 }} accessibilityLabel="Back to schedule">
           <ChevronLeft size={16} color={theme.textMuted} />

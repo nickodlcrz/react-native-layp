@@ -148,7 +148,7 @@ function BudgetScreen({
         <ActivityScreen expenses={expenses} moneyLog={moneyLog} splits={splits} />
         </ErrorBoundary>
       ) : (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
+    <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
       <Text style={[styles.h1, { color: theme.text }]}>Pay plan</Text>
 
       {/* HERO: current remaining budget is the focus */}
@@ -164,7 +164,7 @@ function BudgetScreen({
 
         <View style={styles.heroDivider} />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
+        <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountRow}>
           {accounts.map((a) => (
             <View key={a.id} style={styles.accountChip}>
               <View style={[styles.accountDot, { backgroundColor: a.color }]} />

@@ -2,7 +2,8 @@
 <!-- Upcoming events widget (2x2 and 4x2): a compact dark Liquid Glass-inspired header (title + the
 7-day range) over a scrolling list of what's coming up. Rows are
 layp_widget_upcoming_row.xml, filled by UpcomingListService. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/layp_up_square" android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout
     android:id="@+id/layp_up_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -72,3 +73,5 @@ layp_widget_upcoming_row.xml, filled by UpcomingListService. -->
         android:textSize="12sp" />
   </FrameLayout>
 </LinearLayout>
+
+</FrameLayout>

@@ -121,7 +121,7 @@ export default function BorrowScreen({ loans, setLoans, moneyLog, expenses, setE
 
   return (
     <>
-    <FlatList
+    <FlatList showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
       data={filtered}

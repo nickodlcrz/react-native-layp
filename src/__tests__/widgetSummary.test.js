@@ -304,3 +304,9 @@ describe("expanded widget capture", () => {
     expect(buildWidgetSummary({ todos, today }).tasks).toHaveLength(100);
   });
 });
+
+test("widget snapshot preserves due time for the native countdown", () => {
+  const snapshot = buildWidgetSummary({ today, todos: [{ id: "timed", title: "Lab report", dueDate: "2026-10-07", dueTime: "13:30" }, { id: "date-only", title: "Reading", dueDate: "2026-10-08" }] });
+  expect(snapshot.tasks.find((t) => t.id === "timed")).toMatchObject({ due: "2026-10-07", dueTime: "13:30" });
+  expect(snapshot.tasks.find((t) => t.id === "date-only").dueTime).toBeNull();
+});

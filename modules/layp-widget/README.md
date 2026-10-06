@@ -168,3 +168,11 @@ Add a widget: long-press the home screen, **Widgets**, then **LAYP Spending**,
 - Calendar event days have a subtle highlighted background. Larger widgets show event icons; shorter placements prioritize readable date numbers. All surfaces remain dark and transparent.
 - Budget calculations include pending widget income and expenses, without counting an absorbed transaction twice while acknowledgement is pending.
 - Rebuild/install the Android app to register the two new providers and editors. JavaScript reload alone cannot update native widgets.
+
+### Compact widgets and live deadlines
+
+- The 2×2 Reminder, Classes Today, and Upcoming widgets draw a square glass card inside the launcher’s available bounds. Launcher cell dimensions vary; excess space stays transparent. Their lists remain scrollable with hidden scrollbars.
+- Classes Today uses all available rows. Class times wrap in full. During a class, the widget shows only that class, its full start/end time, and an Android countdown clock to its end. Overflow in the live view also scrolls.
+- Task widgets display remaining hours and minutes using each task’s due time. A date-only deadline is 11:59 PM in the device’s local timezone. Same-day overdue tasks show elapsed overdue time. Countdown text refreshes around each minute; Android can batch these updates during Doze. The in-app countdown updates every 15 seconds and on returning to the app.
+- Today’s Upcoming date badge uses a blue highlight with white text.
+- Android 14+ can require a separate full-screen alarm grant. Use Settings → General → Alarm display to allow it. The ringing notification also opens the correct native alarm screen when tapped. These changes require rebuilding the Android app.

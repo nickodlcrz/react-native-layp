@@ -79,7 +79,7 @@ export default function AppDialogHost() {
       <Pressable style={styles.dismissLayer} onPress={() => close()} />
       <View style={styles.center} pointerEvents="box-none" accessibilityViewIsModal>
         <Animated.View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }, panelStyle]}>
-          <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+          <ScrollView showsHorizontalScrollIndicator={false} bounces={false} showsVerticalScrollIndicator={false}>
           <View style={styles.topRow}>
             <View style={[styles.iconWrap, { backgroundColor: `${color}18` }]}>
               <Icon size={19} color={color} strokeWidth={2.2} />

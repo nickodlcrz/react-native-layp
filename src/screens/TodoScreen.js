@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, LayoutAnimation, UIManager } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, FlatList, StyleSheet, Platform, Switch, LayoutAnimation, UIManager, AppState } from "react-native";
 import {
   CheckCircle2, Circle, Plus, X, Trash2, List, CalendarDays, ListTodo,
   ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Bell, BellOff, AlarmClock,
 } from "lucide-react-native";
 import { useTheme, ACCENT, CATEGORIES } from "../theme";
 import { uid, todayISO, daysUntil, fmtDay, fmtTime12, getWeekDates } from "../utils";
+import { taskCountdown } from "../taskDeadline";
 import Chip from "../components/Chip";
 import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
@@ -123,6 +124,13 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 
 function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsumePrefillSubject, reminders = [], setReminders }) {
   const { theme } = useTheme();
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const timer = setInterval(tick, 15000);
+    const sub = AppState.addEventListener("change", (state) => { if (state === "active") tick(); });
+    return () => { clearInterval(timer); sub.remove(); };
+  }, []);
   const [mode, setMode] = useState("tasks"); // "tasks" | "remember" -- Remember is the general quick-capture list, kept separate from Tasks
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -263,6 +271,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
 
   const renderItem = useCallback(({ item: t }) => (
     <TodoRow
+      now={now}
       t={t}
       subject={t.subjectId ? subjectsById[t.subjectId] : null}
       onToggle={toggle}
@@ -270,7 +279,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
       onRemove={remove}
       onToggleSubtask={toggleSubtask}
     />
-  ), [subjectsById, toggle, startEdit, remove, toggleSubtask]);
+  ), [subjectsById, toggle, startEdit, remove, toggleSubtask, now]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -286,7 +295,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
         <RememberList reminders={reminders} setReminders={setReminders} />
       ) : (
         <>
-    <FlatList
+    <FlatList showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
       data={filtered}
@@ -368,7 +377,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
             </View>
           )}
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+          <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
             <Chip label="All" active={filter === "all"} onPress={() => setFilter("all")} />
             {CATEGORIES.map((c) => <Chip key={c.id} label={c.label} color={c.color} active={filter === c.id} onPress={() => setFilter(c.id)} />)}
           </ScrollView>
@@ -503,7 +512,7 @@ function useAnimatedProgress(fraction) {
 // --- Detailed layout: everything visible up front, no expand needed ---
 // Memoized so editing the form, switching tabs, or toggling one row
 // doesn't force every other row to re-render.
-const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRemove, onToggleSubtask }) {
+const TodoRow = React.memo(function TodoRow({ t, now, subject, onToggle, onEdit, onRemove, onToggleSubtask }) {
   const { theme } = useTheme();
   const cat = CATEGORIES.find((c) => c.id === t.category);
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
@@ -606,6 +615,7 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
                 <Text style={[styles.metaText, { color: theme.textMuted, fontWeight: "700" }]}>
                   Due {fmtDay(t.dueDate)}{t.dueTime ? ` · ${fmtTime12(t.dueTime)}` : ""}{dleft >= 0 ? ` · ${dleft === 0 ? "today" : `in ${dleft}d`}` : ""}
                 </Text>
+                {!displayCompleted && <Text style={[styles.metaText, { color: urgency === "red" ? ACCENT.ember : theme.textMuted }]}>{taskCountdown(t.dueDate, t.dueTime, now)}</Text>}
                 {dleft < 0 && (
                   <View style={[styles.tag, { backgroundColor: ACCENT.ember + "22" }]}>
                     <Text style={[styles.tagText, { color: ACCENT.ember }]}>{Math.abs(dleft)}d overdue</Text>
@@ -743,7 +753,7 @@ function TodoForm({ initial, onSave, onCancel, onDelete, subjects = [], presetSu
       {category === "school" && subjects.length > 0 && (
         <View style={{ marginBottom: 12 }}>
           <Text style={[styles.label, { color: theme.textMuted }]}>Subject (optional)</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} horizontal showsHorizontalScrollIndicator={false}>
             <Chip label="None" active={!subjectId} onPress={() => setSubjectId(null)} small />
             {subjects.map((s) => (
               <Chip key={s.id} label={s.code} active={subjectId === s.id} onPress={() => setSubjectId(s.id)} small />

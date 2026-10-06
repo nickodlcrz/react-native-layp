@@ -101,7 +101,7 @@ function TabButton({ tab, active, onPress, theme, reduceMotion }) {
       hitSlop={{ top: 6, bottom: 6 }}
     >
       <Animated.View style={{ transform: [{ scale }], alignItems: "center", gap: 2 }}>
-        <Icon size={20} color={active ? theme.text : theme.textMuted} strokeWidth={active ? 2.4 : 2} />
+        <Icon size={17} color={active ? theme.text : theme.textMuted} strokeWidth={active ? 2.4 : 2} />
         <Text style={[styles.label, { color: active ? theme.text : theme.textMuted }]} numberOfLines={1}>
           {tab.label}
         </Text>
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   glassWrap: {
     marginHorizontal: 12,
     marginBottom: 8,
-    minHeight: 60,
+    minHeight: 50,
     shadowColor: "#000",
     shadowOpacity: 0.16,
     shadowRadius: 18,
@@ -138,14 +138,14 @@ const styles = StyleSheet.create({
   },
   btn: {
     flex: 1,
-    minHeight: 48,
+    minHeight: 40,
     alignItems: "center",
     justifyContent: "center",
     gap: 2,
     paddingHorizontal: 2,
-    paddingVertical: 6,
+    paddingVertical: 3,
     borderRadius: 16,
   },
-  label: { fontSize: 11, fontWeight: "700" },
+  label: { fontSize: 10, fontWeight: "700" },
   dot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
 });

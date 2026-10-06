@@ -23,7 +23,7 @@ export default function ActivityScreen({ expenses, moneyLog, splits }) {
   }, [expenses, moneyLog, splits, now]);
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }}>
+    <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 24 }}>
       <Text style={[styles.h1, { color: theme.text }]}>Activity</Text>
 
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>

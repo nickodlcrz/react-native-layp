@@ -20,7 +20,7 @@ import { todayISO, daysUntil, fmtDateLong, uid, computeAccountBalance, computeDa
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
-import { isNativeAlarmAvailable, getAlarmStatus, openExactAlarmSettings, openBatteryOptimizationSettings } from "./modules/layp-alarm";
+import { isNativeAlarmAvailable, getAlarmStatus, openFullScreenAlarmSettings, openExactAlarmSettings, openBatteryOptimizationSettings } from "./modules/layp-alarm";
 import { isNativeWidgetAvailable, pushWidgetSummary, getPendingWidgetItems, ackWidgetItems } from "./modules/layp-widget";
 import { buildWidgetSummary, pendingToExpenses, pendingToMoney, pendingToTodos, applyTaskOps, pendingToReminders, applyClassSuspends } from "./src/widgetSummary";
 import { buildWidgetEvents } from "./src/widgetEvents";
@@ -231,8 +231,8 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
     if (!isNativeAlarmAvailable()) return;
     getAlarmStatus().then((status) => {
       if (!status) return;
-      if (!status.exactAlarmsAllowed || !status.ignoringBatteryOptimizations) {
-        setAlarmReliabilityBanner({ exact: !status.exactAlarmsAllowed, battery: !status.ignoringBatteryOptimizations });
+      if (!status.exactAlarmsAllowed || !status.ignoringBatteryOptimizations || status.fullScreenAlarmsAllowed === false) {
+        setAlarmReliabilityBanner({ exact: !status.exactAlarmsAllowed, battery: !status.ignoringBatteryOptimizations, fullScreen: status.fullScreenAlarmsAllowed === false });
       }
     });
   }, []);
@@ -1353,11 +1353,11 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
           </View>
           <View style={{ flexDirection: "row", gap: 7 }}>
             <Pressable onPress={onLock} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Lock app">
-              <Lock size={17} color={theme.textMuted} />
+              <Lock size={14} color={theme.textMuted} />
             </Pressable>
             {gfScreenEnabled && (
               <Pressable onPress={() => setGfOpen(true)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Open GF">
-                <Heart size={18} color={ACCENT.rose} fill={ACCENT.rose} />
+                <Heart size={15} color={ACCENT.rose} fill={ACCENT.rose} />
                 {gfMissedCount > 0 && (
                   <View style={styles.gfBadge}>
                     <Text style={styles.gfBadgeText}>{gfMissedCount > 9 ? "9+" : gfMissedCount}</Text>
@@ -1366,7 +1366,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
               </Pressable>
             )}
             <Pressable onPress={() => { setSettingsTab("general"); setSettingsOpen(true); }} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Settings">
-              <GearIcon size={18} color={theme.text} />
+              <GearIcon size={15} color={theme.text} />
             </Pressable>
           </View>
         </View>
@@ -1386,18 +1386,24 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
           <View style={[styles.banner, { backgroundColor: theme.accentDark }]}>
             <Bell size={16} color={ACCENT.gold} style={{ marginTop: 2 }} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.bannerTitle}>Alarms may ring late</Text>
+              <Text style={styles.bannerTitle}>Check alarm settings</Text>
               <Text style={styles.bannerBody}>
                 {alarmReliabilityBanner.exact && alarmReliabilityBanner.battery
                   ? "Grant \"Alarms & reminders\" and turn off battery optimization for LAYP so class and task alarms ring exactly on time, even in the background."
                   : alarmReliabilityBanner.exact
                   ? "Grant LAYP the \"Alarms & reminders\" permission so alarms ring exactly on time instead of being delayed."
-                  : "Turn off battery optimization for LAYP so alarms aren't delayed while the app is in the background."}
+                  : alarmReliabilityBanner.battery ? "Turn off battery optimization for LAYP so alarms aren't delayed while the app is in the background." : "Your phone is restricting the alarm display."}
               </Text>
-              <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+              {alarmReliabilityBanner.fullScreen && <Text style={styles.bannerBody}>Allow full-screen alarms so the ringing screen can appear over your lock screen.</Text>}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
                 {alarmReliabilityBanner.exact && (
                   <Pressable onPress={() => { openExactAlarmSettings(); setAlarmReliabilityBanner(null); }}>
                     <Text style={styles.bannerAction}>Fix alarm permission</Text>
+                  </Pressable>
+                )}
+                {alarmReliabilityBanner.fullScreen && (
+                  <Pressable onPress={() => { openFullScreenAlarmSettings(); setAlarmReliabilityBanner(null); }}>
+                    <Text style={styles.bannerAction}>Allow alarm screen</Text>
                   </Pressable>
                 )}
                 {alarmReliabilityBanner.battery && (
@@ -1476,7 +1482,7 @@ const styles = StyleSheet.create({
   logo: { width: 30, height: 30, borderRadius: 8 },
   headerTitle: { fontSize: 18, fontWeight: "800", letterSpacing: 0.5 },
   headerDate: { fontSize: 11, marginTop: 1 },
-  themeBtn: { width: 40, height: 40, borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 1, position: "relative" },
+  themeBtn: { width: 30, height: 30, borderRadius: 11, alignItems: "center", justifyContent: "center", borderWidth: 1, position: "relative" },
   gfBadge: { position: "absolute", top: -3, right: -3, minWidth: 14, height: 14, borderRadius: 7, backgroundColor: ACCENT.ember, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
   gfBadgeText: { color: "#fff", fontSize: 8, fontWeight: "800" },
   banner: { flexDirection: "row", gap: 8, borderRadius: 16, padding: 12, marginHorizontal: 16, marginBottom: 4 },

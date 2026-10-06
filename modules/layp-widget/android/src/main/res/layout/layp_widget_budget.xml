@@ -5,7 +5,7 @@
     <TextView android:id="@+id/layp_budget_privacy" android:layout_width="56dp" android:layout_height="36dp" android:gravity="center" android:text="Hide" android:textColor="#DBE4FF" android:textSize="12sp" android:background="@drawable/layp_widget_chip_bg_dark" />
   </LinearLayout>
   <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
-    <GridView android:id="@+id/layp_budget_grid" android:layout_width="match_parent" android:layout_height="match_parent" android:numColumns="2" android:horizontalSpacing="8dp" android:verticalSpacing="6dp" android:stretchMode="columnWidth" android:scrollbars="vertical" />
+    <GridView android:id="@+id/layp_budget_grid" android:layout_width="match_parent" android:layout_height="match_parent" android:numColumns="2" android:horizontalSpacing="8dp" android:verticalSpacing="6dp" android:stretchMode="columnWidth" android:scrollbars="none" />
     <TextView android:id="@+id/layp_budget_empty" android:layout_width="match_parent" android:layout_height="match_parent" android:gravity="center" android:textColor="#CCFFFFFF" android:textSize="12sp" />
   </FrameLayout>
 </LinearLayout>

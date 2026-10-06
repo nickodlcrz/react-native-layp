@@ -199,7 +199,7 @@ export default function GFScreen({
                 onChange={setTab}
               />
             </View>
-            <ScrollView ref={scrollRef} style={{ flex: 1, paddingHorizontal: 16 }} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+            <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} ref={scrollRef} style={{ flex: 1, paddingHorizontal: 16 }} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
               <Text style={[styles.longPressHint, { color: theme.textMuted }]}>Long press anything to edit or delete it</Text>
               {tab === "notes" && (
                 <NotesTab

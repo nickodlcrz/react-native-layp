@@ -144,7 +144,7 @@ export default function RememberList({ reminders, setReminders }) {
 
   return (
     <>
-    <FlatList
+    <FlatList showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false}
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 12 }}
       data={filtered}

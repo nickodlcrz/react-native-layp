@@ -48,7 +48,9 @@ class LaypAlarmReceiver : BroadcastReceiver() {
       )
       putExtra(AlarmScheduler.EXTRA_KEY, key)
     }
-    context.startActivity(activityIntent)
+    // Android may block a background launch; the keyed full-screen
+    // notification remains the supported lock-screen and tap-to-open path.
+    try { context.startActivity(activityIntent) } catch (_: RuntimeException) { }
 
     AlarmEventBus.notifyFired(alarm)
   }

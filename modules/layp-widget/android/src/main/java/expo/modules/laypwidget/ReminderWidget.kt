@@ -1,6 +1,5 @@
 package expo.modules.laypwidget
 
-import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
@@ -19,12 +18,38 @@ class ReminderWidgetProvider : AppWidgetProvider() {
       val manager = AppWidgetManager.getInstance(context)
       manager.getAppWidgetIds(ComponentName(context, ReminderWidgetProvider::class.java)).forEach { id ->
         val views = RemoteViews(context.packageName, R.layout.layp_widget_reminder)
-        val count = WidgetStore.pendingReminderCount(context)
-        views.setTextViewText(R.id.layp_reminder_hint, if (count > 0) "$count saved\nOpen LAYP to activate" else "Capture a thought\nChoose when to remember")
-        views.setOnClickPendingIntent(R.id.layp_reminder_add, PendingIntent.getActivity(context, 9600 + id, Intent(context, AddReminderActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-        WidgetIntents.openApp(context, 9700 + id)?.let { views.setOnClickPendingIntent(R.id.layp_reminder_title, it) }
+        SquareWidget.apply(context, views, id, R.id.layp_reminder_square)
+        val service = Intent(context, ReminderListService::class.java).apply {
+          putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+          data = android.net.Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
+        }
+        views.setRemoteAdapter(R.id.layp_reminder_list, service)
+        views.setPendingIntentTemplate(R.id.layp_reminder_list, WidgetIntents.itemTemplate(context, 9600 + id))
         manager.updateAppWidget(id, views)
+        manager.notifyAppWidgetViewDataChanged(intArrayOf(id), R.id.layp_reminder_list)
       }
     }
   }
+}
+
+class ReminderListService : android.widget.RemoteViewsService() {
+  override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = ReminderListFactory(applicationContext)
+}
+class ReminderListFactory(private val context: Context) : android.widget.RemoteViewsService.RemoteViewsFactory {
+  private var count = 0
+  override fun onCreate() {}
+  override fun onDataSetChanged() { count = WidgetStore.pendingReminderCount(context) }
+  override fun onDestroy() {}
+  override fun getCount() = 1
+  override fun getViewAt(position: Int): RemoteViews {
+    val v = RemoteViews(context.packageName, R.layout.layp_widget_reminder_row)
+    v.setTextViewText(R.id.layp_reminder_hint, if (count > 0) "$count saved\nOpen LAYP to activate" else "Capture a thought\nChoose when to remember")
+    v.setOnClickFillInIntent(R.id.layp_reminder_add, Intent().putExtra(WidgetActionActivity.EXTRA_OP, WidgetActionActivity.OP_ADD_REMINDER))
+    v.setOnClickFillInIntent(R.id.layp_reminder_title, Intent().putExtra(WidgetActionActivity.EXTRA_OP, WidgetActionActivity.OP_OPEN))
+    return v
+  }
+  override fun getLoadingView(): RemoteViews? = null
+  override fun getViewTypeCount() = 1
+  override fun getItemId(position: Int) = 0L
+  override fun hasStableIds() = true
 }

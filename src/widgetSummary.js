@@ -71,7 +71,7 @@ export function buildWidgetSummary({
   const tasks = todos
     .filter((t) => !t.completed)
     .sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"))
-    .map((t) => ({ id: t.id, title: t.title || "Untitled task", status: STATUS_ORDER.includes(t.status) ? t.status : "not_started", due: t.dueDate || null, category: t.category || "", categoryLabel: categoryLabel(t), subject: subjectCode(t) }));
+    .map((t) => ({ id: t.id, title: t.title || "Untitled task", status: STATUS_ORDER.includes(t.status) ? t.status : "not_started", due: t.dueDate || null, dueTime: t.dueTime || null, category: t.category || "", categoryLabel: categoryLabel(t), subject: subjectCode(t) }));
   const activePeriod = getActivePeriod(academicPeriods);
   const activeSubjects = activePeriod ? subjectsForPeriod(subjects, activePeriod.id) : [];
   const activeIds = new Set(activeSubjects.map((s) => s.id));

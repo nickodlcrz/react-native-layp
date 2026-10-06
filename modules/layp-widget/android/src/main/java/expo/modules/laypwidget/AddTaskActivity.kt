@@ -61,7 +61,9 @@ class AddTaskActivity : WidgetFormActivity() {
             setOnCheckedChangeListener { _, on -> if (on) weekdays.add(index + 1) else weekdays.remove(index + 1) }
           })
         }
-        column.addView(android.widget.HorizontalScrollView(this).apply { addView(days) }, params())
+        column.addView(android.widget.HorizontalScrollView(this).apply {
+      isVerticalScrollBarEnabled = false
+      isHorizontalScrollBarEnabled = false; addView(days) }, params())
       }
       intervalFields = group { label("Interval hours"); hoursInput = input("Hours", numeric = true).apply { setText("1") } }
       customFields = group { label("Custom times · 24-hour format"); timesInput = input("08:00, 12:30, 18:00").apply { setText("08:00") } }
