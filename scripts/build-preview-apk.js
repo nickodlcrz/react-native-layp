@@ -29,6 +29,11 @@ const gradleFile = path.join(native, 'app', 'build.gradle');
 let gradle = fs.readFileSync(gradleFile, 'utf8');
 gradle = gradle.replace(/applicationId ['"][^'"]+['"]/, `applicationId '${config.android.package}.preview'`)
   .replace(/versionName "[^"]+"/, `versionName "${config.version}-preview"`);
+// Filter packaged libraries too: dependency AARs can include x86 binaries
+// even when the local native modules were built only for phone ABIs.
+if (!gradle.includes('// LAYP preview phone ABIs')) {
+  gradle = gradle.replace(/defaultConfig\s*\{/, 'defaultConfig {\n        // LAYP preview phone ABIs\n        ndk { abiFilters "arm64-v8a", "armeabi-v7a" }');
+}
 fs.writeFileSync(gradleFile, gradle);
 const strings = path.join(native, 'app', 'src', 'main', 'res', 'values', 'strings.xml');
 fs.writeFileSync(strings, fs.readFileSync(strings, 'utf8').replace(/<string name="app_name">[^<]*<\/string>/, '<string name="app_name">LAYP Preview</string>'));
