@@ -42,28 +42,17 @@ for name, module, url, expected in projects:
 
 blur = cache / projects[0][0] / 'library'
 cropper = cache / projects[1][0] / 'cropper'
-# Android 34 adds nullable annotations to these APIs. Preserve the old
-# library's error behavior explicitly while compiling it against this SDK.
+# Android 34 exposes nullable APIs. Start from the verified original file
+# on each run so these small compatibility changes remain repeatable.
 bitmap_utils = cropper / 'src/main/java/com/canhub/cropper/BitmapUtils.kt'
-bitmap_source = bitmap_utils.read_text()
-bitmap_source = bitmap_source.replace('var result = Bitmap.createBitmap(', 'var result: Bitmap = Bitmap.createBitmap(')
-bitmap_source = bitmap_source.replace(
-    'result = bitmap.copy(bitmap.config, false)\n',
-    'result = bitmap.copy(bitmap.config, false)\n'
-    '                ?: throw OutOfMemoryError("Unable to copy cropped bitmap")\n',
-)
+with zipfile.ZipFile(cache / f'{projects[1][0]}.zip') as source:
+    bitmap_source = source.read(f'{projects[1][0]}/cropper/src/main/java/com/canhub/cropper/BitmapUtils.kt').decode('utf-8')
+bitmap_source = bitmap_source.replace('var result = Bitmap.createBitmap(', 'var result: Bitmap? = Bitmap.createBitmap(')
 bitmap_source = bitmap_source.replace(
     'outputStream = context.contentResolver.openOutputStream(newUri!!, WRITE_AND_TRUNCATE)\n',
     'outputStream = context.contentResolver.openOutputStream(newUri!!, WRITE_AND_TRUNCATE)\n'
     '                ?: throw FileNotFoundException("Unable to open output URI: $newUri")\n',
 )
-# Remove duplicate guards if this setup script is run again.
-for guard in [
-    '                ?: throw OutOfMemoryError("Unable to copy cropped bitmap")\n',
-    '                ?: throw FileNotFoundException("Unable to open output URI: $newUri")\n',
-]:
-    while guard + guard in bitmap_source:
-        bitmap_source = bitmap_source.replace(guard + guard, guard)
 bitmap_utils.write_text(bitmap_source)
 blur.joinpath('build.gradle').write_text("""apply plugin: 'com.android.library'
 android {
