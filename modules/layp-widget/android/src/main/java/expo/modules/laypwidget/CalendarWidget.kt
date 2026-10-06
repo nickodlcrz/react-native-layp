@@ -97,6 +97,8 @@ object CalendarRenderer {
     val views = RemoteViews(context.packageName, R.layout.layp_widget_calendar)
     val summary = WidgetStore.readSummary(context)
     val p = Palette.resolve(context, summary.theme)
+    val minHeight = AppWidgetManager.getInstance(context).getAppWidgetOptions(widgetId).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 160)
+    val compact = minHeight < 180
     val todayIso = WidgetStore.today()
     val today = CalendarMath.parse(todayIso)!!
 
@@ -117,7 +119,7 @@ object CalendarRenderer {
     views.setOnClickPendingIntent(R.id.layp_cal_title, broadcast(context, CalendarWidgetProvider.ACTION_RESET, REQUEST_RESET))
 
     for (i in 0 until 7) {
-      views.setTextViewText(CalendarIds.WEEKDAYS[i], CalendarMath.WEEKDAY_LETTERS[i])
+      views.setTextViewText(CalendarIds.WEEKDAYS[i], CalendarMath.WEEKDAYS[i].take(2))
       views.setTextColor(CalendarIds.WEEKDAYS[i], p.muted)
     }
 
@@ -128,10 +130,13 @@ object CalendarRenderer {
     for (i in 0 until 42) {
       val cell = grid.cells[i]
       val isToday = cell.iso == todayIso
+      val dayEvents = eventsByDay[cell.iso].orEmpty()
+      views.setTextViewTextSize(CalendarIds.TEXTS[i], android.util.TypedValue.COMPLEX_UNIT_SP, if (compact) 10f else 12f)
+      views.setContentDescription(CalendarIds.CELLS[i], "${cell.iso}${if (isToday) ", Today" else ""}${if (dayEvents.isNotEmpty()) ", " + dayEvents.joinToString { it.title } else ""}")
       views.setTextViewText(CalendarIds.TEXTS[i], cell.day.toString())
       when {
         isToday -> {
-          views.setInt(CalendarIds.CELLS[i], "setBackgroundResource", p.accentPill)
+          views.setInt(CalendarIds.CELLS[i], "setBackgroundResource", R.drawable.layp_cal_today_day)
           views.setTextColor(CalendarIds.TEXTS[i], p.onAccent)
         }
         !cell.inMonth -> {
@@ -139,14 +144,14 @@ object CalendarRenderer {
           views.setTextColor(CalendarIds.TEXTS[i], p.faint)
         }
         else -> {
-          views.setInt(CalendarIds.CELLS[i], "setBackgroundResource", 0)
-          views.setTextColor(CalendarIds.TEXTS[i], p.text)
+          views.setInt(CalendarIds.CELLS[i], "setBackgroundResource", if (dayEvents.isNotEmpty()) R.drawable.layp_cal_event_day else 0)
+          views.setTextColor(CalendarIds.TEXTS[i], if (i % 7 == 0 || i % 7 == 6) 0xFFC6D2FF.toInt() else p.text)
         }
       }
 
       // The marks. Days from the neighbouring months get none; on today's navy
       // pill they're drawn white so they stay visible.
-      val marks = if (cell.inMonth) marksFor(eventsByDay[cell.iso].orEmpty()) else emptyList()
+      val marks = if (cell.inMonth && !compact) marksFor(dayEvents) else emptyList()
       val slots = intArrayOf(CalendarIds.ICON_A[i], CalendarIds.ICON_B[i])
       for (s in slots.indices) {
         val mark = marks.getOrNull(s)

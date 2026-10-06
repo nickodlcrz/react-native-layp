@@ -12,4 +12,8 @@
   <string name="layp_upcoming_2x2_label">LAYP Upcoming (2x2)</string>
   <string name="layp_upcoming_4x2_label">LAYP Upcoming (4x2)</string>
   <string name="layp_upcoming_description">The next 7 days: task deadlines, payments and special dates. Scroll for more.</string>
+  <string name="layp_budget_label">LAYP Account Budget (4x2)</string>
+  <string name="layp_budget_description">Available money in every account. Scroll for more; hide or show balances.</string>
+  <string name="layp_reminder_label">LAYP Add Reminder (2x2)</string>
+  <string name="layp_reminder_description">Add a general reminder with tags, delivery mode and schedule.</string>
 </resources>

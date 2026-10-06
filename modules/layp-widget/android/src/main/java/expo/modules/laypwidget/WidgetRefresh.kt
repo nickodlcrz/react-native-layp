@@ -7,6 +7,8 @@ import android.content.Intent
 // One place to say "the data changed, redraw every widget".
 object WidgetRefresh {
   fun all(context: Context) {
+    BudgetWidgetProvider.refreshAll(context)
+    ReminderWidgetProvider.refreshAll(context)
     SpendWidgetProvider.refreshAll(context)
     TaskWidgetProvider.refreshAll(context)
     CalendarWidgetProvider.refreshAll(context)
@@ -15,7 +17,9 @@ object WidgetRefresh {
   }
 
   fun installedCount(context: Context): Int =
-    SpendWidgetProvider.installedCount(context) +
+    BudgetWidgetProvider.installedCount(context) +
+      ReminderWidgetProvider.installedCount(context) +
+      SpendWidgetProvider.installedCount(context) +
       TaskWidgetProvider.installedCount(context) +
       CalendarWidgetProvider.installedCount(context) +
       UpcomingWidgetProvider.installedCount(context) +

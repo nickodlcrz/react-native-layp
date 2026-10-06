@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from "react";
-import { Animated } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, AccessibilityInfo } from "react-native";
 
 // Used to also slide content in from the left/right on top of a plain
 // fade, following SwipeNavigator's own live drag-follow (a separate
@@ -11,13 +11,20 @@ import { Animated } from "react-native";
 // driven, still marks a switch as an intentional transition rather than a
 // hard cut, just without the extra transform.
 export default function TabTransition({ transitionKey, style, children }) {
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => sub.remove();
+  }, []);
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (reduceMotion) { opacity.stopAnimation(); opacity.setValue(1); return; }
     opacity.setValue(0);
     Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transitionKey]);
+  }, [transitionKey, reduceMotion]);
 
   return <Animated.View style={[style, { opacity }]}>{children}</Animated.View>;
 }

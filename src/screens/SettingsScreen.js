@@ -9,6 +9,7 @@ import { ALL_EVENT_KINDS, toggleKind } from "../widgetPrefsLogic";
 import SegmentedTabs from "../components/SegmentedTabs";
 import Chip from "../components/Chip";
 import SummaryScreen from "./SummaryScreen";
+import { isNativeWidgetAvailable, requestPinWidget } from "../../modules/layp-widget";
 import { showAppDialog } from "../components/AppDialog";
 
 const TABS = [
@@ -119,6 +120,19 @@ export default function SettingsScreen({
 
         {tab === "widgets" && (
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line, marginBottom: 14 }]}>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Add to your home screen</Text>
+              <Text style={[styles.hint, { color: theme.textMuted }]}>Dark transparent widgets. Swipe the task list or account grid to see more.</Text>
+              <View style={styles.chipWrap}>
+                {[{ kind: "budget4x2", label: "Account budget · 4×2" }, { kind: "reminder2x2", label: "Add reminder · 2×2" }, { kind: "tasks4x4", label: "Tasks · 4×4" }, { kind: "tasks4x6", label: "Tasks · 4×6" }, { kind: "classes2x2", label: "Classes · 2×2" }, { kind: "calendar", label: "Calendar · 4×2" }].map(({ kind, label }) => (
+                  <Chip key={kind} label={label} small onPress={async () => {
+                    try {
+                      if (!isNativeWidgetAvailable() || !(await requestPinWidget(kind))) showAppDialog("Add a widget", "Use a current Android build of LAYP. Long press your home screen, choose Widgets, then choose LAYP. Your launcher may not support adding widgets from the app.");
+                    } catch (e) { showAppDialog("Add a widget", "Long press your home screen and choose Widgets → LAYP."); }
+                  }} />
+                ))}
+              </View>
+            </View>
             <KindPicker
               title="Calendar widget"
               hint="Which events get a mark (heart, pencil, dot...) on the month."

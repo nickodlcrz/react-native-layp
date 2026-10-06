@@ -60,7 +60,7 @@ class ClassWidgetProvider : AppWidgetProvider() {
       if (ids.isEmpty()) return
       val summary = WidgetStore.readSummary(context)
       val nowMin = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
-      val current = summary.classes.firstOrNull { nowMin >= it.startMin && nowMin < it.endMin }
+      val current = summary.classes.firstOrNull { it.dayLabel == "Today" && summary.date == WidgetStore.today() && nowMin >= it.startMin && nowMin < it.endMin }
       val nextMinute = if (current != null) {
         // While a class is running, update once a minute so elapsed/remaining
         // time stays live. The animation itself does not need a JS timer.
@@ -130,7 +130,7 @@ private object ClassRenderer {
     val capacity = ((minHeight - 44) / 42).coerceIn(1, 4)
 
     val classes = summary.classes.filterNot { c -> pending.contains(summary.date to c.entryId) }
-    val ongoing = classes.firstOrNull { nowMin >= it.startMin && nowMin < it.endMin }
+    val ongoing = classes.firstOrNull { it.dayLabel == "Today" && summary.date == WidgetStore.today() && nowMin >= it.startMin && nowMin < it.endMin }
     val shown = (
       if (ongoing != null) listOf(ongoing)
       else if (classes.any { it.dayLabel == "Today" }) classes.filter { it.startMin > nowMin }
@@ -312,7 +312,7 @@ class ClassWidgetActionActivity : android.app.Activity() {
 
     card.addView(
       android.widget.TextView(this).apply {
-        text = "It won't send its reminder or ring the alarm again today. This only affects today; the class stays on your schedule."
+        text = "The ringing alarm is skipped today. Home and School update when you open LAYP. Your weekly schedule stays."
         textSize = 13f
         setLineSpacing(0f, 1.15f)
         setTextColor(p.muted)
@@ -353,7 +353,11 @@ class ClassWidgetActionActivity : android.app.Activity() {
   }
 
   private fun confirmCancel(entryId: String, date: String) {
-    WidgetStore.enqueueClassSuspend(this, entryId, date)
+    val subjectId = WidgetStore.readSummary(this).classes.firstOrNull { it.entryId == entryId }?.subjectId ?: return
+    if (date != WidgetStore.today()) { finish(); return }
+    // Silence the native alarm immediately, even while React Native is closed.
+    expo.modules.laypalarm.AlarmStore.setSkipToday(this, "class:$subjectId:$entryId", date)
+    WidgetStore.enqueueClassSuspend(this, entryId, date, subjectId)
     ClassWidgetProvider.refreshAll(this)
     ClassWidgetProvider.scheduleNextRefresh(this)
     android.widget.Toast.makeText(this, "Class cancelled for today", android.widget.Toast.LENGTH_SHORT).show()

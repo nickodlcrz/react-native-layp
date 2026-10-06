@@ -891,10 +891,10 @@ const styles = StyleSheet.create({
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },
   formBtnDanger: { flexDirection: "row", justifyContent: "center", gap: 6, borderWidth: 1, backgroundColor: "transparent" },
   formBtnText: { fontSize: 12, fontWeight: "700" },
-  rowTitle: { fontSize: 13, fontWeight: "600" },
+  rowTitle: { fontSize: 15, fontWeight: "600" },
   tag: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  tagText: { fontSize: 9, fontWeight: "700" },
-  metaText: { fontSize: 10, fontFamily: "monospace" },
+  tagText: { fontSize: 10, fontWeight: "700" },
+  metaText: { fontSize: 11, fontFamily: "monospace" },
   descriptionText: { fontSize: 12, lineHeight: 17, marginTop: 6 },
   descriptionInput: { fontSize: 12, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12, minHeight: 70, textAlignVertical: "top" },
 });

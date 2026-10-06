@@ -158,8 +158,10 @@ export async function writeStateNow(state) {
       .filter((name) => state[name] !== undefined)
       .map((name) => [domainKey(name), JSON.stringify(state[name])]);
     await AsyncStorage.multiSet(pairs);
+    return true;
   } catch (e) {
     console.error("saveState failed", e);
+    return false;
   }
 }
 
@@ -172,16 +174,22 @@ export async function writeStateNow(state) {
 const SAVE_DEBOUNCE_MS = 800;
 let pendingState = null;
 let saveTimer = null;
+let saveInFlight = Promise.resolve(true);
+let saveRevision = 0;
 
 async function flushPendingSave() {
   if (saveTimer) {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  if (!pendingState) return;
+  if (!pendingState) return saveInFlight;
   const state = pendingState;
+  const revision = saveRevision;
   pendingState = null;
-  await writeStateNow(state);
+  saveInFlight = saveInFlight.then(() => writeStateNow(state));
+  const saved = await saveInFlight;
+  if (!saved && !pendingState && revision === saveRevision) pendingState = state;
+  return saved;
 }
 
 // If the app gets backgrounded (or killed) while a save is still debouncing,
@@ -194,14 +202,14 @@ AppState.addEventListener("change", (next) => {
 });
 
 export function saveState(state) {
+  saveRevision += 1;
   pendingState = state;
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(flushPendingSave, SAVE_DEBOUNCE_MS);
 }
 
 // For call sites that need the write to have actually landed before moving
-// on (there are none yet, but this is here so that need doesn't require
-// touching the debounce internals above).
+// on, such as acknowledging durable widget queues. Returns false on failure.
 export async function flushSaveState() {
-  await flushPendingSave();
+  return flushPendingSave();
 }

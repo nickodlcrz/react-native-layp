@@ -10,31 +10,31 @@ inflate one). -->
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
-    android:padding="11dp"
+    android:padding="8dp"
     android:background="@drawable/layp_widget_glass_dark">
 
   <LinearLayout
       android:layout_width="0dp"
       android:layout_height="match_parent"
-      android:layout_weight="2.1"
-      android:layout_marginEnd="9dp"
+      android:layout_weight="3.1"
+      android:layout_marginEnd="7dp"
       android:orientation="vertical">
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="20dp"
+        android:layout_height="28dp"
         android:orientation="horizontal"
         android:gravity="center_vertical">
 
       <TextView
           android:id="@+id/layp_cal_prev"
-          android:layout_width="24dp"
+          android:layout_width="32dp"
           android:layout_height="match_parent"
           android:gravity="center"
           android:includeFontPadding="false"
           android:text="&#8249;"
           android:textColor="@color/layp_muted"
-          android:textSize="17sp" />
+          android:textSize="24sp" />
 
       <TextView
           android:id="@+id/layp_cal_title"
@@ -48,23 +48,23 @@ inflate one). -->
           android:maxLines="1"
           android:autoSizeTextType="uniform"
           android:autoSizeMinTextSize="9sp"
-          android:autoSizeMaxTextSize="13sp"
+          android:autoSizeMaxTextSize="15sp"
           android:autoSizeStepGranularity="1sp" />
 
       <TextView
           android:id="@+id/layp_cal_next"
-          android:layout_width="24dp"
+          android:layout_width="32dp"
           android:layout_height="match_parent"
           android:gravity="center"
           android:includeFontPadding="false"
           android:text="&#8250;"
           android:textColor="@color/layp_muted"
-          android:textSize="17sp" />
+          android:textSize="24sp" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="12dp"
+        android:layout_height="16dp"
         android:layout_marginTop="2dp"
         android:orientation="horizontal">
       <TextView
@@ -76,7 +76,7 @@ inflate one). -->
           android:includeFontPadding="false"
           android:fontFamily="sans-serif-medium"
           android:textColor="@color/layp_muted"
-          android:textSize="8sp" />
+          android:textSize="10sp" />
       <TextView
           android:id="@+id/layp_cal_w1"
           android:layout_width="0dp"
@@ -86,7 +86,7 @@ inflate one). -->
           android:includeFontPadding="false"
           android:fontFamily="sans-serif-medium"
           android:textColor="@color/layp_muted"
-          android:textSize="8sp" />
+          android:textSize="10sp" />
       <TextView
           android:id="@+id/layp_cal_w2"
           android:layout_width="0dp"
@@ -96,7 +96,7 @@ inflate one). -->
           android:includeFontPadding="false"
           android:fontFamily="sans-serif-medium"
           android:textColor="@color/layp_muted"
-          android:textSize="8sp" />
+          android:textSize="10sp" />
       <TextView
           android:id="@+id/layp_cal_w3"
           android:layout_width="0dp"
@@ -106,7 +106,7 @@ inflate one). -->
           android:includeFontPadding="false"
           android:fontFamily="sans-serif-medium"
           android:textColor="@color/layp_muted"
-          android:textSize="8sp" />
+          android:textSize="10sp" />
       <TextView
           android:id="@+id/layp_cal_w4"
           android:layout_width="0dp"
@@ -116,7 +116,7 @@ inflate one). -->
           android:includeFontPadding="false"
           android:fontFamily="sans-serif-medium"
           android:textColor="@color/layp_muted"
-          android:textSize="8sp" />
+          android:textSize="10sp" />
       <TextView
           android:id="@+id/layp_cal_w5"
           android:layout_width="0dp"
@@ -126,7 +126,7 @@ inflate one). -->
           android:includeFontPadding="false"
           android:fontFamily="sans-serif-medium"
           android:textColor="@color/layp_muted"
-          android:textSize="8sp" />
+          android:textSize="10sp" />
       <TextView
           android:id="@+id/layp_cal_w6"
           android:layout_width="0dp"
@@ -136,7 +136,7 @@ inflate one). -->
           android:includeFontPadding="false"
           android:fontFamily="sans-serif-medium"
           android:textColor="@color/layp_muted"
-          android:textSize="8sp" />
+          android:textSize="10sp" />
     </LinearLayout>
 
       <LinearLayout
@@ -160,7 +160,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a0"
@@ -192,7 +192,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a1"
@@ -224,7 +224,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a2"
@@ -256,7 +256,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a3"
@@ -288,7 +288,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a4"
@@ -320,7 +320,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a5"
@@ -352,7 +352,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a6"
@@ -392,7 +392,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a7"
@@ -424,7 +424,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a8"
@@ -456,7 +456,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a9"
@@ -488,7 +488,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a10"
@@ -520,7 +520,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a11"
@@ -552,7 +552,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a12"
@@ -584,7 +584,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a13"
@@ -624,7 +624,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a14"
@@ -656,7 +656,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a15"
@@ -688,7 +688,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a16"
@@ -720,7 +720,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a17"
@@ -752,7 +752,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a18"
@@ -784,7 +784,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a19"
@@ -816,7 +816,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a20"
@@ -856,7 +856,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a21"
@@ -888,7 +888,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a22"
@@ -920,7 +920,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a23"
@@ -952,7 +952,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a24"
@@ -984,7 +984,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a25"
@@ -1016,7 +1016,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a26"
@@ -1048,7 +1048,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a27"
@@ -1088,7 +1088,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a28"
@@ -1120,7 +1120,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a29"
@@ -1152,7 +1152,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a30"
@@ -1184,7 +1184,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a31"
@@ -1216,7 +1216,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a32"
@@ -1248,7 +1248,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a33"
@@ -1280,7 +1280,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a34"
@@ -1320,7 +1320,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a35"
@@ -1352,7 +1352,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a36"
@@ -1384,7 +1384,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a37"
@@ -1416,7 +1416,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a38"
@@ -1448,7 +1448,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a39"
@@ -1480,7 +1480,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a40"
@@ -1512,7 +1512,7 @@ inflate one). -->
               android:layout_height="wrap_content"
               android:includeFontPadding="false"
               android:textColor="@color/layp_text"
-              android:textSize="9sp" />
+              android:textSize="12sp" />
 
           <ImageView
               android:id="@+id/layp_cal_a41"
@@ -1554,7 +1554,7 @@ inflate one). -->
         android:maxLines="1"
         android:autoSizeTextType="uniform"
         android:autoSizeMinTextSize="8sp"
-        android:autoSizeMaxTextSize="13sp"
+        android:autoSizeMaxTextSize="15sp"
         android:autoSizeStepGranularity="1sp" />
 
     <TextView

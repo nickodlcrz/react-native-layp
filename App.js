@@ -12,10 +12,9 @@ import { ListTodo, Wallet, Settings as GearIcon, Bell, X, Lock, Home, Graduation
 import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_SAVINGS_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS, INCOME_CATEGORIES, CATEGORIES } from "./src/theme";
 import Reanimated, { FadeOut } from "react-native-reanimated";
 import { DURATION } from "./src/animation";
-import LiquidGlass from "./src/components/LiquidGlass";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { loadState, saveState, clearUnreadableLegacyState } from "./src/storage";
-import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, cancelTodoAlarm, rescheduleTodoNotifications, rescheduleDailyBudgetNotification, rescheduleDateNotifications, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, TODO_STARTED_YES_ACTION, TODO_STARTED_NOT_YET_ACTION, TODO_PASSED_YES_ACTION, TODO_PASSED_NOT_YET_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener, sweepExpiredDailyNotifications } from "./src/notifications";
+import { loadState, saveState, clearUnreadableLegacyState, flushSaveState } from "./src/storage";
+import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, cancelTodoAlarm, rescheduleTodoNotifications, rescheduleTodoAlarm, scheduleItemNotification, rescheduleDailyBudgetNotification, rescheduleDateNotifications, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, TODO_STARTED_YES_ACTION, TODO_STARTED_NOT_YET_ACTION, TODO_PASSED_YES_ACTION, TODO_PASSED_NOT_YET_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener, sweepExpiredDailyNotifications } from "./src/notifications";
 import { isScheduledPopupDue, markScheduledPopupShown, isFrequencyPopupDue, isIntervalPopupDue, markFrequencyPopupShown } from "./src/reminderLogic";
 import { todayISO, daysUntil, fmtDateLong, uid, computeAccountBalance, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest, accrueAccountInterest } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
@@ -23,7 +22,7 @@ import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
 import { isNativeAlarmAvailable, getAlarmStatus, openExactAlarmSettings, openBatteryOptimizationSettings } from "./modules/layp-alarm";
 import { isNativeWidgetAvailable, pushWidgetSummary, getPendingWidgetItems, ackWidgetItems } from "./modules/layp-widget";
-import { buildWidgetSummary, pendingToExpenses, pendingToMoney, pendingToTodos, applyTaskOps } from "./src/widgetSummary";
+import { buildWidgetSummary, pendingToExpenses, pendingToMoney, pendingToTodos, applyTaskOps, pendingToReminders, applyClassSuspends } from "./src/widgetSummary";
 import { buildWidgetEvents } from "./src/widgetEvents";
 import { entryRepeat, entryKind } from "./src/gfDates";
 import { loadWidgetPrefs, saveWidgetPrefs, DEFAULT_WIDGET_PREFS } from "./src/widgetPrefs";
@@ -33,7 +32,6 @@ import { peso } from "./src/utils";
 import LockScreen from "./src/screens/LockScreen";
 import RecoveryScreen from "./src/screens/RecoveryScreen";
 import ClassAlarmScreen from "./src/components/ClassAlarmScreen";
-import { ConfirmModalHost } from "./src/components/ConfirmModal";
 import AppDialogHost from "./src/components/AppDialog";
 import { getAutoLockMinutes, setAutoLockMinutes, AUTO_LOCK_OPTIONS, DEFAULT_AUTO_LOCK_MINUTES } from "./src/autoLockPreference";
 
@@ -721,7 +719,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
   //    show (today's total, balances, tasks, upcoming events, theme...).
   // Both are no-ops where the native module isn't linked (iOS, Expo Go).
   const widgetCtxRef = useRef({});
-  widgetCtxRef.current = { ready, needsRecovery, splits, accounts, todos, expenses, moneyLog, weeklySummaries, loans, savingsLog, transfers, cancelledClasses };
+  widgetCtxRef.current = { ready, needsRecovery, splits, accounts, todos, expenses, moneyLog, weeklySummaries, loans, savingsLog, transfers, cancelledClasses, subjects, reminders, scheduleEntries };
   // Queue ids already applied this session, so two syncs close together
   // (launch + foreground) can't apply the same item twice before it's acked.
   const widgetDoneRef = useRef(new Set());
@@ -733,8 +731,8 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
     try {
       const all = await getPendingWidgetItems();
       const fresh = (list) => list.filter((x) => !widgetDoneRef.current.has(x.id));
-      const queued = { expenses: fresh(all.expenses), money: fresh(all.money), taskOps: fresh(all.taskOps), notifActions: fresh(all.notifActions), newTasks: fresh(all.newTasks), classSuspends: fresh(all.classSuspends || []) };
-      const ackIds = [...all.expenses, ...all.money, ...all.taskOps, ...all.notifActions, ...all.newTasks, ...(all.classSuspends || [])].map((x) => x.id);
+      const queued = { expenses: fresh(all.expenses), money: fresh(all.money), taskOps: fresh(all.taskOps), notifActions: fresh(all.notifActions), newTasks: fresh(all.newTasks), classSuspends: fresh(all.classSuspends || []), newReminders: fresh(all.newReminders || []) };
+      const ackIds = [...all.expenses, ...all.money, ...all.taskOps, ...all.notifActions, ...all.newTasks, ...(all.classSuspends || []), ...(all.newReminders || [])].map((x) => x.id);
       if (ackIds.length === 0) return;
       const today = todayISO();
       const ctx = { moneyLog: c.moneyLog, expenses: c.expenses, weeklySummaries: c.weeklySummaries, loans: c.loans, savingsLog: c.savingsLog, transfers: c.transfers };
@@ -750,6 +748,8 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
           return add.length > 0 ? [...prev, ...add] : prev;
         });
       }
+
+      for (const m of queued.money) widgetDoneRef.current.add(m.id);
 
       // Spending never goes past an account's balance: the widget's dialog
       // blocks it, and this re-checks against the real balance (the widget's
@@ -772,13 +772,19 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
         showAppDialog("Some widget expenses weren't added", `${lines.join("\n")}\n\nSpending can't go past an account's balance.`);
       }
 
+      for (const e of queued.expenses) widgetDoneRef.current.add(e.id);
+
       // Tasks added from the Tasks widget: created like the in-app form
       // creates them, including scheduling their reminders.
-      const taskRes = pendingToTodos(queued.newTasks, { existingIds: new Set(c.todos.map((t) => t.id)), today });
+      const taskRes = pendingToTodos(queued.newTasks, { existingIds: new Set(c.todos.map((t) => t.id)), today, subjects: c.subjects });
       const newTodos = [];
       for (const draft of taskRes.todos) {
         let notificationIds = [];
-        try { notificationIds = await rescheduleTodoNotifications(draft, null); } catch (e) { /* the task is still created */ }
+        try {
+          const subject = c.subjects.find((s) => s.id === draft.subjectId);
+          notificationIds = await rescheduleTodoNotifications(draft, subject);
+          await rescheduleTodoAlarm(draft, subject);
+        } catch (e) { showAppDialog("Task saved", "Its reminder or alarm could not be activated. Check notification and alarm permissions, then edit the task to try again."); }
         newTodos.push({ ...draft, notificationIds });
       }
 
@@ -802,17 +808,29 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
       // A class suspended from the 2x2 widget is recorded for today using
       // the same cancelledClasses state as the in-app class alarm screen.
       if (queued.classSuspends.length > 0) {
-        setCancelledClasses((prev) => {
-          const next = [...prev];
-          for (const item of queued.classSuspends) {
-            if (!item?.entryId || !item?.date) continue;
-            if (!next.some((x) => x.date === item.date && x.entryId === item.entryId)) {
-              next.push({ date: item.date, entryId: item.entryId });
-            }
-          }
-          return next;
-        });
+        setCancelledClasses((prev) => applyClassSuspends(prev, queued.classSuspends));
+        for (const item of queued.classSuspends) {
+          const subjectId = item.subjectId || c.scheduleEntries.find((entry) => entry.id === item.entryId)?.subjectId;
+          if (subjectId && item.date === today) await suspendClassAlarmToday(subjectId, item.entryId);
+        }
+        setClassAlarm((current) => queued.classSuspends.some((item) => item.date === today && item.entryId === current?.block?.entry?.id) ? null : current);
       }
+
+      const reminderDrafts = pendingToReminders(queued.newReminders, { existingIds: new Set(c.reminders.map((r) => r.id)) });
+      const addedReminders = [];
+      for (const draft of reminderDrafts) {
+        let notificationId = null;
+        try {
+          if (draft.remindMode === "notification" || draft.remindMode === "both") {
+            notificationId = await scheduleItemNotification(null, { date: draft.remindDate, time: draft.remindTime, until: draft.remindUntil, scheduleKind: draft.scheduleKind, interval: draft.remindInterval }, "Reminder", draft.text, { type: "reminder" });
+          }
+        } catch (e) { showAppDialog("Reminder saved", "The notification could not be activated. Check notification permissions and edit the reminder to try again."); }
+        addedReminders.push({ ...draft, notificationId });
+      }
+      if (addedReminders.length) setReminders((prev) => {
+        const have = new Set(prev.map((r) => r.id));
+        return [...prev, ...addedReminders.filter((r) => !have.has(r.id))];
+      });
 
       // Notification buttons that need the app's own logic (daily budget):
       // replayed through the same handler a tap would have reached, stamped
@@ -826,10 +844,13 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
       }
 
       for (const id of ackIds) widgetDoneRef.current.add(id);
-      // Acknowledged only after saveState's debounce has had time to write
-      // it all to disk (src/storage.js SAVE_DEBOUNCE_MS = 800). If the app is
-      // killed first, the next sync skips what was already saved by id.
-      setTimeout(() => { ackWidgetItems(ackIds).catch(() => {}); }, 3000);
+      // Acknowledge after the React updates settle and the storage flush succeeds.
+      // If killed first, ids and class/date keys make replay idempotent.
+      setTimeout(async () => {
+        // A timer alone does not prove persistence: flush and acknowledge only
+        // when the storage write succeeded. Failed writes leave the queue intact.
+        if (await flushSaveState()) await ackWidgetItems(ackIds).catch(() => {});
+      }, 1200);
     } catch (e) {
       console.warn("syncWidgetItems failed", e);
     } finally {
@@ -840,7 +861,8 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
     if (!ready || needsRecovery || !isNativeWidgetAvailable()) return undefined;
     syncWidgetItems();
     const sub = AppState.addEventListener("change", (next) => { if (next === "active") syncWidgetItems(); });
-    return () => sub.remove();
+    const timer = setInterval(() => { if (AppState.currentState === "active") syncWidgetItems(); }, 2000);
+    return () => { sub.remove(); clearInterval(timer); };
   }, [ready, needsRecovery, syncWidgetItems]);
   useEffect(() => {
     if (!ready || needsRecovery || !isNativeWidgetAvailable()) return undefined;
@@ -849,6 +871,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
       const today = todayISO();
       pushWidgetSummary(buildWidgetSummary({
         expenses, splits, accounts,
+        appliedWidgetIds: [...widgetDoneRef.current],
         balanceOf: (id) => computeAccountBalance(id, ctx),
         hidden: budgetHidden,
         today,
@@ -1283,7 +1306,6 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
     <ThemeContext.Provider value={{ theme, dark }}>
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <StatusBar style={dark ? "light" : "dark"} />
-        <ConfirmModalHost />
         <AppDialogHost />
         {classAlarm && (
           <ClassAlarmScreen alarm={classAlarm} onDismiss={() => setClassAlarm(null)} onSuspend={() => handleSuspendClass(classAlarm.block)} />
@@ -1321,21 +1343,21 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
           items={remindPopupItems}
           onDismiss={() => setRemindPopupVisible(false)}
         />
-        <LiquidGlass radius={22} style={styles.headerGlass} contentStyle={styles.header}>
+        <View style={[styles.headerGlass, styles.header]}>
           <View style={styles.headerLeft}>
             <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={[styles.headerTitle, { color: theme.text }]}>LAYP</Text>
               <Text style={[styles.headerDate, { color: theme.textMuted }]}>{todayLabel}</Text>
             </View>
           </View>
           <View style={{ flexDirection: "row", gap: 7 }}>
             <Pressable onPress={onLock} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Lock app">
-              <Lock size={13} color={theme.textMuted} />
+              <Lock size={17} color={theme.textMuted} />
             </Pressable>
             {gfScreenEnabled && (
               <Pressable onPress={() => setGfOpen(true)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Open GF">
-                <Heart size={14} color={ACCENT.rose} fill={ACCENT.rose} />
+                <Heart size={18} color={ACCENT.rose} fill={ACCENT.rose} />
                 {gfMissedCount > 0 && (
                   <View style={styles.gfBadge}>
                     <Text style={styles.gfBadgeText}>{gfMissedCount > 9 ? "9+" : gfMissedCount}</Text>
@@ -1344,10 +1366,10 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
               </Pressable>
             )}
             <Pressable onPress={() => { setSettingsTab("general"); setSettingsOpen(true); }} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Settings">
-              <GearIcon size={14} color={theme.text} />
+              <GearIcon size={18} color={theme.text} />
             </Pressable>
           </View>
-        </LiquidGlass>
+        </View>
 
         {reminderBanner && (
           <View style={[styles.banner, { backgroundColor: theme.accentDark }]}>
@@ -1448,13 +1470,13 @@ const styles = StyleSheet.create({
   ambientOrbTwo: { top: 380, right: -115 },
   ambientOrbThree: { bottom: 185, left: 65 },
   ambientOrbFour: { top: 170, right: 40, width: 150, height: 150, borderRadius: 75 },
-  headerGlass: { marginHorizontal: 12, marginTop: 6, marginBottom: 8, minHeight: 54 },
+  headerGlass: { marginHorizontal: 4, marginTop: 6, marginBottom: 8, minHeight: 54 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 8, paddingBottom: 6 },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerLeft: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 },
   logo: { width: 30, height: 30, borderRadius: 8 },
-  headerTitle: { fontSize: 15, fontWeight: "800", letterSpacing: 0.5 },
-  headerDate: { fontSize: 10, marginTop: 1 },
-  themeBtn: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center", borderWidth: 1, position: "relative" },
+  headerTitle: { fontSize: 18, fontWeight: "800", letterSpacing: 0.5 },
+  headerDate: { fontSize: 11, marginTop: 1 },
+  themeBtn: { width: 40, height: 40, borderRadius: 16, alignItems: "center", justifyContent: "center", borderWidth: 1, position: "relative" },
   gfBadge: { position: "absolute", top: -3, right: -3, minWidth: 14, height: 14, borderRadius: 7, backgroundColor: ACCENT.ember, alignItems: "center", justifyContent: "center", paddingHorizontal: 2 },
   gfBadgeText: { color: "#fff", fontSize: 8, fontWeight: "800" },
   banner: { flexDirection: "row", gap: 8, borderRadius: 16, padding: 12, marginHorizontal: 16, marginBottom: 4 },

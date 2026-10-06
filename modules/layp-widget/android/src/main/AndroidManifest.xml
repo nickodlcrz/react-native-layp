@@ -2,6 +2,17 @@
 
   <application>
 
+    <receiver android:name=".BudgetWidgetProvider" android:label="@string/layp_budget_label" android:exported="true">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/layp_budget_widget_info" />
+    </receiver>
+    <receiver android:name=".ReminderWidgetProvider" android:label="@string/layp_reminder_label" android:exported="true">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/layp_reminder_widget_info" />
+    </receiver>
+    <service android:name=".BudgetListService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
+    <activity android:name=".AddReminderActivity" android:exported="false" android:taskAffinity="" android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize" android:theme="@style/LaypWidgetDialog" />
+
     <!-- Spending widget. exported must be true for the launcher to deliver
     APPWIDGET_UPDATE. The extra actions re-render it when the date or
     timezone changes, so "Spent today" rolls over at midnight even if the

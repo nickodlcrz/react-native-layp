@@ -42,4 +42,5 @@ dependencies {
   // LaypNotificationsService extends expo-notifications' NotificationsService
   // (the documented way to take over handling of notification buttons).
   implementation project(':expo-notifications')
+  implementation project(':layp-alarm')
 }

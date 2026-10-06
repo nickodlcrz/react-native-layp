@@ -45,6 +45,7 @@ data class WidgetClass(
 // src/widgetSummary.js for how it's built. Everything here is already
 // computed by the app; Kotlin only displays it.
 data class WidgetSummary(
+  val appliedWidgetIds: Set<String>,
   val date: String,          // "YYYY-MM-DD" the spending totals are for
   val todaySpent: Double,
   val todayCount: Int,
@@ -59,6 +60,7 @@ data class WidgetSummary(
   val tasks: List<WidgetTask>,
   val events: List<WidgetEvent>,    // marked on the Calendar widget
   val upcoming: List<WidgetEvent>,  // listed in the Upcoming events widget
+  val subjects: List<Choice>,
   val classes: List<WidgetClass>
 )
 
@@ -94,7 +96,13 @@ data class PendingTask(
   val title: String,
   val category: String,
   val due: String?,
-  val createdAt: Long
+  val createdAt: Long,
+  val description: String = "",
+  val subjectId: String? = null,
+  val dueTime: String? = null,
+  val alarmEnabled: Boolean = false,
+  val reminderEnabled: Boolean = true,
+  val notify: JSONObject = JSONObject().put("type", "daily").put("time", "08:00")
 )
 
 // A task action waiting for the app: a status change or completion, from a
@@ -124,13 +132,15 @@ object WidgetStore {
   private const val Q_TASK_OPS = "task_ops"
   private const val Q_NOTIF = "notif_actions"
   private const val Q_NEW_TASKS = "new_tasks"
+  private const val Q_REMINDERS = "new_reminders"
+  private const val KEY_BUDGET_HIDDEN = "budget_hidden_override"
   private const val Q_CLASS_SUSPENDS = "class_suspends"
   private const val KEY_LAST_TASK_CATEGORY = "last_task_category"
   private const val KEY_LAST_SPLIT = "last_split"
   private const val KEY_LAST_ACCOUNT = "last_account"
   private const val KEY_LAST_INCOME = "last_income"
   private const val KEY_CAL_OFFSET = "cal_offset"
-  private val QUEUES = listOf(Q_EXPENSES, Q_MONEY, Q_TASK_OPS, Q_NOTIF, Q_NEW_TASKS, Q_CLASS_SUSPENDS)
+  private val QUEUES = listOf(Q_EXPENSES, Q_MONEY, Q_TASK_OPS, Q_NOTIF, Q_NEW_TASKS, Q_CLASS_SUSPENDS, Q_REMINDERS)
 
   // Shown on the widget until the app has pushed a real summary.
   val DEFAULT_LABELS = listOf("Food", "Transportation", "School", "Shopping")
@@ -183,6 +193,7 @@ object WidgetStore {
   }
 
   private fun parseSummary(o: JSONObject): WidgetSummary = WidgetSummary(
+    appliedWidgetIds = strings(o.optJSONArray("appliedWidgetIds")).toSet(),
     date = o.optString("date", ""),
     todaySpent = o.optDouble("todaySpent", 0.0),
     todayCount = o.optInt("todayCount", 0),
@@ -213,6 +224,7 @@ object WidgetStore {
     },
     events = events(o.optJSONArray("events")),
     upcoming = events(o.optJSONArray("upcoming")),
+    subjects = choices(o.optJSONArray("subjects")),
     classes = objects(o.optJSONArray("classes")).map {
       WidgetClass(
         it.optString("entryId", ""), it.optString("subjectId", ""),
@@ -243,7 +255,8 @@ object WidgetStore {
   // Throws on malformed JSON so a bad push never overwrites a good summary.
   @Synchronized
   fun writeSummary(context: Context, json: String) {
-    JSONObject(json)
+    val incoming = JSONObject(json)
+    if (incoming.optBoolean("hidden", false) != readSummary(context).hidden) prefs(context).edit().remove(KEY_BUDGET_HIDDEN).apply()
     prefs(context).edit().putString(KEY_SUMMARY, json).apply()
   }
 
@@ -291,6 +304,7 @@ object WidgetStore {
     .put("notifActions", readArray(context, Q_NOTIF))
     .put("newTasks", readArray(context, Q_NEW_TASKS))
     .put("classSuspends", readArray(context, Q_CLASS_SUSPENDS))
+    .put("newReminders", readArray(context, Q_REMINDERS))
     .toString()
 
   fun enqueue(context: Context, e: PendingExpense) = append(
@@ -308,12 +322,18 @@ object WidgetStore {
   fun enqueueTask(context: Context, t: PendingTask) = append(
     context, Q_NEW_TASKS,
     JSONObject().put("id", t.id).put("title", t.title).put("category", t.category).put("createdAt", t.createdAt)
+      .put("description", t.description).put("subjectId", t.subjectId).put("dueTime", t.dueTime)
+      .put("alarmEnabled", t.alarmEnabled).put("reminderEnabled", t.reminderEnabled).put("notify", t.notify)
       .also { o -> if (t.due != null) o.put("dueDate", t.due) }
   )
 
-  fun enqueueClassSuspend(context: Context, entryId: String, date: String) = append(
+  fun pendingReminderCount(context: Context): Int = readArray(context, Q_REMINDERS).length()
+
+  fun enqueueReminder(context: Context, reminder: JSONObject) = append(context, Q_REMINDERS, reminder)
+
+  fun enqueueClassSuspend(context: Context, entryId: String, date: String, subjectId: String) = append(
     context, Q_CLASS_SUSPENDS,
-    JSONObject().put("id", UUID.randomUUID().toString()).put("entryId", entryId).put("date", date).put("createdAt", System.currentTimeMillis())
+    JSONObject().put("id", UUID.randomUUID().toString()).put("entryId", entryId).put("date", date).put("subjectId", subjectId).put("createdAt", System.currentTimeMillis())
   )
 
   fun enqueueTaskOp(context: Context, op: TaskOp) = append(
@@ -377,7 +397,10 @@ object WidgetStore {
         PendingTask(
           o.getString("id"), o.getString("title"), o.optString("category", "other"),
           if (o.has("dueDate")) o.optString("dueDate").ifEmpty { null } else null,
-          o.optLong("createdAt", 0L)
+          o.optLong("createdAt", 0L),
+          o.optString("description", ""), o.optString("subjectId", "").ifEmpty { null },
+          o.optString("dueTime", "").ifEmpty { null }, o.optBoolean("alarmEnabled", false),
+          o.optBoolean("reminderEnabled", true), o.optJSONObject("notify") ?: JSONObject().put("type", "daily").put("time", "08:00")
         )
       )
     }
@@ -426,7 +449,7 @@ object WidgetStore {
     var total = if (summary.date == today) summary.todaySpent else 0.0
     var count = if (summary.date == today) summary.todayCount else 0
     for (p in pending(context)) {
-      if (p.date == today) {
+      if (p.date == today && p.id !in summary.appliedWidgetIds) {
         total += p.amount
         count += 1
       }
@@ -439,10 +462,11 @@ object WidgetStore {
   // account isn't known (the app hasn't synced yet), in which case nothing
   // can be enforced.
   fun availableBalance(context: Context, accountId: String): Double? {
-    val account = readSummary(context).accounts.firstOrNull { it.id == accountId } ?: return null
+    val summary = readSummary(context)
+    val account = summary.accounts.firstOrNull { it.id == accountId } ?: return null
     val base = account.balance ?: return null
-    val spent = pending(context).filter { it.account == accountId }.sumOf { it.amount }
-    val added = pendingMoney(context).filter { it.account == accountId }.sumOf { it.amount }
+    val spent = pending(context).filter { it.account == accountId && it.id !in summary.appliedWidgetIds }.sumOf { it.amount }
+    val added = pendingMoney(context).filter { it.account == accountId && it.id !in summary.appliedWidgetIds }.sumOf { it.amount }
     return base + added - spent
   }
 
@@ -467,7 +491,7 @@ object WidgetStore {
     // pushed a snapshot that includes them).
     val known = tasks.map { it.id }.toSet()
     for (n in pendingTasks(context).sortedBy { it.createdAt }) {
-      if (n.id !in known) tasks.add(WidgetTask(n.id, n.title, TaskStatus.NOT_STARTED, n.due, n.category, TaskMeta.categoryLabel(n.category), ""))
+      if (n.id !in known) tasks.add(WidgetTask(n.id, n.title, TaskStatus.NOT_STARTED, n.due, n.category, TaskMeta.categoryLabel(n.category), readSummary(context).subjects.firstOrNull { it.id == n.subjectId }?.label.orEmpty()))
     }
     for (op in taskOps(context).sortedBy { it.at }) {
       val i = tasks.indexOfFirst { it.id == op.taskId }
@@ -493,6 +517,12 @@ object WidgetStore {
   fun upcomingWindow(context: Context): List<WidgetEvent> {
     val (start, end) = upcomingRange()
     return readSummary(context).upcoming.filter { it.date >= start && it.date <= end }
+  }
+
+  // The budget widget has its own privacy override; app hide-money is always respected.
+  fun budgetHidden(context: Context): Boolean = prefs(context).getBoolean(KEY_BUDGET_HIDDEN, readSummary(context).hidden)
+  fun toggleBudgetHidden(context: Context) {
+    prefs(context).edit().putBoolean(KEY_BUDGET_HIDDEN, !budgetHidden(context)).apply()
   }
 
   // --- calendar month browsing ---

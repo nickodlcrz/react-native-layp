@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/layp_budget_account" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="10dp" android:background="@drawable/layp_widget_chip_bg_dark">
+  <TextView android:id="@+id/layp_budget_account_name" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#CCFFFFFF" android:textSize="12sp" android:maxLines="2" />
+  <TextView android:id="@+id/layp_budget_account_amount" android:layout_width="match_parent" android:layout_height="28dp" android:textColor="#FFFFFF" android:fontFamily="sans-serif-medium" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="10sp" android:autoSizeMaxTextSize="20sp" android:autoSizeStepGranularity="1sp" android:maxLines="1" />
+</LinearLayout>

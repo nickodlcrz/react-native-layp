@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, Pressable, Animated, StyleSheet } from "react-native";
+import { View, Text, Pressable, Animated, StyleSheet, AccessibilityInfo } from "react-native";
 import { ACCENT } from "../theme";
 import LiquidGlass from "./LiquidGlass";
 
@@ -12,6 +12,12 @@ import LiquidGlass from "./LiquidGlass";
 // a 5th tab later needs no changes here, just a longer `tabs` array.
 export default function TabBar({ tabs, activeKey, onChange, theme }) {
   const [barWidth, setBarWidth] = useState(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => sub.remove();
+  }, []);
   const indicatorX = useRef(new Animated.Value(0)).current;
   const activeIndex = Math.max(0, tabs.findIndex((t) => t.key === activeKey));
   const tabWidth = barWidth / (tabs.length || 1);
@@ -25,7 +31,7 @@ export default function TabBar({ tabs, activeKey, onChange, theme }) {
   useEffect(() => {
     if (!barWidth) return;
     const toValue = activeIndex * tabWidth + 5;
-    if (!didInitialize.current) {
+    if (!didInitialize.current || reduceMotion) {
       indicatorX.setValue(toValue);
       didInitialize.current = true;
       return;
@@ -40,7 +46,7 @@ export default function TabBar({ tabs, activeKey, onChange, theme }) {
     // so depending on both would just double-fire this on every layout --
     // activeIndex is the only other thing that should retrigger the slide.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex, barWidth]);
+  }, [activeIndex, barWidth, reduceMotion]);
 
   return (
     <LiquidGlass radius={26} style={styles.glassWrap} contentStyle={styles.wrap} testID="layp-tabbar">
@@ -59,19 +65,20 @@ export default function TabBar({ tabs, activeKey, onChange, theme }) {
         />
       )}
       {tabs.map((t) => (
-        <TabButton key={t.key} tab={t} active={t.key === activeKey} onPress={() => onChange(t.key)} theme={theme} />
+        <TabButton key={t.key} tab={t} active={t.key === activeKey} onPress={() => onChange(t.key)} theme={theme} reduceMotion={reduceMotion} />
       ))}
     </LiquidGlass>
   );
 }
 
-function TabButton({ tab, active, onPress, theme }) {
+function TabButton({ tab, active, onPress, theme, reduceMotion }) {
   // A small press-in/press-out bounce on the icon+label, independent of
   // the indicator's own slide animation -- makes tapping a tab that's
   // already active (or a fast double-tap while the indicator is still
   // mid-slide) still feel responsive instead of visually inert.
   const scale = useRef(new Animated.Value(1)).current;
   function handlePress() {
+    if (reduceMotion) { onPress(); return; }
     Animated.sequence([
       Animated.timing(scale, { toValue: 0.88, duration: 70, useNativeDriver: true }),
       Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 140 }),
@@ -94,7 +101,7 @@ function TabButton({ tab, active, onPress, theme }) {
       hitSlop={{ top: 6, bottom: 6 }}
     >
       <Animated.View style={{ transform: [{ scale }], alignItems: "center", gap: 2 }}>
-        <Icon size={17} color={active ? theme.text : theme.textMuted} strokeWidth={active ? 2.4 : 2} />
+        <Icon size={20} color={active ? theme.text : theme.textMuted} strokeWidth={active ? 2.4 : 2} />
         <Text style={[styles.label, { color: active ? theme.text : theme.textMuted }]} numberOfLines={1}>
           {tab.label}
         </Text>
@@ -139,6 +146,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
   },
-  label: { fontSize: 8.5, fontWeight: "700" },
+  label: { fontSize: 11, fontWeight: "700" },
   dot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
 });

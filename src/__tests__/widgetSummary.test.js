@@ -288,3 +288,19 @@ describe("buildWidgetSummary task details and per-widget events", () => {
     expect(s.upcoming[0].title).toBe("B");
   });
 });
+
+
+describe("expanded widget capture", () => {
+  test("preserves description, linked subject, reminders and deadline alarm", () => {
+    const task = pendingToTodos([{ id: "new", title: "Lab", description: "Read chapter 2", category: "school", subjectId: "ee", dueDate: "2026-10-12", dueTime: "14:30", alarmEnabled: true, reminderEnabled: true, notify: { type: "weekly", weekdays: [2, 4, 2], time: "09:15" } }], { subjects: [{ id: "ee" }] }).todos[0];
+    expect(task).toMatchObject({ description: "Read chapter 2", subjectId: "ee", dueTime: "14:30", alarmEnabled: true, notify: { type: "weekly", weekdays: [2, 4], time: "09:15" } });
+  });
+  test("drops invalid deadlines and cannot arm an undated alarm", () => {
+    const task = pendingToTodos([{ id: "n", title: "Undated", dueDate: "2026-02-30", dueTime: "25:00", alarmEnabled: true, subjectId: "gone", reminderEnabled: false, notify: { type: "once", time: "08:00" } }]).todos[0];
+    expect(task).toMatchObject({ dueDate: null, dueTime: null, alarmEnabled: false, subjectId: null, reminderEnabled: false, notify: { type: "daily", time: "08:00" } });
+  });
+  test("scrolling widgets retain more than sixty open tasks", () => {
+    const todos = Array.from({ length: 100 }, (_, i) => ({ id: String(i), title: `Task ${i}` }));
+    expect(buildWidgetSummary({ todos, today }).tasks).toHaveLength(100);
+  });
+});

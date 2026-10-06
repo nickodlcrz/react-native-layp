@@ -50,7 +50,7 @@ export function topLabels(expenses, today, limit = WIDGET_LABEL_COUNT) {
 }
 
 export const MAX_RECENT_EXPENSES = 300;
-export const MAX_WIDGET_TASKS = 60;
+// Native ListViews scroll; retain every open task rather than truncating the list.
 
 const STATUS_ORDER = ["not_started", "wip", "to_pass"];
 
@@ -59,7 +59,7 @@ const STATUS_ORDER = ["not_started", "wip", "to_pass"];
 // math) so this stays free of app dependencies.
 export function buildWidgetSummary({
   expenses = [], splits = [], accounts = [], balanceOf = () => 0, hidden = false, today, currency = "\u20B1",
-  dark = false, incomeCategories = [], todos = [], events = [], upcoming = [], subjects = [], categories = [], academicPeriods = [], scheduleEntries = [], cancelledClasses = [],
+  dark = false, incomeCategories = [], todos = [], events = [], upcoming = [], subjects = [], categories = [], academicPeriods = [], scheduleEntries = [], cancelledClasses = [], appliedWidgetIds = [],
 }) {
   const todays = expenses.filter((e) => e.date === today);
   const recent = [...expenses]
@@ -71,7 +71,6 @@ export function buildWidgetSummary({
   const tasks = todos
     .filter((t) => !t.completed)
     .sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"))
-    .slice(0, MAX_WIDGET_TASKS)
     .map((t) => ({ id: t.id, title: t.title || "Untitled task", status: STATUS_ORDER.includes(t.status) ? t.status : "not_started", due: t.dueDate || null, category: t.category || "", categoryLabel: categoryLabel(t), subject: subjectCode(t) }));
   const activePeriod = getActivePeriod(academicPeriods);
   const activeSubjects = activePeriod ? subjectsForPeriod(subjects, activePeriod.id) : [];
@@ -119,6 +118,7 @@ export function buildWidgetSummary({
   }
   return {
     date: today,
+    appliedWidgetIds,
     todaySpent: round2(todays.reduce((sum, e) => sum + Number(e.amount || 0), 0)),
     todayCount: todays.length,
     hidden: !!hidden,
@@ -129,6 +129,7 @@ export function buildWidgetSummary({
     accounts: accounts.map((a) => ({ id: a.id, label: a.label, balance: round2(balanceOf(a.id)) })),
     incomeCategories: incomeCategories.filter((c) => c.id !== "interest").map((c) => ({ id: c.id, label: c.label })),
     recent,
+    subjects: subjects.map((s) => ({ id: s.id, label: s.code || s.description || "Subject" })),
     tasks,
     classes,
     events,     // marked on the Calendar widget
@@ -245,12 +246,13 @@ const TASK_CATEGORIES = ["school", "errands", "shopping", "other"];
 // Tasks added from the Tasks widget's (+) button -> real LAYP tasks, shaped
 // exactly like the ones the in-app form creates (see saveTodo / TodoForm in
 // TodoScreen.js) with the form's own defaults: not started, no description, a
-// daily 08:00 reminder, no alarm, no subtasks. The widget's id is kept as the
+// daily 08:00 reminder, no alarm, no subtasks for older widget entries.
+// New entries preserve the expanded form fields. The widget's id is kept as the
 // task id, so absorbing the same entry twice can't create a duplicate.
 // `notificationIds` is left empty -- the caller schedules the reminders and
 // fills it in. Returns { todos, ackIds } (ackIds covers invalid ones too, so
 // the queue always drains).
-export function pendingToTodos(pending, { existingIds = new Set(), today } = {}) {
+export function pendingToTodos(pending, { existingIds = new Set(), today, subjects = [] } = {}) {
   const todos = [];
   const seen = new Set();
   for (const p of pending) {
@@ -261,19 +263,74 @@ export function pendingToTodos(pending, { existingIds = new Set(), today } = {})
     todos.push({
       id: p.id,
       title,
-      description: "",
+      description: typeof p.description === "string" ? p.description.trim() : "",
       category: TASK_CATEGORIES.includes(p.category) ? p.category : "other",
       status: "not_started",
-      subjectId: null,
-      dueDate: /^\d{4}-\d{2}-\d{2}$/.test(p.dueDate || "") ? p.dueDate : null,
-      dueTime: null,
-      alarmEnabled: false,
-      reminderEnabled: true,
-      notify: { type: "daily", time: "08:00" },
+      subjectId: p.category === "school" && subjects.some((s) => s.id === p.subjectId) ? p.subjectId : null,
+      dueDate: validDate(p.dueDate) ? p.dueDate : null,
+      dueTime: validDate(p.dueDate) && validTime(p.dueTime) ? p.dueTime : null,
+      alarmEnabled: p.alarmEnabled === true && validDate(p.dueDate) && validTime(p.dueTime),
+      reminderEnabled: p.reminderEnabled !== false,
+      notify: normalizeTaskNotify(p.notify, validDate(p.dueDate)),
       subtasks: [],
       completed: false,
       notificationIds: [],
     });
   }
   return { todos, ackIds: pending.filter((p) => p && p.id).map((p) => p.id) };
+}
+
+function validDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
+  const d = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+function validTime(value) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(value || ""); }
+
+function normalizeTaskNotify(value, hasDate) {
+  const n = value && typeof value === "object" ? value : {};
+  const type = ["once", "daily", "weekly", "interval", "custom"].includes(n.type) ? n.type : "daily";
+  if (type === "weekly") {
+    const weekdays = [...new Set((Array.isArray(n.weekdays) ? n.weekdays : []).filter((d) => Number.isInteger(d) && d >= 1 && d <= 7))];
+    return { type: weekdays.length ? "weekly" : "daily", time: validTime(n.time) ? n.time : "08:00", ...(weekdays.length ? { weekdays } : {}) };
+  }
+  if (type === "interval") return { type, intervalHours: Math.max(1, Math.min(24, Number(n.intervalHours) || 1)) };
+  if (type === "custom") {
+    const times = [...new Set((Array.isArray(n.times) ? n.times : []).filter(validTime))].sort();
+    return times.length ? { type, times } : { type: "daily", time: "08:00" };
+  }
+  return { type: type === "once" && !hasDate ? "daily" : type, time: validTime(n.time) ? n.time : "08:00" };
+}
+
+// Durable native queue -> the same reminder shape as RememberList's form.
+export function pendingToReminders(pending, { existingIds = new Set() } = {}) {
+  const reminders = [];
+  const seen = new Set(existingIds);
+  for (const p of pending) {
+    if (!p?.id || seen.has(p.id) || typeof p.text !== "string" || !p.text.trim()) continue;
+    seen.add(p.id);
+    const mode = ["none", "notification", "popup", "both"].includes(p.remindMode) ? p.remindMode : "none";
+    const interval = mode !== "none" && p.scheduleKind === "interval";
+    const frequency = ["always", "1h", "3h", "custom"].includes(p.remindInterval?.frequency) ? p.remindInterval.frequency : "1h";
+    const date = !interval && mode !== "none" && validDate(p.remindDate) ? p.remindDate : null;
+    const until = !date && !interval && mode !== "none" && validDate(p.remindUntil) ? p.remindUntil : null;
+    reminders.push({
+      id: p.id, text: p.text.trim(), tags: [...new Set((Array.isArray(p.tags) ? p.tags : []).filter((t) => typeof t === "string").map((t) => t.trim()).filter(Boolean))],
+      remindMode: mode, scheduleKind: interval ? "interval" : "time",
+      remindDate: date, remindTime: !interval && mode !== "none" ? (validTime(p.remindTime) ? p.remindTime : "09:00") : null,
+      remindUntil: until,
+      remindInterval: interval ? { frequency: frequency === "always" && mode !== "popup" ? "1h" : frequency, customHours: frequency === "custom" ? Math.max(1 / 60, Math.min(24 * 365, Number(p.remindInterval.customHours) || 1)) : null } : null,
+      createdAt: Number(p.createdAt) || Date.now(), done: false, popupFired: false, lastPopupShownDate: null, notificationId: null,
+    });
+  }
+  return reminders;
+}
+
+export function applyClassSuspends(previous, pending) {
+  const next = [...previous];
+  for (const p of pending) {
+    if (!p?.entryId || !validDate(p.date) || next.some((c) => c.entryId === p.entryId && c.date === p.date)) continue;
+    next.push({ entryId: p.entryId, date: p.date });
+  }
+  return next;
 }

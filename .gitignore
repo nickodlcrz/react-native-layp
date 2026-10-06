@@ -13,3 +13,5 @@ web-build/
 /android/
 /ios/
 modules/layp-alarm/android/build/
+
+modules/layp-widget/android/build/

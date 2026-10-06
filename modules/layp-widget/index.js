@@ -34,7 +34,7 @@ export async function pushWidgetSummary(summary) {
   return true;
 }
 
-const EMPTY_PENDING = { expenses: [], money: [], taskOps: [], notifActions: [], newTasks: [] };
+const EMPTY_PENDING = { expenses: [], money: [], taskOps: [], notifActions: [], newTasks: [], classSuspends: [], newReminders: [] };
 
 // Everything waiting for the app:
 //   expenses      [{ id, amount, name, label, splitId, account, date, createdAt }]
@@ -53,6 +53,8 @@ export async function getPendingWidgetItems() {
       taskOps: Array.isArray(parsed.taskOps) ? parsed.taskOps : [],
       notifActions: Array.isArray(parsed.notifActions) ? parsed.notifActions : [],
       newTasks: Array.isArray(parsed.newTasks) ? parsed.newTasks : [],
+      classSuspends: Array.isArray(parsed.classSuspends) ? parsed.classSuspends : [],
+      newReminders: Array.isArray(parsed.newReminders) ? parsed.newReminders : [],
     };
   } catch (e) {
     return EMPTY_PENDING;

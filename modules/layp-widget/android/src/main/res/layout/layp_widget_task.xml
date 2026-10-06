@@ -86,7 +86,10 @@ filled by TaskListService. -->
         android:layout_height="match_parent"
         android:divider="@null"
         android:dividerHeight="0dp"
-        android:scrollbars="none" />
+        android:scrollbars="vertical"
+        android:fadeScrollbars="false"
+        android:scrollbarSize="3dp"
+        android:overScrollMode="ifContentScrolls" />
 
     <TextView
         android:id="@+id/layp_task_empty"

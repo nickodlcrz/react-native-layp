@@ -5,7 +5,9 @@ Native Kotlin for everything LAYP does outside the app's own screens.
 | Widget / feature | What it does |
 | --- | --- |
 | **Spending** (4x2) | Today's total and your most-used labels as compact quick-log chips with vector icons. Buttons: **+** log an expense, **money** receive/add money, **search** past expenses. |
-| **Tasks** (4x4 and 4x6) | Your open tasks, soonest due first, each with its category and subject code. The **+** in the header opens an "Add task" sheet. Tap a task's **circle** to move it to its next status (Not starting yet, Work in progress, To pass, then completed). The circle is a clean static ring and each task has the app's blinking urgency dot: fast red, medium yellow, slow green. |
+| **Account budget** (4x2) | Every account’s available balance in a scrollable two-column grid. Hide/Show masks amounts; an app privacy change resets the widget override. |
+| **Add reminder** (2x2) | Opens the General / Remember editor with text, tags, note-only/notification/popup/both delivery, dated or daily schedules, daily stop date, and interval/custom-hour schedules. |
+| **Tasks** (4x4 and 4x6) | Your open tasks, soonest due first, each with its category and subject code. The **+** opens a task sheet with description, linked subject code, date/time, reminder type/time/days/interval/custom times, and deadline alarm. Both sizes scroll through all open tasks. Tap a task's **circle** to move it to its next status (Not starting yet, Work in progress, To pass, then completed). The circle is a clean static ring and each task has the app's blinking urgency dot: fast red, medium yellow, slow green. |
 | **Calendar** (4x2) | The month, maximized, with a small vector mark on each day that has something coming up (heart = dates/anniversaries/monthsaries, pencil = school work, coin = payments and loans, check = other tasks, bell = reminders), and today as a big date on a navy panel. Arrows browse months; the title returns to today. |
 | **Upcoming events** (2x2 and 4x2) | A scrollable list of the next 7 days, today included (Monday shows Monday to Sunday, Tuesday shows Tuesday to Monday), sliding forward at midnight. |
 | **Quiet notification buttons** | "Yes, started" / "Not yet" / "Yes, passed" / "Save to savings" / "Keep for tomorrow" no longer open the app. |
@@ -73,8 +75,8 @@ never share a database. They meet in a small SharedPreferences store
  buildWidgetSummary()  --pushSummary-->     summary: today's spend, balances, categories,
                                             accounts, recent expenses, open tasks, events,
                                             theme
- syncWidgetItems()     <--getPending----    four queues, each entry with its own id:
-                       --ackPending--->      expenses, money, taskOps, notifActions
+ syncWidgetItems()     <--getPending----    durable queues, each entry with its own id:
+                       --ackPending--->      expenses, money, taskOps, notifActions, newTasks, classSuspends, newReminders
 ```
 
 - **Spending dialog** (`QuickLogActivity`, two modes) and **search**
@@ -102,7 +104,7 @@ never share a database. They meet in a small SharedPreferences store
   `NotificationsService.onReceiveNotificationResponse` and
   `findDesignatedBroadcastReceiver` still behave the same.
 - **Safety net:** the app reads a queue, saves, and only then acknowledges it
-  (a few seconds later, after its debounced save reached disk). Every entry has
+  (after an explicit successful storage flush). Every entry has
   its own id, so if the app is killed in between, the next sync skips what was
   already saved instead of duplicating it.
 
@@ -138,7 +140,7 @@ before there (notification buttons then reach the app's own listener, without
 bringing it to the foreground).
 
 Add a widget: long-press the home screen, **Widgets**, then **LAYP Spending**,
-**LAYP Tasks (4x4 / 4x6)**, **LAYP Calendar** or **LAYP Upcoming (2x2 / 4x2)**.
+**LAYP Tasks (4x4 / 4x6)**, **LAYP Calendar**, **LAYP Upcoming (2x2 / 4x2)**, **LAYP Account Budget (4x2)**, or **LAYP Add Reminder (2x2)**. Settings > Widgets also offers launcher pin requests.
 
 ## Limits worth knowing
 
@@ -157,3 +159,12 @@ Add a widget: long-press the home screen, **Widgets**, then **LAYP Spending**,
 - GF dates appear on the Calendar and Upcoming widgets by the label you typed,
   so they show on the home screen. Switch Dates / Anniversaries / Monthsaries
   off in gear > Widgets to keep them off.
+
+
+## Capture and cancellation behavior
+
+- Class cancellation is queued natively and read by the JavaScript bridge’s `classSuspends` field. It updates the shared `cancelledClasses` state used by Home and School on launch/foreground (or within two seconds while LAYP is active). The native ringing alarm is marked skipped immediately, even if the app is closed; the recurring schedule is preserved.
+- New task and reminder drafts are durable and idempotent. Scheduling uses the same app notification/alarm functions as the in-app forms. **Open LAYP after capture to activate scheduled notifications and alarms.** The widget editors display this requirement; popup delivery always requires LAYP to run. Expo Go cannot display the native widgets.
+- Calendar event days have a subtle highlighted background. Larger widgets show event icons; shorter placements prioritize readable date numbers. All surfaces remain dark and transparent.
+- Budget calculations include pending widget income and expenses, without counting an absorbed transaction twice while acknowledgement is pending.
+- Rebuild/install the Android app to register the two new providers and editors. JavaScript reload alone cannot update native widgets.

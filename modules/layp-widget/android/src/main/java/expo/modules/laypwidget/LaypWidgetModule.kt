@@ -53,6 +53,8 @@ class LaypWidgetModule : Module() {
       val target = when (kind) {
         "tasks4x4" -> TaskWidget4x4Provider::class.java
         "tasks4x6" -> TaskWidget4x6Provider::class.java
+        "budget4x2" -> BudgetWidgetProvider::class.java
+        "reminder2x2" -> ReminderWidgetProvider::class.java
         "calendar" -> CalendarWidgetProvider::class.java
         "upcoming2x2" -> UpcomingWidget2x2Provider::class.java
         "upcoming4x2" -> UpcomingWidget4x2Provider::class.java
