@@ -39,7 +39,8 @@ data class WidgetClass(
   val end: String,
   val startMin: Int,
   val endMin: Int,
-  val dayLabel: String
+  val dayLabel: String,
+  val days: List<Int> = emptyList()
 )
 
 // What LAYP (JS) last told the widgets about the world -- see
@@ -62,7 +63,9 @@ data class WidgetSummary(
   val events: List<WidgetEvent>,    // marked on the Calendar widget
   val upcoming: List<WidgetEvent>,  // listed in the Upcoming events widget
   val subjects: List<Choice>,
-  val classes: List<WidgetClass>
+  val classes: List<WidgetClass>,
+  val classSchedule: List<WidgetClass> = emptyList(),
+  val cancelledClassKeys: Set<String> = emptySet()
 )
 
 // An expense logged from the widget that the app hasn't absorbed yet.
@@ -227,15 +230,20 @@ object WidgetStore {
     events = events(o.optJSONArray("events")),
     upcoming = events(o.optJSONArray("upcoming")),
     subjects = choices(o.optJSONArray("subjects")),
-    classes = objects(o.optJSONArray("classes")).map {
+    cancelledClassKeys = strings(o.optJSONArray("cancelledClassKeys")).toSet(),
+    classSchedule = parseClasses(o.optJSONArray("classSchedule")),
+    classes = parseClasses(o.optJSONArray("classes"))
+  )
+
+  private fun parseClasses(arr: JSONArray?): List<WidgetClass> = objects(arr).map {
       WidgetClass(
         it.optString("entryId", ""), it.optString("subjectId", ""),
         it.optString("code", "Class"), it.optString("description", ""), it.optString("room", ""),
         it.optString("start", ""), it.optString("end", ""),
-        it.optInt("startMin", 0), it.optInt("endMin", 0), it.optString("dayLabel", "Today")
+        it.optInt("startMin", 0), it.optInt("endMin", 0), it.optString("dayLabel", "Today"),
+        it.optJSONArray("days")?.let { days -> (0 until days.length()).map { i -> days.optInt(i) }.filter { day -> day in 1..7 } } ?: emptyList()
       )
     }
-  )
 
   private fun events(arr: JSONArray?): List<WidgetEvent> = objects(arr).map {
     WidgetEvent(

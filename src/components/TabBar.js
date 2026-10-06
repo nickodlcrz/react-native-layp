@@ -49,7 +49,7 @@ export default function TabBar({ tabs, activeKey, onChange, theme }) {
   }, [activeIndex, barWidth, reduceMotion]);
 
   return (
-    <LiquidGlass radius={26} style={styles.glassWrap} contentStyle={styles.wrap} testID="layp-tabbar">
+    <LiquidGlass background="transparent" radius={26} style={styles.glassWrap} contentStyle={styles.wrap} testID="layp-tabbar">
       <View onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)} style={StyleSheet.absoluteFillObject} />
       {barWidth > 0 && (
         <Animated.View
@@ -58,7 +58,7 @@ export default function TabBar({ tabs, activeKey, onChange, theme }) {
             styles.indicator,
             {
               width: tabWidth - 10,
-              backgroundColor: theme.bg,
+              backgroundColor: theme.text + "10",
               transform: [{ translateX: indicatorX }],
             },
           ]}
@@ -116,11 +116,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginBottom: 8,
     minHeight: 50,
-    shadowColor: "#000",
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
+    backgroundColor: "transparent",
+    elevation: 0,
   },
   wrap: {
     flexDirection: "row",

@@ -113,16 +113,25 @@ class ClassWidgetProvider : AppWidgetProvider() {
 }
 
 internal object ClassDisplay {
-  fun remaining(context: Context): List<WidgetClass> {
+  fun today(context: Context): List<WidgetClass> {
     val summary = WidgetStore.readSummary(context)
-    val suspended = WidgetStore.pendingClassSuspends(context).map { it.second }.toSet()
-    val now = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
-    return summary.classes.filterNot { "${summary.date}|${it.entryId}" in suspended }
-      .filter { it.dayLabel != "Today" || (summary.date == WidgetStore.today() && it.endMin > now) }
+    val date = WidgetStore.today()
+    val cancelled = summary.cancelledClassKeys + WidgetStore.pendingClassSuspends(context).map { it.second }
+    return if (summary.classSchedule.isNotEmpty()) {
+      ClassSchedule.today(summary.classSchedule, date, Calendar.getInstance().get(Calendar.DAY_OF_WEEK), cancelled)
+    } else {
+      // Old app snapshots are safe only on their original day; never label
+      // tomorrow's schedule as today's classes.
+      summary.classes.filter { summary.date == date && it.dayLabel == "Today" && "$date|${it.entryId}" !in cancelled }
+    }
+  }
+  fun remaining(context: Context): List<WidgetClass> {
+    val minute = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
+    return ClassSchedule.remaining(today(context), minute)
   }
   fun ongoing(context: Context): WidgetClass? {
-    val now = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
-    return remaining(context).firstOrNull { it.dayLabel == "Today" && now >= it.startMin && now < it.endMin }
+    val minute = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
+    return ClassSchedule.ongoing(today(context), minute)
   }
   fun time(value: String): String {
     val parts = value.split(":")
@@ -139,11 +148,12 @@ private object ClassRenderer {
     SquareWidget.apply(context, v, widgetId, R.id.layp_class_square)
     val ongoing = ClassDisplay.ongoing(context)
     val classes = ClassDisplay.remaining(context)
-    v.setTextViewText(R.id.layp_class_header_state, if (ongoing != null) "LIVE" else classes.firstOrNull()?.dayLabel.orEmpty())
+    v.setTextViewText(R.id.layp_class_header_state, if (ongoing != null) "LIVE" else if (classes.isNotEmpty()) "${classes.size} left" else "")
+    v.setTextViewText(R.id.layp_class_date, java.text.SimpleDateFormat("EEEE · MMM d", Locale.US).format(Calendar.getInstance().time))
     v.setTextColor(R.id.layp_class_header_state, if (ongoing != null) 0xFF9CE8CC.toInt() else 0xCCFFFFFF.toInt())
     v.setViewVisibility(R.id.layp_class_list, if (classes.isNotEmpty()) View.VISIBLE else View.GONE)
     v.setViewVisibility(R.id.layp_class_empty, if (classes.isEmpty()) View.VISIBLE else View.GONE)
-    v.setTextViewText(R.id.layp_class_empty, "No more classes today")
+    v.setTextViewText(R.id.layp_class_empty, if (ClassDisplay.today(context).isEmpty()) "No classes today\nEnjoy your day" else "All classes finished\nYou’re done for today")
     val service = Intent(context, ClassListService::class.java).apply {
       putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
       data = android.net.Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
@@ -174,7 +184,7 @@ class ClassListFactory(private val context: Context) : android.widget.RemoteView
     val live = ongoing
     if (live != null) {
       val v = RemoteViews(context.packageName, R.layout.layp_widget_class_live)
-      v.setTextViewText(R.id.layp_class_live_title, "${live.code} is ongoing right now")
+      v.setTextViewText(R.id.layp_class_live_title, live.code)
       v.setTextViewText(R.id.layp_class_live_time, "${ClassDisplay.time(live.start)} – ${ClassDisplay.time(live.end)}")
       val end = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, live.endMin / 60); set(Calendar.MINUTE, live.endMin % 60); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
       v.setChronometerCountDown(R.id.layp_class_remaining, true)
@@ -229,7 +239,7 @@ class ClassWidgetActionActivity : android.app.Activity() {
 
     val summary = WidgetStore.readSummary(this)
     val p = Palette.resolve(this, summary.theme)
-    val cls = summary.classes.firstOrNull { it.entryId == entryId }
+    val cls = ClassDisplay.today(this).firstOrNull { it.entryId == entryId }
     val classLabel = cls?.code?.takeIf { it.isNotBlank() } ?: "this class"
     val detail = cls?.let {
       listOf(it.description, "${it.start}–${it.end}").filter { part -> part.isNotBlank() }.joinToString(" · ")
@@ -325,7 +335,7 @@ class ClassWidgetActionActivity : android.app.Activity() {
   }
 
   private fun confirmCancel(entryId: String, date: String) {
-    val subjectId = WidgetStore.readSummary(this).classes.firstOrNull { it.entryId == entryId }?.subjectId ?: return
+    val subjectId = ClassDisplay.today(this).firstOrNull { it.entryId == entryId }?.subjectId ?: return
     if (date != WidgetStore.today()) { finish(); return }
     // Silence the native alarm immediately, even while React Native is closed.
     expo.modules.laypalarm.AlarmStore.setSkipToday(this, "class:$subjectId:$entryId", date)

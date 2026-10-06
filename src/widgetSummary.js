@@ -1,4 +1,4 @@
-import { blocksForWeekday, todayExpoWeekday, getActivePeriod, subjectsForPeriod, weekdayLabel } from "./school";
+import { blocksForWeekday, getActivePeriod, subjectsForPeriod, weekdayLabel, minutesSinceMidnight } from "./school";
 // Pure helpers for the Android spending widget (modules/layp-widget). No
 // React Native imports, so everything here can be unit tested on its own.
 
@@ -76,7 +76,8 @@ export function buildWidgetSummary({
   const activeSubjects = activePeriod ? subjectsForPeriod(subjects, activePeriod.id) : [];
   const activeIds = new Set(activeSubjects.map((s) => s.id));
   const activeEntries = scheduleEntries.filter((e) => activeIds.has(e.subjectId));
-  const todayId = todayExpoWeekday();
+  // Use the supplied local calendar date, not a second clock read.
+  const todayId = new Date(`${today}T12:00:00`).getDay() + 1;
   const cancelledToday = new Set(cancelledClasses.filter((c) => c.date === today).map((c) => c.entryId));
   const classBlock = (b, dayLabel = "Today") => ({
     entryId: b.entry.id,
@@ -90,6 +91,13 @@ export function buildWidgetSummary({
     endMin: b.endMin,
     dayLabel,
   });
+  // A weekly snapshot lets Android pick its own local day after midnight,
+  // without waiting for React Native to publish another summary.
+  const classSchedule = activeEntries.map((entry) => {
+    const subject = activeSubjects.find((s) => s.id === entry.subjectId);
+    return { ...classBlock({ entry, subject, startMin: minutesSinceMidnight(entry.startTime), endMin: minutesSinceMidnight(entry.endTime) }), days: (entry.days || []).filter((d) => Number.isInteger(d) && d >= 1 && d <= 7) };
+  }).filter((c) => c.startMin >= 0 && c.endMin <= 1440 && c.endMin > c.startMin);
+  const cancelledClassKeys = cancelledClasses.map((c) => `${c.date}|${c.entryId}`);
   const todayBlocks = blocksForWeekday(activeSubjects, activeEntries, todayId)
     .filter((b) => !cancelledToday.has(b.entry.id));
   const now = new Date();
@@ -132,6 +140,8 @@ export function buildWidgetSummary({
     subjects: subjects.map((s) => ({ id: s.id, label: s.code || s.description || "Subject" })),
     tasks,
     classes,
+    classSchedule,
+    cancelledClassKeys,
     events,     // marked on the Calendar widget
     upcoming,   // listed in the Upcoming events widget
   };

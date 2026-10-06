@@ -189,3 +189,15 @@ apps, which can silently stop scheduled reminders from firing:
 
 The Todo tab has an in-app banner that opens the right settings screen
 for step 1 directly.
+
+## Standalone preview APK
+
+With Java 17, the Android SDK/NDK, and the npm dependencies installed:
+
+```bash
+node scripts/build-preview-apk.js
+```
+
+This runs Android prebuild and creates a release-mode APK with an embedded JavaScript bundle at `dist/apk/LAYP-preview-4.1.2.apk`. It installs as **LAYP Preview** (`com.layp.app.preview`) alongside LAYP and uses the Android template debug signing certificate. It supports ARM64 and ARMv7 Android phones. Import a backup in the preview if you want to test with your existing data. Building an update for the original `com.layp.app` installation requires its original signing key. Set `LAYP_GRADLE_BIN` to use an installed Gradle executable instead of the wrapper.
+
+If JitPack is unavailable, install Python 3 and run `node scripts/build-preview-apk.js --source-deps`. This builds BlurView 2.0.6 and Android Image Cropper 4.3.1 from official tagged GitHub source archives, checks their pinned SHA-256 hashes, and includes their license texts in the APK. The source adapter updates build metadata for the current toolchain and adds explicit error handling for two Android 34 nullable APIs in the cropper. Generated native configuration stays under the ignored `android/` directory.
