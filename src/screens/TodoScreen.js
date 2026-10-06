@@ -18,6 +18,7 @@ import { confirmDelete } from "../components/ConfirmModal";
 import { isNativeAlarmAvailable } from "../../modules/layp-alarm";
 import EditSheet from "../components/EditSheet";
 import RememberList from "../components/RememberList";
+import LinkText from "../components/LinkText";
 import { DURATION, SPRING, useCardPressAnimation } from "../animation";
 import Reanimated, { FadeIn, FadeOut, Layout as ReanimatedLayout, useSharedValue, useAnimatedStyle, withSpring, withSequence, withTiming, withRepeat, Easing } from "react-native-reanimated";
 
@@ -44,65 +45,66 @@ function statusColor(status) {
   return opt.color;
 }
 
-// Due-date urgency, as a single tier per task:
-//  - "red": overdue, due today, or due tomorrow -- glowing + blinking red border
-//  - "yellow": due in 2 days ("less than 3 days out") -- glowing + blinking gold border
-//  - "green": finished, or status "To pass" -- solid green border, no glow/blink
-//  - "none": everything else (far off, or no due date) -- no border at all
-// "To pass" now wins over due-date urgency (checked before red/yellow) --
-// once a task has reached that stage the blinking stops and it just sits
-// green, even if it's also overdue, since "To pass" itself is the
-// more current signal about where the task actually stands.
+// The card border and the blinking dot share one color and blink speed,
+// chosen by a single tier per task (first match wins):
+//  - "none": already finished -- default look, no border, no dot
+//  - "green": status is "To pass" -- green border, green dot, SLOW blink
+//    (this wins over the deadline: a task that has reached "To pass" is
+//    on track, so it stays calm even if it is also close to due)
+//  - "red": overdue, due today, or due tomorrow -- red border, red dot,
+//    FAST blink
+//  - "yellow": due in 2 days ("less than 3 days out") -- yellow border,
+//    yellow dot, MEDIUM blink; the checkbox circle turns yellow too
+//  - "none": everything else (3+ days away, or no due date) -- default look
+// The border itself is steady; only the dot blinks.
 function urgencyTier(t, displayCompleted, dleft) {
-  if (displayCompleted || t.status === "to_pass") return "green";
-  if (dleft !== null && dleft <= 1) return "red";
-  if (dleft !== null && dleft === 2) return "yellow";
+  if (displayCompleted) return "none";
+  if (t.status === "to_pass") return "green";
+  if (dleft === null) return "none";
+  if (dleft <= 1) return "red";
+  if (dleft === 2) return "yellow";
   return "none";
 }
 
-// Drives a blinking "glow" for the red/yellow urgency tiers. The row's
-// own border is completely static (never animated) so the card's size
-// never changes and nothing around it ever shifts -- all of the
-// blink/glow motion lives on a separate halo, absolutely positioned just
-// outside the row's own edges, which can grow/fade freely without
-// affecting layout at all. The halo's own border is a fixed width too
-// (only its opacity/shadow pulse); it's what carries the effect on
-// Android, which ignores colored shadows on elevation and would
-// otherwise render this as close to invisible there.
+// Per-tier look: color plus how long one fade (out or in) takes -- a full
+// blink is two of these, so a smaller number is a faster blink.
+const URGENCY_LOOK = {
+  red: { color: ACCENT.ember, fadeMs: 280 },     // fast
+  yellow: { color: ACCENT.gold, fadeMs: 700 },   // medium
+  green: { color: ACCENT.leaf, fadeMs: 1500 },   // slow
+};
+
+// Drives the urgency indicators. The dot sits in a fixed-size slot in the
+// card's title row (see urgencySlot), so showing or hiding it never changes
+// the card's layout. Only its opacity animates. The 1px border is always reserved on the card
+// (transparent in the default tier) so a card doesn't change size when its
+// tier changes.
 function useUrgencyStyle(tier) {
-  const pulse = useSharedValue(0);
+  const blink = useSharedValue(1);
+  const look = URGENCY_LOOK[tier] || null;
+  const fadeMs = look ? look.fadeMs : 0;
   useEffect(() => {
-    if (tier === "red" || tier === "yellow") {
-      pulse.value = withRepeat(
+    if (fadeMs) {
+      // Assigning a new animation replaces the old one, so a tier change
+      // (e.g. yellow -> red as the deadline nears) switches speed cleanly.
+      blink.value = withRepeat(
         withSequence(
-          withTiming(1, { duration: 900, easing: Easing.inOut(Easing.sin) }),
-          withTiming(0, { duration: 900, easing: Easing.inOut(Easing.sin) })
+          withTiming(0.15, { duration: fadeMs, easing: Easing.inOut(Easing.sin) }),
+          withTiming(1, { duration: fadeMs, easing: Easing.inOut(Easing.sin) })
         ),
         -1,
-        true
+        false
       );
     } else {
-      pulse.value = withTiming(0, { duration: 250, easing: Easing.out(Easing.quad) });
+      blink.value = 1;
     }
-  }, [tier]);
+  }, [fadeMs]);
 
-  const rowBorderColor = tier === "red" ? ACCENT.ember : tier === "yellow" ? ACCENT.gold : tier === "green" ? ACCENT.leaf : "transparent";
-  const rowStyle = { borderWidth: tier === "none" ? 0 : 1.5, borderColor: rowBorderColor };
-  const haloColor = tier === "red" ? ACCENT.ember : ACCENT.gold;
+  const dotColor = look ? look.color : "transparent";
+  const borderColor = dotColor;
+  const dotStyle = useAnimatedStyle(() => ({ opacity: blink.value }));
 
-  const haloStyle = useAnimatedStyle(() => {
-    if (tier !== "red" && tier !== "yellow") return { opacity: 0 };
-    return {
-      opacity: 0.35 + pulse.value * 0.65,
-      shadowColor: haloColor,
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.3 + pulse.value * 0.6,
-      shadowRadius: 8 + pulse.value * 14,
-      elevation: 2 + pulse.value * 5,
-    };
-  });
-
-  return { rowStyle, haloStyle, haloColor, showHalo: tier === "red" || tier === "yellow" };
+  return { dotStyle, dotColor, borderColor, showDot: !!look };
 }
 function statusProgress(t) {
   if (t.completed) return 1;
@@ -295,7 +297,7 @@ function TodoScreen({ todos, setTodos, subjects = [], prefillSubjectId, onConsum
       initialNumToRender={12}
       maxToRenderPerBatch={10}
       windowSize={7}
-      removeClippedSubviews={Platform.OS === "android"}
+      removeClippedSubviews={false}
       ListEmptyComponent={
         <EmptyState icon={ListTodo} text={statusView === "done" ? "No finished tasks yet." : "No tasks here yet. Add one to get started."} />
       }
@@ -507,7 +509,7 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
   const dleft = t.dueDate ? daysUntil(t.dueDate) : null;
   const { displayCompleted, popStyle, ringStyle, handleToggle } = useTaskCompletion(t, onToggle);
   const urgency = urgencyTier(t, displayCompleted, dleft);
-  const { rowStyle: urgencyRowStyle, haloStyle, haloColor, showHalo } = useUrgencyStyle(urgency);
+  const { dotStyle, dotColor, borderColor, showDot } = useUrgencyStyle(urgency);
   const rowFadeStyle = useRowFadeStyle(displayCompleted);
   const subtasks = t.subtasks || [];
   const subDone = subtasks.filter((s) => s.done).length;
@@ -528,14 +530,12 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
       accessibilityHint="Long press to edit"
     >
       <View style={{ position: "relative" }}>
-        {showHalo && <Reanimated.View pointerEvents="none" style={[styles.urgencyHalo, { borderColor: haloColor }, haloStyle]} />}
         <Reanimated.View
           layout={ReanimatedLayout.duration(DURATION)}
           style={[
             styles.detailedRow,
-            { backgroundColor: theme.card },
+            { backgroundColor: theme.card, borderColor },
             rowFadeStyle,
-            urgencyRowStyle,
             pressStyle,
           ]}
         >
@@ -544,13 +544,21 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
             <View>
               <Reanimated.View pointerEvents="none" style={[styles.completionRing, ringStyle]} />
               <Reanimated.View style={popStyle}>
-                {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted} />}
+                {displayCompleted ? <CheckCircle2 size={22} color={ACCENT.leaf} /> : <Circle size={22} color={urgency === "yellow" ? ACCENT.gold : (t.status && t.status !== "not_started" ? effectiveStatusColor : theme.textMuted)} />}
               </Reanimated.View>
             </View>
           </Pressable>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               <Text style={[styles.rowTitle, { fontSize: 15, color: theme.text, textDecorationLine: displayCompleted ? "line-through" : "none", flex: 1 }]}>{t.title}</Text>
+              {/* The urgency dot lives in a slot of its own between the title and
+                  the chevron, a clear gap from the arrow and from the card edge.
+                  The slot is always rendered (empty when there's no dot), so a
+                  card never changes size or moves its title when its deadline
+                  gets close enough to show one. */}
+              <View style={styles.urgencySlot}>
+                {showDot && <Reanimated.View pointerEvents="none" style={[styles.urgencyDot, { backgroundColor: dotColor }, dotStyle]} />}
+              </View>
               {/* Editing and deleting no longer live here as separate buttons --
                   long-press the card to open the edit sheet, which has its own
                   Delete action. Only the expand/collapse chevron stays, since
@@ -626,7 +634,9 @@ const TodoRow = React.memo(function TodoRow({ t, subject, onToggle, onEdit, onRe
                 )}
 
                 {t.description ? (
-                  <Text style={[styles.descriptionText, { color: theme.text }]}>{t.description}</Text>
+                  // Links in the description are tappable; a long press on one
+                  // still opens the card's edit sheet like anywhere else on it.
+                  <LinkText text={t.description} style={[styles.descriptionText, { color: theme.text }]} linkColor={ACCENT.sky} onLongPress={handleLongPress} />
                 ) : null}
 
                 {subtasks.length > 0 && (
@@ -712,9 +722,11 @@ function TodoForm({ initial, onSave, onCancel, onDelete, subjects = [], presetSu
       <TextInput
         value={description}
         onChangeText={setDescription}
-        placeholder="Add more detail (optional)"
+        placeholder="Add more detail or a link (optional)"
         placeholderTextColor={theme.textMuted}
         multiline
+        autoCapitalize="sentences"
+        keyboardType="default"
         style={[styles.descriptionInput, { color: theme.text, backgroundColor: theme.bg }]}
       />
       <View style={styles.chipWrap}>
@@ -836,9 +848,13 @@ function TodoForm({ initial, onSave, onCancel, onDelete, subjects = [], presetSu
 }
 
 const styles = StyleSheet.create({
-  detailedRow: { borderRadius: 16, padding: 14, marginBottom: 10 },
+  // The 1px border is always present (transparent unless the deadline is
+  // close) so cards keep the same size either way.
+  detailedRow: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 10 },
   completionRing: { position: "absolute", top: -3, left: -3, width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: ACCENT.leaf },
-  urgencyHalo: { position: "absolute", top: -5, left: -5, right: -5, bottom: -5, borderRadius: 21, borderWidth: 3 },
+  // Absolutely positioned so it never affects layout -- see useUrgencyStyle.
+  urgencySlot: { width: 8, height: 8, marginLeft: 10 },
+  urgencyDot: { width: 8, height: 8, borderRadius: 4 },
   detailedMetaRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6, flexWrap: "wrap" },
   subProgressTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
   subProgressFill: { height: 4, borderRadius: 2 },

@@ -1,0 +1,10 @@
+<resources>
+  <!-- A floating, transparent-window dialog: QuickLogActivity draws its own
+  rounded bottom sheet and anchors itself to the bottom edge. -->
+  <style name="LaypWidgetDialog" parent="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
+    <item name="android:windowBackground">@android:color/transparent</item>
+    <item name="android:windowIsFloating">true</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:backgroundDimEnabled">true</item>
+  </style>
+</resources>

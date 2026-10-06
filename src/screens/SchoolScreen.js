@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Switch, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Switch } from "react-native";
 import {
   GraduationCap, Plus, X, Pencil, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   Bell, BellOff, MapPin, User, Clock, BookOpen, CircleCheck, Ban,
@@ -18,6 +18,7 @@ import Chip from "../components/Chip";
 import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
+import { showAppDialog } from "../components/AppDialog";
 
 function SchoolScreen({
   periods, setPeriods, subjects, setSubjects, entries, setEntries,
@@ -199,7 +200,7 @@ function SchoolScreen({
     const period = periods.find((p) => p.id === id);
     if (!period) return;
     if (period.status === "active") {
-      Alert.alert("Can't delete", "Make another schedule active first.");
+      showAppDialog("Can't delete", "Make another schedule active first.");
       return;
     }
     const subs = subjectsForPeriod(subjects, id);

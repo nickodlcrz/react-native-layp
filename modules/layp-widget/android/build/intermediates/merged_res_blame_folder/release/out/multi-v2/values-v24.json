@@ -1,0 +1,34 @@
+{
+    "logs": [
+        {
+            "outputFile": "expo.modules.laypwidget.layp-widget-mergeReleaseResources-27:/values-v24/values-v24.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\airon\\.gradle\\caches\\8.8\\transforms\\68d00896245d605cc9aa0f01e99579d1\\transformed\\appcompat-1.6.1\\res\\values-v24\\values-v24.xml",
+                    "from": {
+                        "startLines": "2,3",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,212",
+                        "endColumns": "156,134",
+                        "endOffsets": "207,342"
+                    }
+                }
+            ]
+        },
+        {
+            "outputFile": "expo.modules.laypwidget.layp-widget-merged_res-29:/values-v24/values-v24.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\airon\\.gradle\\caches\\8.8\\transforms\\68d00896245d605cc9aa0f01e99579d1\\transformed\\appcompat-1.6.1\\res\\values-v24\\values-v24.xml",
+                    "from": {
+                        "startLines": "2,3",
+                        "startColumns": "4,4",
+                        "startOffsets": "55,212",
+                        "endColumns": "156,134",
+                        "endOffsets": "207,342"
+                    }
+                }
+            ]
+        }
+    ]
+}

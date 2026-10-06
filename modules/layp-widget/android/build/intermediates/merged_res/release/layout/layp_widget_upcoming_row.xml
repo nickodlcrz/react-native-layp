@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One upcoming event: a date badge (shown on the first event of each day),
+the event's icon in its type color, the title (wraps in full) and its type +
+how soon it is. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingBottom="4dp">
+
+  <LinearLayout
+      android:id="@+id/layp_up_row"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:padding="5dp"
+      android:background="@drawable/layp_widget_chip_bg">
+
+    <LinearLayout
+        android:id="@+id/layp_up_badge"
+        android:layout_width="36dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp">
+
+      <TextView
+          android:id="@+id/layp_up_dow"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="9sp" />
+
+      <TextView
+          android:id="@+id/layp_up_day"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_text"
+          android:textSize="16sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="7dp"
+        android:orientation="vertical">
+
+      <TextView
+          android:id="@+id/layp_up_name"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_text"
+          android:textSize="13sp" />
+
+      <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="1dp"
+          android:orientation="horizontal"
+          android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/layp_up_icon"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="4dp"
+            android:src="@drawable/layp_ic_heart" />
+
+        <TextView
+            android:id="@+id/layp_up_sub"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/layp_muted"
+            android:textSize="10sp" />
+      </LinearLayout>
+    </LinearLayout>
+  </LinearLayout>
+</LinearLayout>

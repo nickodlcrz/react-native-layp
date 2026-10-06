@@ -1,0 +1,7 @@
+{
+  "name": "layp-widget",
+  "version": "1.0.0",
+  "description": "Native Android home-screen widget for LAYP -- shows today's spending and logs a new expense from a bottom-sheet dialog without opening the app.",
+  "main": "index.js",
+  "license": "MIT"
+}

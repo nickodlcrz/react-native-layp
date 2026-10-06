@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import { Plus, X, CheckCircle2, Trash2, Check, ArrowLeftRight, AlertTriangle, Bell, Sparkles, Eye, EyeOff } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS, INCOME_CATEGORIES, INTEREST_PRESETS } from "../theme";
 import { peso, uid, todayISO, fmtTime12, computeAccountBalance, savingsAccountBalance, addAccount as pushAccount, isPositiveAmount, accountInterestEarned } from "../utils";
@@ -14,6 +14,7 @@ import GoalsScreen from "./GoalsScreen";
 import ActivityScreen from "./ActivityScreen";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { confirmDelete } from "../components/ConfirmModal";
+import { showAppDialog } from "../components/AppDialog";
 
 function matchPresetName(splits) {
   for (const [name, preset] of Object.entries(DEFAULT_SPLITS)) {
@@ -54,7 +55,7 @@ function BudgetScreen({
     ].some((entry) => entry.account === id || entry.fromAccount === id || entry.toAccount === id)
       || weeklySummaries.some((week) => Number(week.byAccount?.[id]) > 0);
     if (referenced) {
-      Alert.alert("Account still has history", "This account can't be deleted because transactions are linked to it. Move or remove those records first so no financial history is hidden.");
+      showAppDialog("Account still has history", "This account can't be deleted because transactions are linked to it. Move or remove those records first so no financial history is hidden.");
       return;
     }
     const account = accounts.find((a) => a.id === id);
@@ -122,6 +123,7 @@ function BudgetScreen({
           splits={splits} loans={loans} savingsLog={savingsLog} accounts={accounts} transfers={transfers}
           recurringIncome={recurringIncome} setRecurringIncome={setRecurringIncome}
           spendingLimits={spendingLimits} setSpendingLimits={setSpendingLimits}
+          bills={bills} setBills={setBills}
         />
         </ErrorBoundary>
       ) : subTab === "borrow" ? (
@@ -130,7 +132,6 @@ function BudgetScreen({
           loans={loans} setLoans={setLoans}
           moneyLog={moneyLog} expenses={expenses} setExpenses={setExpenses} weeklySummaries={weeklySummaries}
           savingsLog={savingsLog} accounts={accounts} transfers={transfers}
-          bills={bills} setBills={setBills} splits={splits}
         />
         </ErrorBoundary>
       ) : subTab === "goals" ? (

@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import { daysUntil, fmtDateLong, fmtTime12, peso } from "./utils";
 import * as LaypAlarm from "../modules/layp-alarm";
 import { hoursForFrequency } from "./reminderLogic";
+import { occurrencesBetween, addDaysISO } from "./gfDates";
 
 // Ids for a subject's "class starting now" alarm that were armed through
 // the native Kotlin alarm engine (see modules/layp-alarm) are prefixed so
@@ -82,17 +83,29 @@ export async function setupNotificationCategories() {
   // actually appears is decided per-notification in
   // rescheduleDailyBudgetNotification below (only when there's really
   // something worth saving) by choosing which category to attach.
+  //
+  // These buttons answer a question, they don't need the app on screen, so
+  // they're marked opensAppToForeground: false -- tapping one sends the
+  // response and the app stays closed. On Android the native module
+  // (modules/layp-widget, LaypNotificationsService) catches the tap, saves it
+  // in a durable queue and dismisses the notification even if the app isn't
+  // running; App.js applies the queue the next time it runs. Where that
+  // module isn't linked (iOS, Expo Go) the same response reaches the
+  // listener below as before, just without bringing the app forward.
+  // (The class alarm buttons are different on purpose: they must act on the
+  // ringing alarm right now, so they still open the app.)
+  const quiet = { opensAppToForeground: false };
   await Notifications.setNotificationCategoryAsync(DAILY_BUDGET_CATEGORY, [
-    { identifier: DAILY_BUDGET_SAVE_ACTION, buttonTitle: "Save to savings" },
-    { identifier: DAILY_BUDGET_KEEP_ACTION, buttonTitle: "Keep for tomorrow" },
+    { identifier: DAILY_BUDGET_SAVE_ACTION, buttonTitle: "Save to savings", options: quiet },
+    { identifier: DAILY_BUDGET_KEEP_ACTION, buttonTitle: "Keep for tomorrow", options: quiet },
   ]);
   await Notifications.setNotificationCategoryAsync(TODO_STARTED_CATEGORY, [
-    { identifier: TODO_STARTED_YES_ACTION, buttonTitle: "Yes, started" },
-    { identifier: TODO_STARTED_NOT_YET_ACTION, buttonTitle: "Not yet" },
+    { identifier: TODO_STARTED_YES_ACTION, buttonTitle: "Yes, started", options: quiet },
+    { identifier: TODO_STARTED_NOT_YET_ACTION, buttonTitle: "Not yet", options: quiet },
   ]);
   await Notifications.setNotificationCategoryAsync(TODO_PASSED_CATEGORY, [
-    { identifier: TODO_PASSED_YES_ACTION, buttonTitle: "Yes, passed" },
-    { identifier: TODO_PASSED_NOT_YET_ACTION, buttonTitle: "Not yet" },
+    { identifier: TODO_PASSED_YES_ACTION, buttonTitle: "Yes, passed", options: quiet },
+    { identifier: TODO_PASSED_NOT_YET_ACTION, buttonTitle: "Not yet", options: quiet },
   ]);
 }
 
@@ -797,12 +810,42 @@ export async function reschedulePromiseNotification(previousId, dueAt, text) {
 // year attached (a birthday isn't tied to one specific year), so this
 // always schedules against the *next* upcoming occurrence rather than a
 // literal stored date.
-export async function rescheduleDateNotifications(previousIds, mmdd, label) {
+//
+// `repeat` is "yearly" (the default, and what every entry saved before this
+// option existed means) or "monthly" (a monthsary). Expo has no monthly
+// repeating trigger, so a monthly date gets its next MONTHLY_AHEAD
+// occurrences scheduled individually -- a heads-up the day before and a
+// reminder the day itself -- and App.js re-runs this on every launch to keep
+// that window rolling forward.
+const MONTHLY_AHEAD = 6;
+
+export async function rescheduleDateNotifications(previousIds, mmdd, label, repeat = "yearly", kind = "date") {
   await cancelTodoNotifications(previousIds || []);
   if (!mmdd) return [];
   const [mm, dd] = mmdd.split("-").map(Number);
   if (!mm || !dd) return [];
   const now = new Date();
+
+  if (repeat === "monthly") {
+    const pad = (n) => String(n).padStart(2, "0");
+    const todayIso = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const upcoming = occurrencesBetween({ date: mmdd, repeat: "monthly" }, todayIso, addDaysISO(todayIso, 31 * (MONTHLY_AHEAD + 1))).slice(0, MONTHLY_AHEAD);
+    const special = kind === "anniversary";
+    const jobs = [];
+    for (const iso of upcoming) {
+      const [y, m, d] = iso.split("-").map(Number);
+      const dayOf = new Date(y, m - 1, d, 9, 0, 0, 0);
+      const dayBefore = new Date(y, m - 1, d - 1, 9, 0, 0, 0);
+      if (dayBefore.getTime() > now.getTime()) {
+        jobs.push(rescheduleReminderNotification(null, dayBefore, "Coming up tomorrow", `${label} is tomorrow`, { type: "gfDate" }));
+      }
+      if (dayOf.getTime() > now.getTime()) {
+        jobs.push(rescheduleReminderNotification(null, dayOf, special ? "Happy anniversary" : "It's today", `${label} is today`, { type: "gfDate" }));
+      }
+    }
+    return (await Promise.all(jobs)).filter(Boolean);
+  }
+
   let next = new Date(now.getFullYear(), mm - 1, dd, 9, 0, 0, 0);
   if (next.getTime() < now.getTime()) next = new Date(now.getFullYear() + 1, mm - 1, dd, 9, 0, 0, 0);
   const sevenBefore = new Date(next); sevenBefore.setDate(sevenBefore.getDate() - 7);

@@ -1,0 +1,66 @@
+[
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\common_google_signin_btn_text_dark.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-jetified-play-services-base-18.0.1-15:\\color\\common_google_signin_btn_text_dark.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\switch_thumb_material_dark.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\switch_thumb_material_dark.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_hint_foreground_material_dark.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_hint_foreground_material_dark.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_primary_text_disable_only_material_light.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_primary_text_disable_only_material_light.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_primary_text_disable_only_material_dark.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_primary_text_disable_only_material_dark.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_primary_text_material_light.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_primary_text_material_light.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_hint_foreground_material_light.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_hint_foreground_material_light.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_search_url_text.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_search_url_text.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_background_cache_hint_selector_material_light.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_background_cache_hint_selector_material_light.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_secondary_text_material_dark.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_secondary_text_material_dark.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\common_google_signin_btn_tint.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-jetified-play-services-base-18.0.1-15:\\color\\common_google_signin_btn_tint.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\switch_thumb_material_light.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\switch_thumb_material_light.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\common_google_signin_btn_text_light.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-jetified-play-services-base-18.0.1-15:\\color\\common_google_signin_btn_text_light.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_background_cache_hint_selector_material_dark.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_background_cache_hint_selector_material_dark.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_secondary_text_material_light.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_secondary_text_material_light.xml"
+    },
+    {
+        "merged": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-merged_res-29:\\color\\abc_primary_text_material_dark.xml",
+        "source": "C:\\Users\\airon\\.gradle\\daemon\\8.8\\expo.modules.laypwidget.layp-widget-appcompat-1.6.1-10:\\color\\abc_primary_text_material_dark.xml"
+    }
+]

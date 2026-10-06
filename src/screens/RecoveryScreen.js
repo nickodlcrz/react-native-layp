@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { AlertTriangle, FileUp, SkipForward } from "lucide-react-native";
 import { ACCENT } from "../theme";
 import { validateBackup } from "../backupSchema";
+import { showAppDialog } from "../components/AppDialog";
 
 // Shown once, on launch, only when storage.js reports the stored data
 // couldn't be read at all (loadState() returned __totalCorruption) --
@@ -29,18 +30,18 @@ export default function RecoveryScreen({ theme, onRestore, onSkip }) {
       const parsed = validateBackup(raw);
       setBusy(false);
       if (!parsed.ok) {
-        Alert.alert("Backup not recognized", parsed.error);
+        showAppDialog("Backup not recognized", parsed.error);
         return;
       }
       onRestore(parsed.data);
     } catch (e) {
       setBusy(false);
-      Alert.alert("Restore failed", "Couldn't read that file.");
+      showAppDialog("Restore failed", "Couldn't read that file.");
     }
   }
 
   function confirmSkip() {
-    Alert.alert(
+    showAppDialog(
       "Start fresh?",
       "This clears the unreadable data and starts LAYP over with nothing filled in. If you have a backup file, restoring it is the only way to get your data back after this.",
       [

@@ -59,9 +59,10 @@ export function ConfirmModalHost() {
         <Animated.View
           style={[
             styles.card,
-            { backgroundColor: theme.card, borderColor: theme.line, opacity, transform: [{ scale }] },
+            { opacity, transform: [{ scale }] },
           ]}
         >
+          <View style={[styles.solidCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
           {/* Swallow taps on the card itself so they don't bubble to the
               backdrop Pressable behind it and close the dialog. */}
           <Pressable onPress={() => {}}>
@@ -96,6 +97,7 @@ export function ConfirmModalHost() {
               </Pressable>
             </View>
           </Pressable>
+          </View>
         </Animated.View>
       </Pressable>
     </Modal>
@@ -112,10 +114,8 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%",
-    maxWidth: 340,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 22,
+    maxWidth: 350,
+    borderRadius: 26,
     // A soft shadow so the card reads as floating above the dimmed
     // backdrop rather than flat -- matches the elevation language the rest
     // of the app already uses on cards.
@@ -125,6 +125,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 12,
   },
+  solidCard: { padding: 22, borderWidth: 1, borderRadius: 26 },
   iconWrap: {
     width: 44,
     height: 44,

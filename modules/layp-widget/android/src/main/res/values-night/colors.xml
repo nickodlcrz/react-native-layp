@@ -1,0 +1,11 @@
+<resources>
+  <color name="layp_surface">#111111</color>
+  <color name="layp_chip">#1D1D1D</color>
+  <color name="layp_chip_border">#303030</color>
+  <color name="layp_text">#F5F5F5</color>
+  <color name="layp_muted">#9E9E9E</color>
+  <color name="layp_accent">#EAEAEA</color>
+  <color name="layp_on_accent">#090909</color>
+  <color name="layp_warn">#F1C75B</color>
+  <color name="layp_error">#FF7468</color>
+</resources>

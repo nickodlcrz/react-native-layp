@@ -1,0 +1,376 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="expo.modules.laypwidget" >
+4
+5    <uses-sdk android:minSdkVersion="23" />
+6
+7    <application>
+7-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:3:3-186:17
+8
+9        <!--
+10    Spending widget. exported must be true for the launcher to deliver
+11    APPWIDGET_UPDATE. The extra actions re-render it when the date or
+12    timezone changes, so "Spent today" rolls over at midnight even if the
+13    app never runs.
+14        -->
+15        <receiver
+15-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:9:5-22:16
+16            android:name="expo.modules.laypwidget.SpendWidgetProvider"
+16-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:10:9-44
+17            android:exported="true"
+17-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:12:9-32
+18            android:label="@string/layp_widget_label" >
+18-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:11:9-50
+19            <intent-filter>
+19-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:13:7-18:23
+20                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+20-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:9-76
+20-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:17-73
+21                <action android:name="android.intent.action.DATE_CHANGED" />
+21-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:9-69
+21-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:17-66
+22                <action android:name="android.intent.action.TIME_SET" />
+22-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:9-65
+22-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:17-62
+23                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+23-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:9-73
+23-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:17-70
+24            </intent-filter>
+25
+26            <meta-data
+26-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:19:7-21:60
+27                android:name="android.appwidget.provider"
+27-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:20:11-52
+28                android:resource="@xml/layp_spend_widget_info" />
+28-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:21:11-57
+29        </receiver>
+30
+31        <!--
+32    Tasks widget, 4x4 and 4x6: two entries in the widget picker, one
+33    implementation.
+34        -->
+35        <receiver
+35-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:26:5-39:16
+36            android:name="expo.modules.laypwidget.TaskWidget4x4Provider"
+36-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:27:9-46
+37            android:exported="true"
+37-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:29:9-32
+38            android:label="@string/layp_task_4x4_label" >
+38-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:28:9-52
+39            <intent-filter>
+39-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:13:7-18:23
+40                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+40-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:9-76
+40-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:17-73
+41                <action android:name="android.intent.action.DATE_CHANGED" />
+41-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:9-69
+41-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:17-66
+42                <action android:name="android.intent.action.TIME_SET" />
+42-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:9-65
+42-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:17-62
+43                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+43-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:9-73
+43-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:17-70
+44            </intent-filter>
+45
+46            <meta-data
+46-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:19:7-21:60
+47                android:name="android.appwidget.provider"
+47-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:20:11-52
+48                android:resource="@xml/layp_task_widget_4x4_info" />
+48-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:21:11-57
+49        </receiver>
+50        <receiver
+50-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:40:5-53:16
+51            android:name="expo.modules.laypwidget.TaskWidget4x6Provider"
+51-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:41:9-46
+52            android:exported="true"
+52-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:43:9-32
+53            android:label="@string/layp_task_4x6_label" >
+53-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:42:9-52
+54            <intent-filter>
+54-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:13:7-18:23
+55                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+55-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:9-76
+55-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:17-73
+56                <action android:name="android.intent.action.DATE_CHANGED" />
+56-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:9-69
+56-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:17-66
+57                <action android:name="android.intent.action.TIME_SET" />
+57-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:9-65
+57-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:17-62
+58                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+58-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:9-73
+58-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:17-70
+59            </intent-filter>
+60
+61            <meta-data
+61-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:19:7-21:60
+62                android:name="android.appwidget.provider"
+62-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:20:11-52
+63                android:resource="@xml/layp_task_widget_4x6_info" />
+63-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:21:11-57
+64        </receiver>
+65
+66        <!--
+67    Today's classes (2x2): shows the remaining schedule, highlights the first class,
+68    and switches to a single live class while it is ongoing.
+69        -->
+70        <receiver
+70-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:57:5-71:16
+71            android:name="expo.modules.laypwidget.ClassWidgetProvider"
+71-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:58:9-44
+72            android:exported="true"
+72-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:60:9-32
+73            android:label="@string/layp_class_label" >
+73-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:59:9-49
+74            <intent-filter>
+74-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:61:7-67:23
+75                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+75-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:9-76
+75-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:17-73
+76                <action android:name="android.intent.action.DATE_CHANGED" />
+76-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:9-69
+76-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:17-66
+77                <action android:name="android.intent.action.TIME_SET" />
+77-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:9-65
+77-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:17-62
+78                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+78-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:9-73
+78-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:17-70
+79                <action android:name="expo.modules.laypwidget.CLASS_WIDGET_REFRESH" />
+79-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:66:9-79
+79-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:66:17-76
+80            </intent-filter>
+81
+82            <meta-data
+82-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:19:7-21:60
+83                android:name="android.appwidget.provider"
+83-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:20:11-52
+84                android:resource="@xml/layp_class_widget_2x2_info" />
+84-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:21:11-57
+85        </receiver>
+86
+87        <!-- Calendar widget (4x2). Its CAL_* actions are the month arrows. -->
+88        <receiver
+88-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:74:5-87:16
+89            android:name="expo.modules.laypwidget.CalendarWidgetProvider"
+89-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:75:9-47
+90            android:exported="true"
+90-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:77:9-32
+91            android:label="@string/layp_calendar_label" >
+91-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:76:9-52
+92            <intent-filter>
+92-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:13:7-18:23
+93                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+93-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:9-76
+93-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:17-73
+94                <action android:name="android.intent.action.DATE_CHANGED" />
+94-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:9-69
+94-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:17-66
+95                <action android:name="android.intent.action.TIME_SET" />
+95-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:9-65
+95-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:17-62
+96                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+96-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:9-73
+96-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:17-70
+97            </intent-filter>
+98
+99            <meta-data
+99-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:19:7-21:60
+100                android:name="android.appwidget.provider"
+100-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:20:11-52
+101                android:resource="@xml/layp_calendar_widget_info" />
+101-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:21:11-57
+102        </receiver>
+103
+104        <!--
+105    Upcoming events widget, 2x2 and 4x2 - one implementation, two entries
+106    in the widget picker.
+107        -->
+108        <receiver
+108-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:91:5-104:16
+109            android:name="expo.modules.laypwidget.UpcomingWidget2x2Provider"
+109-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:92:9-50
+110            android:exported="true"
+110-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:94:9-32
+111            android:label="@string/layp_upcoming_2x2_label" >
+111-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:93:9-56
+112            <intent-filter>
+112-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:13:7-18:23
+113                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+113-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:9-76
+113-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:17-73
+114                <action android:name="android.intent.action.DATE_CHANGED" />
+114-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:9-69
+114-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:17-66
+115                <action android:name="android.intent.action.TIME_SET" />
+115-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:9-65
+115-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:17-62
+116                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+116-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:9-73
+116-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:17-70
+117            </intent-filter>
+118
+119            <meta-data
+119-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:19:7-21:60
+120                android:name="android.appwidget.provider"
+120-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:20:11-52
+121                android:resource="@xml/layp_upcoming_widget_2x2_info" />
+121-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:21:11-57
+122        </receiver>
+123        <receiver
+123-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:105:5-118:16
+124            android:name="expo.modules.laypwidget.UpcomingWidget4x2Provider"
+124-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:106:9-50
+125            android:exported="true"
+125-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:108:9-32
+126            android:label="@string/layp_upcoming_4x2_label" >
+126-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:107:9-56
+127            <intent-filter>
+127-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:13:7-18:23
+128                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+128-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:9-76
+128-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:14:17-73
+129                <action android:name="android.intent.action.DATE_CHANGED" />
+129-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:9-69
+129-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:15:17-66
+130                <action android:name="android.intent.action.TIME_SET" />
+130-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:9-65
+130-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:16:17-62
+131                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+131-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:9-73
+131-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:17:17-70
+132            </intent-filter>
+133
+134            <meta-data
+134-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:19:7-21:60
+135                android:name="android.appwidget.provider"
+135-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:20:11-52
+136                android:resource="@xml/layp_upcoming_widget_4x2_info" />
+136-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:21:11-57
+137        </receiver>
+138
+139        <!--
+140    Fill the Tasks and Upcoming lists. The bind permission keeps anything
+141    but the system from talking to them.
+142        -->
+143        <service
+143-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:122:5-125:68
+144            android:name="expo.modules.laypwidget.TaskListService"
+144-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:123:9-40
+145            android:exported="false"
+145-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:124:9-33
+146            android:permission="android.permission.BIND_REMOTEVIEWS" />
+146-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:125:9-65
+147        <service
+147-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:126:5-129:68
+148            android:name="expo.modules.laypwidget.UpcomingListService"
+148-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:127:9-44
+149            android:exported="false"
+149-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:128:9-33
+150            android:permission="android.permission.BIND_REMOTEVIEWS" />
+150-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:129:9-65
+151
+152        <!--
+153    Bottom sheets opened from the spending widget. Own task + hidden from
+154    Recents so they never drag LAYP itself onto the screen. Not exported:
+155    only the widget's own PendingIntents launch them.
+156        -->
+157        <activity
+157-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:134:5-140:51
+158            android:name="expo.modules.laypwidget.QuickLogActivity"
+158-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:135:9-41
+159            android:excludeFromRecents="true"
+159-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:138:9-42
+160            android:exported="false"
+160-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:136:9-33
+161            android:taskAffinity=""
+161-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:137:9-32
+162            android:theme="@style/LaypWidgetDialog"
+162-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:140:9-48
+163            android:windowSoftInputMode="stateVisible|adjustResize" />
+163-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:139:9-64
+164        <activity
+164-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:141:5-147:51
+165            android:name="expo.modules.laypwidget.SearchActivity"
+165-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:142:9-39
+166            android:excludeFromRecents="true"
+166-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:145:9-42
+167            android:exported="false"
+167-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:143:9-33
+168            android:taskAffinity=""
+168-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:144:9-32
+169            android:theme="@style/LaypWidgetDialog"
+169-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:147:9-48
+170            android:windowSoftInputMode="stateVisible|adjustResize" />
+170-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:146:9-64
+171        <activity
+171-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:149:5-155:51
+172            android:name="expo.modules.laypwidget.AddTaskActivity"
+172-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:150:9-40
+173            android:excludeFromRecents="true"
+173-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:153:9-42
+174            android:exported="false"
+174-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:151:9-33
+175            android:taskAffinity=""
+175-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:152:9-32
+176            android:theme="@style/LaypWidgetDialog"
+176-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:155:9-48
+177            android:windowSoftInputMode="stateVisible|adjustResize" />
+177-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:154:9-64
+178
+179        <!-- Confirmation popup for cancelling a class from the Today's Classes widget. -->
+180        <activity
+180-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:158:5-164:51
+181            android:name="expo.modules.laypwidget.ClassWidgetActionActivity"
+181-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:159:9-50
+182            android:excludeFromRecents="true"
+182-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:162:9-42
+183            android:exported="false"
+183-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:160:9-33
+184            android:noHistory="true"
+184-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:163:9-33
+185            android:taskAffinity=""
+185-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:161:9-32
+186            android:theme="@style/LaypWidgetDialog" />
+186-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:164:9-48
+187        <activity
+187-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:166:5-172:58
+188            android:name="expo.modules.laypwidget.WidgetActionActivity"
+188-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:167:9-45
+189            android:excludeFromRecents="true"
+189-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:170:9-42
+190            android:exported="false"
+190-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:168:9-33
+191            android:noHistory="true"
+191-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:171:9-33
+192            android:taskAffinity=""
+192-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:169:9-32
+193            android:theme="@android:style/Theme.NoDisplay" />
+193-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:172:9-55
+194
+195        <!--
+196    Takes over handling of notification button taps from expo-notifications
+197    (see LaypNotificationsService). expo sends every notification event to the
+198    highest-priority receiver registered for this action; its own is -1, so
+199    100 makes this one the designated receiver. It forwards everything it
+200    doesn't handle itself to expo's normal handling.
+201        -->
+202        <receiver
+202-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:179:5-185:16
+203            android:name="expo.modules.laypwidget.LaypNotificationsService"
+203-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:180:9-49
+204            android:exported="false" >
+204-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:181:9-33
+205            <intent-filter android:priority="100" >
+205-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:182:7-184:23
+205-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:182:22-44
+206                <action android:name="expo.modules.notifications.NOTIFICATION_EVENT" />
+206-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:183:9-80
+206-->D:\Project\layp-app\modules\layp-widget\android\src\main\AndroidManifest.xml:183:17-77
+207            </intent-filter>
+208        </receiver>
+209    </application>
+210
+211</manifest>

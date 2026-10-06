@@ -1,0 +1,82 @@
+{
+    "logs": [
+        {
+            "outputFile": "expo.modules.laypwidget.layp-widget-merged_res-29:/values-night-v8/values-night-v8.xml",
+            "map": [
+                {
+                    "source": "D:\\Project\\layp-app\\modules\\layp-widget\\android\\src\\main\\res\\values-night\\colors.xml",
+                    "from": {
+                        "startLines": "6,2,3,9,5,7,1,4,8",
+                        "startColumns": "2,2,2,2,2,2,2,2,2",
+                        "startOffsets": "235,59,101,368,192,279,14,150,326",
+                        "endColumns": "43,41,48,42,42,46,44,41,41",
+                        "endOffsets": "276,98,147,408,232,323,56,189,365"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6,7,8,9,10",
+                        "startColumns": "4,4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,101,145,196,241,286,335,382,426",
+                        "endColumns": "45,43,50,44,44,48,46,43,43",
+                        "endOffsets": "96,140,191,236,281,330,377,421,465"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\airon\\.gradle\\caches\\8.8\\transforms\\68d00896245d605cc9aa0f01e99579d1\\transformed\\appcompat-1.6.1\\res\\values-night-v8\\values-night-v8.xml",
+                    "from": {
+                        "startLines": "2,3,4,5,6,7,8,9",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,125,209,293,389,491,593,687",
+                        "endColumns": "69,83,83,95,101,101,93,88",
+                        "endOffsets": "120,204,288,384,486,588,682,771"
+                    },
+                    "to": {
+                        "startLines": "11,12,13,14,15,16,17,18",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "470,540,624,708,804,906,1008,1102",
+                        "endColumns": "69,83,83,95,101,101,93,88",
+                        "endOffsets": "535,619,703,799,901,1003,1097,1186"
+                    }
+                }
+            ]
+        },
+        {
+            "outputFile": "expo.modules.laypwidget.layp-widget-mergeReleaseResources-27:/values-night-v8/values-night-v8.xml",
+            "map": [
+                {
+                    "source": "D:\\Project\\layp-app\\modules\\layp-widget\\android\\src\\main\\res\\values-night\\colors.xml",
+                    "from": {
+                        "startLines": "6,2,3,9,5,7,1,4,8",
+                        "startColumns": "2,2,2,2,2,2,2,2,2",
+                        "startOffsets": "235,59,101,368,192,279,14,150,326",
+                        "endColumns": "43,41,48,42,42,46,44,41,41",
+                        "endOffsets": "276,98,147,408,232,323,56,189,365"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6,7,8,9,10",
+                        "startColumns": "4,4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,101,145,196,241,286,335,382,426",
+                        "endColumns": "45,43,50,44,44,48,46,43,43",
+                        "endOffsets": "96,140,191,236,281,330,377,421,465"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\airon\\.gradle\\caches\\8.8\\transforms\\68d00896245d605cc9aa0f01e99579d1\\transformed\\appcompat-1.6.1\\res\\values-night-v8\\values-night-v8.xml",
+                    "from": {
+                        "startLines": "2,3,4,5,6,7,8,9",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,125,209,293,389,491,593,687",
+                        "endColumns": "69,83,83,95,101,101,93,88",
+                        "endOffsets": "120,204,288,384,486,588,682,771"
+                    },
+                    "to": {
+                        "startLines": "11,12,13,14,15,16,17,18",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "470,540,624,708,804,906,1008,1102",
+                        "endColumns": "69,83,83,95,101,101,93,88",
+                        "endOffsets": "535,619,703,799,901,1003,1097,1186"
+                    }
+                }
+            ]
+        }
+    ]
+}

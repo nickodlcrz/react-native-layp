@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Upcoming events widget (2x2 and 4x2): a compact dark Liquid Glass-inspired header (title + the
+7-day range) over a scrolling list of what's coming up. Rows are
+layp_widget_upcoming_row.xml, filled by UpcomingListService. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layp_up_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/layp_widget_glass_dark">
+
+  <LinearLayout
+      android:id="@+id/layp_up_header"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:paddingStart="13dp"
+      android:paddingEnd="13dp"
+      android:paddingTop="9dp"
+      android:paddingBottom="9dp"
+      android:background="@drawable/layp_widget_glass_top_dark">
+
+    <TextView
+        android:id="@+id/layp_up_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Upcoming"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:maxLines="1" />
+
+    <TextView
+        android:id="@+id/layp_up_range"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:gravity="end"
+        android:textColor="#B3FFFFFF"
+        android:maxLines="1"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="11sp"
+        android:autoSizeStepGranularity="1sp" />
+  </LinearLayout>
+
+  <FrameLayout
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1"
+      android:padding="5dp">
+
+    <ListView
+        android:id="@+id/layp_up_list"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:scrollbars="none" />
+
+    <TextView
+        android:id="@+id/layp_up_empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:padding="8dp"
+        android:text="Nothing in the next 7 days"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="@color/layp_muted"
+        android:textSize="12sp" />
+  </FrameLayout>
+</LinearLayout>

@@ -2,60 +2,42 @@ import React, { createContext, useContext } from "react";
 
 export const LIGHT = {
   bg: "#F3F4F0", card: "#FFFFFF",
-  // Rich black rather than the old navy-tinted #17203A -- reads as neutral
-  // black instead of blue-black.
-  text: "#121212", textMuted: "#8891A0",
+  text: "#121212", textMuted: "#6F7786",
   line: "#E4E5DF",
-  // Reverted back to the original navy "solid accent surface" color for
-  // hero cards, FAB-style round buttons, and primary CTAs -- the gold
-  // version didn't stick.
+  // accentDark is a "solid accent surface" (hero cards, round buttons,
+  // primary CTAs) that is ALWAYS paired with white text/icons, so it must
+  // stay dark in both themes -- never white.
   accentDark: "#17203A",
-  // A dark-gray "solid surface" for toggles/segmented active states that
-  // aren't primary CTAs or money totals -- see accentDark's note above on
-  // why those two get to keep navy and everything else doesn't.
+  // Dark-gray solid surface for toggles / active states that aren't CTAs.
   neutralDark: "#3A3A3A",
+  glass: "#FFFFFF",
+  glassBorder: "#E4E5DF",
+  glassHighlight: "rgba(0,0,0,0.04)",
 };
+
 export const DARK = {
-  // True rich black rather than the old dark blue-gray (#12121A/#151518
-  // had a visible blue cast) -- keeps the OLED-friendly, low-glare feel of
-  // a dark background without any blue tint creeping in.
-  bg: "#101010", card: "#161616", text: "#EDEDF0",
-  // Brightened from a dimmer #94949E so secondary text (dates, muted
-  // labels, timestamps) stays comfortably readable at a glance instead of
-  // disappearing into the background.
+  bg: "#101010", card: "#1A1A1A", text: "#EDEDF0",
   textMuted: "#A8A8B0",
-  // accentDark is used everywhere as a "solid accent surface" -- hero
-  // cards, FAB-style round buttons, and active/selected toggle
-  // backgrounds, always paired with white icons/text on top. Reverted
-  // back to the original desaturated indigo (a brief experiment made this
-  // gold instead, but that didn't stick).
-  //
-  // Reserved for primary actions and money totals only (hero cards, the
-  // main "+" / submit buttons) -- everywhere else that used to reach for
-  // this same indigo (filter chips, view toggles, day pickers) uses
-  // neutralDark below instead, so indigo stays a meaningful signal
-  // ("this is the primary thing" / "this is money") instead of just being
-  // the app's all-purpose accent.
-  line: "#262626", accentDark: "#2E3E72",
-  // Dark gray "solid surface" for the same toggle/segmented active states
-  // as LIGHT.neutralDark above -- distinct from both `card` (too close to
-  // the resting surface to read as "selected") and `accentDark` (now
-  // reserved for CTAs/totals).
+  line: "#2C2C2C",
+  // Must remain a dark indigo: white text sits on top of it. A white value
+  // here made every hero card / CTA button unreadable in dark mode.
+  accentDark: "#2E3E72",
   neutralDark: "#3A3A3A",
+  glass: "#1A1A1A",
+  glassBorder: "#2C2C2C",
+  glassHighlight: "rgba(255,255,255,0.08)",
 };
+
+// Mid-tone accents: each one is readable on both light and dark surfaces and
+// still carries white text when used as a filled button/background.
 export const ACCENT = {
+  primary: "#3E63D1",
   gold: "#D9A441", leaf: "#3E7C59", ember: "#D1573F",
   sky: "#3E63D1", plum: "#8B5FBF", teal: "#2F9E9E",
-  // Added so every category/label swatch in the app can be visually
-  // distinct -- see SPENDING_LABELS below, which previously reused plum
-  // and ember twice each (School/Other both plum, Bills/Health both
-  // ember), making those categories indistinguishable in the pie charts.
   rose: "#D1477F", slate: "#5C6B8A",
 };
 export const PALETTE = [ACCENT.gold, ACCENT.leaf, ACCENT.ember, ACCENT.sky, ACCENT.plum, ACCENT.teal];
 
-// Expo's weekday trigger uses 1=Sunday...7=Saturday (same convention on
-// both Android and iOS), so ids follow that rather than JS's Date.getDay().
 export const WEEKDAYS = [
   { id: 2, label: "Mon" },
   { id: 3, label: "Tue" },

@@ -3,35 +3,45 @@
 // is what lets EditSheet's swipe-to-dismiss work.
 import "react-native-gesture-handler";
 import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, BackHandler, Alert } from "react-native";
+import { View, Text, Pressable, Image, StyleSheet, useColorScheme, AppState, BackHandler, InteractionManager } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { ListTodo, Wallet, FileText, Bell, X, Sun, Moon, Lock, Home, GraduationCap, Heart } from "lucide-react-native";
+import { ListTodo, Wallet, Settings as GearIcon, Bell, X, Lock, Home, GraduationCap, Heart } from "lucide-react-native";
 
-import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_SAVINGS_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS } from "./src/theme";
+import { ThemeContext, LIGHT, DARK, ACCENT, DEFAULT_SPLITS, DEFAULT_ACCOUNTS, DEFAULT_SAVINGS_ACCOUNTS, DEFAULT_DAILY_BUDGET_SETTINGS, DEFAULT_SCHOOL_DEFAULTS, INCOME_CATEGORIES, CATEGORIES } from "./src/theme";
 import Reanimated, { FadeOut } from "react-native-reanimated";
 import { DURATION } from "./src/animation";
+import LiquidGlass from "./src/components/LiquidGlass";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { loadState, saveState, clearUnreadableLegacyState } from "./src/storage";
-import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, cancelTodoAlarm, rescheduleTodoNotifications, rescheduleDailyBudgetNotification, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, TODO_STARTED_YES_ACTION, TODO_STARTED_NOT_YET_ACTION, TODO_PASSED_YES_ACTION, TODO_PASSED_NOT_YET_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener, sweepExpiredDailyNotifications } from "./src/notifications";
+import { requestNotificationPermission, setupAndroidChannel, setupNotificationCategories, cancelTodoNotifications, cancelTodoAlarm, rescheduleTodoNotifications, rescheduleDailyBudgetNotification, rescheduleDateNotifications, cleanupDuplicateDailyBudgetNotifications, addNotificationResponseListener, getLastNotificationResponse, dismissNotification, DEFAULT_ACTION_IDENTIFIER, CLASS_ALARM_CONFIRM_ACTION, CLASS_ALARM_CANCELLED_ACTION, CLASS_CHECKIN_YES_ACTION, CLASS_CHECKIN_NONE_ACTION, DAILY_BUDGET_SAVE_ACTION, DAILY_BUDGET_KEEP_ACTION, TODO_STARTED_YES_ACTION, TODO_STARTED_NOT_YET_ACTION, TODO_PASSED_YES_ACTION, TODO_PASSED_NOT_YET_ACTION, suspendClassAlarmToday, addClassAlarmSuspendedListener, sweepExpiredDailyNotifications } from "./src/notifications";
 import { isScheduledPopupDue, markScheduledPopupShown, isFrequencyPopupDue, isIntervalPopupDue, markFrequencyPopupShown } from "./src/reminderLogic";
-import { todayISO, daysUntil, fmtDateLong, uid, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest, accrueAccountInterest } from "./src/utils";
+import { todayISO, daysUntil, fmtDateLong, uid, computeAccountBalance, computeDailyBudgetReview, dailyBudgetNotificationContent, toLocalISO, nextRecurringDate, accrueSavingsAccountInterest, accrueAccountInterest } from "./src/utils";
 import { newAcademicPeriod, getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday } from "./src/school";
 import { LOGO_LIGHT_URI, LOGO_DARK_URI } from "./src/assets/logo";
 import { setThemePreference } from "./src/themePreference";
 import { isNativeAlarmAvailable, getAlarmStatus, openExactAlarmSettings, openBatteryOptimizationSettings } from "./modules/layp-alarm";
+import { isNativeWidgetAvailable, pushWidgetSummary, getPendingWidgetItems, ackWidgetItems } from "./modules/layp-widget";
+import { buildWidgetSummary, pendingToExpenses, pendingToMoney, pendingToTodos, applyTaskOps } from "./src/widgetSummary";
+import { buildWidgetEvents } from "./src/widgetEvents";
+import { entryRepeat, entryKind } from "./src/gfDates";
+import { loadWidgetPrefs, saveWidgetPrefs, DEFAULT_WIDGET_PREFS } from "./src/widgetPrefs";
+import { loadGfScreenEnabled, saveGfScreenEnabled, DEFAULT_GF_SCREEN_ENABLED } from "./src/gfScreenPreference";
+import { maybeAutoBackup } from "./src/autoBackup";
+import { peso } from "./src/utils";
 import LockScreen from "./src/screens/LockScreen";
 import RecoveryScreen from "./src/screens/RecoveryScreen";
 import ClassAlarmScreen from "./src/components/ClassAlarmScreen";
 import { ConfirmModalHost } from "./src/components/ConfirmModal";
+import AppDialogHost from "./src/components/AppDialog";
 import { getAutoLockMinutes, setAutoLockMinutes, AUTO_LOCK_OPTIONS, DEFAULT_AUTO_LOCK_MINUTES } from "./src/autoLockPreference";
 
 import HomeScreen from "./src/screens/HomeScreen";
 import TodoScreen from "./src/screens/TodoScreen";
 import BudgetScreen from "./src/screens/BudgetScreen";
 import SchoolScreen from "./src/screens/SchoolScreen";
-import SummaryScreen from "./src/screens/SummaryScreen";
+import SettingsScreen from "./src/screens/SettingsScreen";
 import TabTransition from "./src/components/TabTransition";
 import SwipeNavigator from "./src/components/SwipeNavigator";
 import ErrorBoundary from "./src/components/ErrorBoundary";
@@ -158,6 +168,19 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
   // full-screen panel itself; GFScreen re-verifies the PIN every time it
   // opens (see its own effect), so no "unlocked" flag needs to live here.
   const [gfOpen, setGfOpen] = useState(false);
+  const [gfScreenEnabled, setGfScreenEnabledState] = useState(DEFAULT_GF_SCREEN_ENABLED);
+  useEffect(() => { loadGfScreenEnabled().then(setGfScreenEnabledState); }, []);
+  const onChangeGfScreenEnabled = useCallback((enabled) => {
+    setGfScreenEnabledState(enabled);
+    if (!enabled) setGfOpen(false);
+    saveGfScreenEnabled(enabled);
+  }, []);
+  // The gear menu (Settings): which tab it opens on, and what the date widgets show.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("general");
+  const [widgetPrefs, setWidgetPrefs] = useState(DEFAULT_WIDGET_PREFS);
+  useEffect(() => { loadWidgetPrefs().then(setWidgetPrefs); }, []);
+  const onChangeWidgetPrefs = useCallback((next) => { setWidgetPrefs(next); saveWidgetPrefs(next); }, []);
   const [gfName, setGfName] = useState("Her");
   const [gfLikes, setGfLikes] = useState([]);
   const [gfDislikes, setGfDislikes] = useState([]);
@@ -273,7 +296,9 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
           // uses (see DailyBudgetScreen's todayDecision) -- ignore a late
           // or duplicate tap if today's already been decided some other
           // way (e.g. the app was opened and acted on in between).
-          const already = dailyBudgetLog.find((e) => e.date === todayISO());
+          // Replayed answers carry the day the button was really tapped.
+          const decisionDay = response?.actionDate || todayISO();
+          const already = dailyBudgetLog.find((e) => e.date === decisionDay);
           if (!already) {
             if (actionId === DAILY_BUDGET_SAVE_ACTION) {
               // Recomputed fresh rather than trusting the notification's
@@ -283,11 +308,11 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
               const cappedAmount = review.savings ? Math.max(0, Math.min(review.savings.maxSafeToSave || 0, review.currentBalance || 0)) : 0;
               if (cappedAmount > 0) {
                 const saveAccount = data.saveAccount || accounts[0]?.id;
-                setSavingsLog((prev) => [...prev, { id: uid(), amount: cappedAmount, account: saveAccount, splitId: review.savings.id, note: "Daily budget review", date: todayISO(), type: "deposit", createdAt: Date.now() }]);
-                setDailyBudgetLog((prev) => [...prev, { id: uid(), date: todayISO(), choice: "saved", amount: cappedAmount }]);
+                setSavingsLog((prev) => [...prev, { id: uid(), amount: cappedAmount, account: saveAccount, splitId: review.savings.id, note: "Daily budget review", date: decisionDay, type: "deposit", createdAt: Date.now() }]);
+                setDailyBudgetLog((prev) => [...prev, { id: uid(), date: decisionDay, choice: "saved", amount: cappedAmount }]);
               }
             } else {
-              setDailyBudgetLog((prev) => [...prev, { id: uid(), date: todayISO(), choice: "kept" }]);
+              setDailyBudgetLog((prev) => [...prev, { id: uid(), date: decisionDay, choice: "kept" }]);
             }
           }
           if (notifId) await dismissNotification(notifId);
@@ -430,12 +455,17 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
   const [remindPopupItems, setRemindPopupItems] = useState([]);
 
   const checkDuePopups = useCallback(() => {
-    const dueReminders = reminders.filter(isScheduledPopupDue);
-    // A promise can be popup-due either the "scheduled" way (a specific
-    // date/time, or daily-at-a-time) or the "interval" way (every N
-    // hours, no clock time involved) -- checked separately since they're
+    // A reminder or promise can be popup-due either the "scheduled" way (a
+    // specific date/time, or daily-at-a-time) or the "interval" way (every
+    // N hours, no clock time involved) -- checked separately since they're
     // mutually exclusive per item (scheduleKind decides which) but both
-    // count as "this promise's popup is due right now".
+    // count as "this item's popup is due right now". Reminders only
+    // gained the interval option alongside promises, so it wasn't checked
+    // here before -- an interval-mode Remember reminder in popup mode
+    // would never have actually surfaced.
+    const dueRemindersScheduled = reminders.filter(isScheduledPopupDue);
+    const dueRemindersInterval = reminders.filter(isIntervalPopupDue);
+    const dueReminders = [...dueRemindersScheduled, ...dueRemindersInterval];
     const duePromisesScheduled = gfPromises.filter(isScheduledPopupDue);
     const duePromisesInterval = gfPromises.filter(isIntervalPopupDue);
     const duePromises = [...duePromisesScheduled, ...duePromisesInterval];
@@ -450,7 +480,11 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
     // Stamps each shown item so it doesn't immediately re-qualify as due
     // on the very next check -- a one-time (dated) item won't fire again
     // at all, a repeating one waits out its own cooldown first.
-    if (dueReminders.length) setReminders((prev) => prev.map((r) => (isScheduledPopupDue(r) ? { ...r, ...markScheduledPopupShown(r) } : r)));
+    if (dueReminders.length) setReminders((prev) => prev.map((r) => (
+      isScheduledPopupDue(r) ? { ...r, ...markScheduledPopupShown(r) }
+      : isIntervalPopupDue(r) ? { ...r, ...markFrequencyPopupShown() }
+      : r
+    )));
     if (duePromises.length) setGfPromises((prev) => prev.map((p) => (
       isScheduledPopupDue(p) ? { ...p, ...markScheduledPopupShown(p) }
       : isIntervalPopupDue(p) ? { ...p, ...markFrequencyPopupShown() }
@@ -467,7 +501,18 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
   // OF the PIN screen before the person has actually gotten past it.
   useEffect(() => {
     if (!ready || !unlocked) return;
-    checkDuePopups();
+    // Deferred rather than called straight away: checkDuePopups can touch
+    // every reminder/promise/note and fire off several setState calls,
+    // which re-renders the whole (large, already-mounted) AppShell tree.
+    // Running that synchronously in the same tick as the unlock meant it
+    // competed with the LockScreen fade-out for the JS thread right as
+    // the person unlocked -- the exact moment "opening" needs to feel
+    // instant. runAfterInteractions pushes it past that transition
+    // instead, so the fade-out itself stays smooth and any popup still
+    // appears right after, just a beat later rather than fighting for the
+    // same frame.
+    const task = InteractionManager.runAfterInteractions(() => checkDuePopups());
+    return () => task.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, unlocked]);
 
@@ -551,7 +596,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
       // the person grants it from Settings.
       const notifGranted = await requestNotificationPermission();
       if (!notifGranted) {
-        Alert.alert(
+        showAppDialog(
           "Notifications are off",
           "LAYP can't send task reminders, bill alerts, or class alarms without notification permission. You can turn it on anytime from your phone's Settings."
         );
@@ -661,6 +706,185 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
     saveState({ todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises });
     setThemePreference(dark);
   }, [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, splits, accounts, transfers, goals, dark, ready, dailyBudgetSettings, dailyBudgetLog, dailyBudgetNotifId, academicPeriods, subjects, scheduleEntries, schoolDefaults, cancelledClasses, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises]);
+
+  // --- Home-screen widgets + quiet notification buttons (modules/layp-widget, Android) ---
+  //
+  // The widgets (spending, tasks, calendar) and some notification buttons are
+  // native, so they work while this JS isn't running. Two one-way flows:
+  //  * native -> app: what happened while the app was closed waits in a
+  //    durable native queue -- expenses and money logged from the widget,
+  //    taps on a task's circle, and answers to notification buttons that
+  //    don't open the app ("Yes, started", "Save to savings"...).
+  //    syncWidgetItems() applies them on launch and whenever the app comes
+  //    back to the foreground.
+  //  * app -> native: the summary effect below pushes everything the widgets
+  //    show (today's total, balances, tasks, upcoming events, theme...).
+  // Both are no-ops where the native module isn't linked (iOS, Expo Go).
+  const widgetCtxRef = useRef({});
+  widgetCtxRef.current = { ready, needsRecovery, splits, accounts, todos, expenses, moneyLog, weeklySummaries, loans, savingsLog, transfers, cancelledClasses };
+  // Queue ids already applied this session, so two syncs close together
+  // (launch + foreground) can't apply the same item twice before it's acked.
+  const widgetDoneRef = useRef(new Set());
+  const widgetBusyRef = useRef(false);
+  const syncWidgetItems = useCallback(async () => {
+    const c = widgetCtxRef.current;
+    if (!c.ready || c.needsRecovery || !isNativeWidgetAvailable() || widgetBusyRef.current) return;
+    widgetBusyRef.current = true;
+    try {
+      const all = await getPendingWidgetItems();
+      const fresh = (list) => list.filter((x) => !widgetDoneRef.current.has(x.id));
+      const queued = { expenses: fresh(all.expenses), money: fresh(all.money), taskOps: fresh(all.taskOps), notifActions: fresh(all.notifActions), newTasks: fresh(all.newTasks), classSuspends: fresh(all.classSuspends || []) };
+      const ackIds = [...all.expenses, ...all.money, ...all.taskOps, ...all.notifActions, ...all.newTasks, ...(all.classSuspends || [])].map((x) => x.id);
+      if (ackIds.length === 0) return;
+      const today = todayISO();
+      const ctx = { moneyLog: c.moneyLog, expenses: c.expenses, weeklySummaries: c.weeklySummaries, loans: c.loans, savingsLog: c.savingsLog, transfers: c.transfers };
+
+      // Money received first, so an expense logged right after it can use it.
+      const moneyRes = pendingToMoney(queued.money, { accounts: c.accounts, incomeCategories: INCOME_CATEGORIES, existingIds: new Set(c.moneyLog.map((m) => m.id)), today });
+      const moneyAdded = {};
+      for (const m of moneyRes.entries) moneyAdded[m.account] = (moneyAdded[m.account] || 0) + m.amount;
+      if (moneyRes.entries.length > 0) {
+        setMoneyLog((prev) => {
+          const have = new Set(prev.map((m) => m.id));
+          const add = moneyRes.entries.filter((m) => !have.has(m.id));
+          return add.length > 0 ? [...prev, ...add] : prev;
+        });
+      }
+
+      // Spending never goes past an account's balance: the widget's dialog
+      // blocks it, and this re-checks against the real balance (the widget's
+      // copy can be a little stale). Anything that doesn't fit is dropped
+      // and the person is told, rather than silently overspending.
+      const balances = Object.fromEntries(c.accounts.map((a) => [a.id, computeAccountBalance(a.id, ctx)]));
+      const expRes = pendingToExpenses(queued.expenses, { splits: c.splits, accounts: c.accounts, existingIds: new Set(c.expenses.map((e) => e.id)), today, balances, moneyAdded });
+      if (expRes.expenses.length > 0) {
+        setExpenses((prev) => {
+          const have = new Set(prev.map((e) => e.id));
+          const add = expRes.expenses.filter((e) => !have.has(e.id));
+          return add.length > 0 ? [...prev, ...add] : prev;
+        });
+      }
+      if (expRes.rejected.length > 0) {
+        const lines = expRes.rejected.map((r) => {
+          const acct = c.accounts.find((a) => a.id === r.account)?.label || "that account";
+          return `${r.name} (${peso(r.amount)}) -- only ${peso(r.available)} left in ${acct}`;
+        });
+        showAppDialog("Some widget expenses weren't added", `${lines.join("\n")}\n\nSpending can't go past an account's balance.`);
+      }
+
+      // Tasks added from the Tasks widget: created like the in-app form
+      // creates them, including scheduling their reminders.
+      const taskRes = pendingToTodos(queued.newTasks, { existingIds: new Set(c.todos.map((t) => t.id)), today });
+      const newTodos = [];
+      for (const draft of taskRes.todos) {
+        let notificationIds = [];
+        try { notificationIds = await rescheduleTodoNotifications(draft, null); } catch (e) { /* the task is still created */ }
+        newTodos.push({ ...draft, notificationIds });
+      }
+
+      // Task taps / "Have you started?" answers: same effects as doing it in
+      // the Todo screen -- finishing a task also cancels its reminders/alarm.
+      // Applied after the new tasks exist, so a task added and then tapped
+      // from the widget before the app ran ends up in the right state.
+      if (newTodos.length > 0 || queued.taskOps.length > 0) {
+        const { completed } = applyTaskOps([...c.todos, ...newTodos], queued.taskOps);
+        for (const t of completed) {
+          await cancelTodoNotifications(t.notificationIds);
+          await cancelTodoAlarm(t.id);
+        }
+        setTodos((prev) => {
+          const have = new Set(prev.map((t) => t.id));
+          const add = newTodos.filter((t) => !have.has(t.id));
+          return applyTaskOps(add.length > 0 ? [...prev, ...add] : prev, queued.taskOps).todos;
+        });
+      }
+
+      // A class suspended from the 2x2 widget is recorded for today using
+      // the same cancelledClasses state as the in-app class alarm screen.
+      if (queued.classSuspends.length > 0) {
+        setCancelledClasses((prev) => {
+          const next = [...prev];
+          for (const item of queued.classSuspends) {
+            if (!item?.entryId || !item?.date) continue;
+            if (!next.some((x) => x.date === item.date && x.entryId === item.entryId)) {
+              next.push({ date: item.date, entryId: item.entryId });
+            }
+          }
+          return next;
+        });
+      }
+
+      // Notification buttons that need the app's own logic (daily budget):
+      // replayed through the same handler a tap would have reached, stamped
+      // with the day the button was actually tapped.
+      for (const a of queued.notifActions) {
+        await notificationHandlerRef.current({
+          actionIdentifier: a.actionId,
+          actionDate: a.date,
+          notification: { request: { identifier: a.notifId, content: { data: a.data } } },
+        });
+      }
+
+      for (const id of ackIds) widgetDoneRef.current.add(id);
+      // Acknowledged only after saveState's debounce has had time to write
+      // it all to disk (src/storage.js SAVE_DEBOUNCE_MS = 800). If the app is
+      // killed first, the next sync skips what was already saved by id.
+      setTimeout(() => { ackWidgetItems(ackIds).catch(() => {}); }, 3000);
+    } catch (e) {
+      console.warn("syncWidgetItems failed", e);
+    } finally {
+      widgetBusyRef.current = false;
+    }
+  }, []);
+  useEffect(() => {
+    if (!ready || needsRecovery || !isNativeWidgetAvailable()) return undefined;
+    syncWidgetItems();
+    const sub = AppState.addEventListener("change", (next) => { if (next === "active") syncWidgetItems(); });
+    return () => sub.remove();
+  }, [ready, needsRecovery, syncWidgetItems]);
+  useEffect(() => {
+    if (!ready || needsRecovery || !isNativeWidgetAvailable()) return undefined;
+    const t = setTimeout(() => {
+      const ctx = { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers };
+      const today = todayISO();
+      pushWidgetSummary(buildWidgetSummary({
+        expenses, splits, accounts,
+        balanceOf: (id) => computeAccountBalance(id, ctx),
+        hidden: budgetHidden,
+        today,
+        dark,
+        incomeCategories: INCOME_CATEGORIES,
+        todos,
+        subjects,
+        categories: CATEGORIES,
+        academicPeriods,
+        scheduleEntries,
+        cancelledClasses,
+        // Each date widget shows only what was chosen in Settings > Widgets.
+        events: buildWidgetEvents({ todos, bills, loans, reminders, gfDates, today, kinds: widgetPrefs.calendarKinds }),
+        // A month ahead is pushed (the widget itself picks the 7-day window
+        // each day, so it stays right even if the app isn't opened for days).
+        upcoming: buildWidgetEvents({ todos, bills, loans, reminders, gfDates, today, horizonDays: 30, limit: 80, kinds: widgetPrefs.upcomingKinds }),
+      })).catch(() => {});
+    }, 400);
+    return () => clearTimeout(t);
+  }, [ready, needsRecovery, expenses, splits, accounts, moneyLog, weeklySummaries, loans, savingsLog, transfers, budgetHidden, dark, todos, bills, reminders, gfDates, subjects, academicPeriods, scheduleEntries, cancelledClasses, widgetPrefs]);
+
+  // Monthly GF dates (monthsaries) can't use a repeating OS trigger, so only
+  // their next few occurrences are scheduled at a time. Re-arm them once per
+  // launch so that window keeps rolling forward as months pass.
+  useEffect(() => {
+    if (!ready || needsRecovery) return;
+    const monthly = gfDates.filter((d) => entryRepeat(d) === "monthly");
+    if (monthly.length === 0) return;
+    (async () => {
+      const fresh = {};
+      for (const d of monthly) {
+        try { fresh[d.id] = await rescheduleDateNotifications(d.notificationIds || [], d.date, d.label, "monthly", entryKind(d)); } catch (e) { /* keep the old ids */ }
+      }
+      setGfDates((prev) => prev.map((d) => (fresh[d.id] ? { ...d, notificationIds: fresh[d.id] } : d)));
+    })();
+  }, [ready, needsRecovery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cancellation records only ever need to cover "today" at check time, so
   // trim anything older than a week on load rather than let this list grow
@@ -911,7 +1135,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
   // School, Budget, and Summary to all re-render and recompute along with it.
   const goToSchool = useCallback(() => setTab("school"), []);
   const goToTodo = useCallback(() => setTab("todo"), []);
-  const goToSummary = useCallback(() => setTab("summary"), []);
+  const goToSummary = useCallback(() => { setSettingsTab("summary"); setSettingsOpen(true); }, []);
   const clearPrefillSubject = useCallback(() => setPrefillSubjectId(null), []);
   const goToTodoForSubject = useCallback((subjectId) => { setPrefillSubjectId(subjectId); setTab("todo"); }, []);
   const restoreBackup = useCallback((data) => {
@@ -943,6 +1167,23 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
     () => ({ version: 1, todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises }),
     [todos, bills, expenses, moneyLog, weeklySummaries, savingsLog, goals, loans, splits, accounts, transfers, dark, dailyBudgetSettings, dailyBudgetLog, academicPeriods, subjects, scheduleEntries, schoolDefaults, recurringIncome, spendingLimits, savingsAccounts, interestLog, reminders, gfName, gfLikes, gfDislikes, gfDates, gfNotes, gfGiftIdeas, gfPromises]
   );
+
+  // Automatic backup: once a week LAYP backs itself up to this phone (and to
+  // Google Drive when that's connected). A phone can't run LAYP's JavaScript
+  // while the app is closed, so "due" is checked when it opens and each time
+  // it comes back to the foreground; src/backupSchedule.js decides if a week
+  // has passed (and waits out a retry window after a failure).
+  const backupDataRef = useRef(null);
+  backupDataRef.current = backupData;
+  useEffect(() => {
+    if (!ready || needsRecovery) return undefined;
+    const run = () => { maybeAutoBackup(backupDataRef.current).catch((e) => console.warn("auto backup failed", e)); };
+    // A moment after launch, so it never competes with the app starting up.
+    const t = setTimeout(run, 4000);
+    const sub = AppState.addEventListener("change", (next) => { if (next === "active") run(); });
+    return () => { clearTimeout(t); sub.remove(); };
+  }, [ready, needsRecovery]);
+
 
   function renderTabContent(t) {
     switch (t) {
@@ -1007,18 +1248,6 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
             budgetHidden={budgetHidden} onToggleBudgetHidden={toggleBudgetHidden}
           />
         );
-      case "summary":
-        return (
-          <SummaryScreen
-            todos={todos} splits={splits} bills={bills} expenses={expenses}
-            moneyLog={moneyLog} weeklySummaries={weeklySummaries} savingsLog={savingsLog} loans={loans}
-            accounts={accounts} transfers={transfers}
-            backup={backupData}
-            onRestore={restoreBackup}
-            autoLockMinutes={autoLockMinutes}
-            onChangeAutoLockMinutes={onChangeAutoLockMinutes}
-          />
-        );
       default:
         return null;
     }
@@ -1055,10 +1284,28 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
       <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
         <StatusBar style={dark ? "light" : "dark"} />
         <ConfirmModalHost />
+        <AppDialogHost />
         {classAlarm && (
           <ClassAlarmScreen alarm={classAlarm} onDismiss={() => setClassAlarm(null)} onSuspend={() => handleSuspendClass(classAlarm.block)} />
         )}
-        <GFScreen
+        <SettingsScreen
+          visible={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          initialTab={settingsTab}
+          dark={dark} setDark={setDark}
+          autoLockMinutes={autoLockMinutes}
+          onChangeAutoLockMinutes={onChangeAutoLockMinutes}
+          widgetPrefs={widgetPrefs}
+          onChangeWidgetPrefs={onChangeWidgetPrefs}
+          gfScreenEnabled={gfScreenEnabled}
+          onChangeGfScreenEnabled={onChangeGfScreenEnabled}
+          summaryProps={{
+            todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts, transfers,
+            backup: backupData,
+            onRestore: restoreBackup,
+          }}
+        />
+        {gfScreenEnabled && <GFScreen
           visible={gfOpen}
           onClose={() => setGfOpen(false)}
           gfName={gfName} setGfName={setGfName}
@@ -1068,13 +1315,13 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
           gfNotes={gfNotes} setGfNotes={setGfNotes}
           gfGiftIdeas={gfGiftIdeas} setGfGiftIdeas={setGfGiftIdeas}
           gfPromises={gfPromises} setGfPromises={setGfPromises}
-        />
+        />}
         <RemindPopup
           visible={remindPopupVisible}
           items={remindPopupItems}
           onDismiss={() => setRemindPopupVisible(false)}
         />
-        <View style={styles.header}>
+        <LiquidGlass radius={22} style={styles.headerGlass} contentStyle={styles.header}>
           <View style={styles.headerLeft}>
             <Image source={{ uri: dark ? LOGO_DARK_URI : LOGO_LIGHT_URI }} style={styles.logo} />
             <View>
@@ -1082,26 +1329,25 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
               <Text style={[styles.headerDate, { color: theme.textMuted }]}>{todayLabel}</Text>
             </View>
           </View>
-          <View style={{ flexDirection: "row", gap: 8 }}>
-            <Pressable onPress={() => setTab("summary")} style={[styles.themeBtn, tab === "summary" && { backgroundColor: theme.bg }, { backgroundColor: tab === "summary" ? theme.bg : theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Summary">
-              <FileText size={13} color={tab === "summary" ? ACCENT.gold : theme.textMuted} />
-            </Pressable>
+          <View style={{ flexDirection: "row", gap: 7 }}>
             <Pressable onPress={onLock} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Lock app">
               <Lock size={13} color={theme.textMuted} />
             </Pressable>
-            <Pressable onPress={() => setGfOpen(true)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Open GF">
-              <Heart size={14} color={ACCENT.rose} fill={ACCENT.rose} />
-              {gfMissedCount > 0 && (
-                <View style={styles.gfBadge}>
-                  <Text style={styles.gfBadgeText}>{gfMissedCount > 9 ? "9+" : gfMissedCount}</Text>
-                </View>
-              )}
-            </Pressable>
-            <Pressable onPress={() => setDark((d) => !d)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel={dark ? "Switch to light mode" : "Switch to dark mode"}>
-              {dark ? <Sun size={14} color={ACCENT.gold} /> : <Moon size={14} color={theme.text} />}
+            {gfScreenEnabled && (
+              <Pressable onPress={() => setGfOpen(true)} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Open GF">
+                <Heart size={14} color={ACCENT.rose} fill={ACCENT.rose} />
+                {gfMissedCount > 0 && (
+                  <View style={styles.gfBadge}>
+                    <Text style={styles.gfBadgeText}>{gfMissedCount > 9 ? "9+" : gfMissedCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+            )}
+            <Pressable onPress={() => { setSettingsTab("general"); setSettingsOpen(true); }} style={[styles.themeBtn, { backgroundColor: theme.card, borderColor: theme.line }]} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Settings">
+              <GearIcon size={14} color={theme.text} />
             </Pressable>
           </View>
-        </View>
+        </LiquidGlass>
 
         {reminderBanner && (
           <View style={[styles.banner, { backgroundColor: theme.accentDark }]}>
@@ -1197,6 +1443,12 @@ const AppShell = React.memo(AppShellComponent);
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  ambientOrb: { position: "absolute", width: 270, height: 270, borderRadius: 135 },
+  ambientOrbOne: { top: 80, left: -95 },
+  ambientOrbTwo: { top: 380, right: -115 },
+  ambientOrbThree: { bottom: 185, left: 65 },
+  ambientOrbFour: { top: 170, right: 40, width: 150, height: 150, borderRadius: 75 },
+  headerGlass: { marginHorizontal: 12, marginTop: 6, marginBottom: 8, minHeight: 54 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 8, paddingBottom: 6 },
   headerLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   logo: { width: 30, height: 30, borderRadius: 8 },

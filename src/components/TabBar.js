@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Pressable, Animated, StyleSheet } from "react-native";
 import { ACCENT } from "../theme";
+import LiquidGlass from "./LiquidGlass";
 
 // The bottom tab bar, pulled out of App.js into its own component like
 // every other reusable piece under src/components (SwipeNavigator,
@@ -42,10 +43,8 @@ export default function TabBar({ tabs, activeKey, onChange, theme }) {
   }, [activeIndex, barWidth]);
 
   return (
-    <View
-      style={[styles.wrap, { borderColor: theme.line, backgroundColor: theme.card }]}
-      onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-    >
+    <LiquidGlass radius={26} style={styles.glassWrap} contentStyle={styles.wrap} testID="layp-tabbar">
+      <View onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)} style={StyleSheet.absoluteFillObject} />
       {barWidth > 0 && (
         <Animated.View
           pointerEvents="none"
@@ -62,7 +61,7 @@ export default function TabBar({ tabs, activeKey, onChange, theme }) {
       {tabs.map((t) => (
         <TabButton key={t.key} tab={t} active={t.key === activeKey} onPress={() => onChange(t.key)} theme={theme} />
       ))}
-    </View>
+    </LiquidGlass>
   );
 }
 
@@ -106,22 +105,22 @@ function TabButton({ tab, active, onPress, theme }) {
 }
 
 const styles = StyleSheet.create({
+  glassWrap: {
+    marginHorizontal: 12,
+    marginBottom: 8,
+    minHeight: 60,
+    shadowColor: "#000",
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
+  },
   wrap: {
     flexDirection: "row",
-    borderWidth: 1,
-    borderRadius: 20,
-    marginHorizontal: 12,
-    marginBottom: 6,
+    borderRadius: 26,
     paddingVertical: 4,
-    // Lets the sliding indicator sit fully behind the row of buttons
-    // without any of them needing z-index juggling.
     position: "relative",
     overflow: "hidden",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: -2 },
   },
   indicator: {
     position: "absolute",

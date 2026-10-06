@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
 import Slider from "@react-native-community/slider";
 import { ArrowLeft, Plus, Trash2, Check, Bell, PiggyBank } from "lucide-react-native";
 import { useTheme, ACCENT, PALETTE, DEFAULT_SPLITS } from "../theme";
@@ -9,6 +9,7 @@ import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
 import TimePicker from "../components/TimePicker";
 import { hapticSuccess } from "../haptics";
+import { showAppDialog } from "../components/AppDialog";
 
 // If the current splits exactly match a known preset, show that preset's
 // name; otherwise this is a user-customized model.
@@ -73,11 +74,11 @@ export default function DailyBudgetScreen({
     // silently saving a smaller amount they didn't ask for.
     const cappedAmount = Math.min(Number(amount), Math.max(0, review.currentBalance || 0));
     if (!isPositiveAmount(cappedAmount)) {
-      Alert.alert("Nothing left to save", "You don't have any available balance left today, so there's no money to move into savings right now.");
+      showAppDialog("Nothing left to save", "You don't have any available balance left today, so there's no money to move into savings right now.");
       return;
     }
     if (cappedAmount < Number(amount) - 0.01) {
-      Alert.alert("Amount reduced", `Only ${peso(cappedAmount)} is actually available right now, so that's what will be saved instead of ${peso(Number(amount))}.`);
+      showAppDialog("Amount reduced", `Only ${peso(cappedAmount)} is actually available right now, so that's what will be saved instead of ${peso(Number(amount))}.`);
     }
     setSavingsLog((prev) => [...prev, { id: uid(), amount: cappedAmount, account: saveAccount, splitId: review.savings.id, note: "Daily budget review", date: todayISO(), type: "deposit", createdAt: Date.now() }]);
     logDecision({ choice: "saved", amount: cappedAmount });
@@ -114,8 +115,8 @@ export default function DailyBudgetScreen({
             customAmount={customAmount} setCustomAmount={setCustomAmount}
             onSaveRecommended={() => saveAmount(review.savings?.maxSafeToSave || 0)}
             onSaveCustom={() => saveAmount(customAmount)}
-            onKeep={() => { if (!todayDecision) { logDecision({ choice: "kept" }); Alert.alert("Noted", "This money stays available -- it won't be counted as saved."); } }}
-            onRemind={() => { if (!todayDecision) { logDecision({ choice: "remind" }); Alert.alert("Okay", "Tomorrow's review will pick this back up."); } }}
+            onKeep={() => { if (!todayDecision) { logDecision({ choice: "kept" }); showAppDialog("Noted", "This money stays available -- it won't be counted as saved."); } }}
+            onRemind={() => { if (!todayDecision) { logDecision({ choice: "remind" }); showAppDialog("Okay", "Tomorrow's review will pick this back up."); } }}
             accounts={accounts} saveAccount={saveAccount} setSaveAccount={setSaveAccount}
             dailyBudgetLog={dailyBudgetLog} todayDecision={todayDecision}
           />

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="layp_accent">#EAEAEA</color>
+    <color name="layp_chip">#1D1D1D</color>
+    <color name="layp_chip_border">#303030</color>
+    <color name="layp_error">#FF7468</color>
+    <color name="layp_muted">#9E9E9E</color>
+    <color name="layp_on_accent">#090909</color>
+    <color name="layp_surface">#111111</color>
+    <color name="layp_text">#F5F5F5</color>
+    <color name="layp_warn">#F1C75B</color>
+    <string name="layp_calendar_description">This month at a glance, with upcoming deadlines, payments and special dates.</string>
+    <string name="layp_calendar_label">LAYP Calendar</string>
+    <string name="layp_class_description">Today\'s classes, with the current class highlighted and quick suspension.</string>
+    <string name="layp_class_label">LAYP Today\'s Classes</string>
+    <string name="layp_task_4x4_label">LAYP Tasks (4x4)</string>
+    <string name="layp_task_4x6_label">LAYP Tasks (4x6)</string>
+    <string name="layp_task_description">Your open tasks. Tap a circle to move a task to its next status.</string>
+    <string name="layp_task_status_circle">Task status</string>
+    <string name="layp_upcoming_2x2_label">LAYP Upcoming (2x2)</string>
+    <string name="layp_upcoming_4x2_label">LAYP Upcoming (4x2)</string>
+    <string name="layp_upcoming_description">The next 7 days: task deadlines, payments and special dates. Scroll for more.</string>
+    <string name="layp_widget_description">See what you spent today, log expenses, search past ones and add money.</string>
+    <string name="layp_widget_label">LAYP Spending</string>
+    <style name="LaypWidgetDialog" parent="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
+    <item name="android:windowBackground">@android:color/transparent</item>
+    <item name="android:windowIsFloating">true</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:backgroundDimEnabled">true</item>
+  </style>
+</resources>

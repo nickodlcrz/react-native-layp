@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, Pressable, ScrollView, Modal, StyleSheet, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Heart, X, Plus, Trash2, CheckCircle2, Circle, Camera, CalendarHeart, StickyNote, HandHeart, Clock3, Edit3 } from "lucide-react-native";
+import { Heart, X, Plus, Trash2, CheckCircle2, Circle, Camera, CalendarHeart, StickyNote, HandHeart, Clock3, Edit3, Pencil } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { uid, todayISO } from "../utils";
 import { verifyPin } from "../security";
+import { hapticImpact } from "../haptics";
+import ImageViewer from "../components/ImageViewer";
 import { pickAndSaveGfImage, deleteGfImage } from "../gfImages";
 import { rescheduleDateNotifications, scheduleItemNotification, cancelTodoNotifications } from "../notifications";
 import { FREQUENCY_OPTIONS, describeSchedule } from "../reminderLogic";
@@ -12,6 +14,7 @@ import Chip from "../components/Chip";
 import SegmentedTabs from "../components/SegmentedTabs";
 import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
+import { daysUntilEntry, entryKind, entryRepeat, badgesFor, ordinal } from "../gfDates";
 import TimePicker from "../components/TimePicker";
 import { confirmDelete } from "../components/ConfirmModal";
 
@@ -23,16 +26,9 @@ const LIKE_CATEGORIES = [
 ];
 
 // Important dates are stored as "MM-DD" (no year) -- a birthday or
-// anniversary repeats every year, so there's no real "year" for it to
-// carry. daysUntilNext computes how far away the *next* occurrence is,
-// wrapping into next year once this year's has already passed.
-function daysUntilNext(mmdd) {
-  const [mm, dd] = mmdd.split("-").map(Number);
-  const now = new Date(); now.setHours(0, 0, 0, 0);
-  let next = new Date(now.getFullYear(), mm - 1, dd);
-  if (next.getTime() < now.getTime()) next = new Date(now.getFullYear() + 1, mm - 1, dd);
-  return Math.round((next.getTime() - now.getTime()) / 86400000);
-}
+// anniversary has no real "year" to carry. Whether one comes round every year
+// or every month, and how far away the next occurrence is, lives in
+// src/gfDates.js.
 function fmtMmdd(mmdd) {
   const [mm, dd] = mmdd.split("-").map(Number);
   return new Date(2000, mm - 1, dd).toLocaleDateString("en-PH", { month: "long", day: "numeric" });
@@ -52,6 +48,9 @@ function isPromiseOverdue(p) {
   return Date.now() >= today.getTime();
 }
 
+const SECRET_TAPS_NEEDED = 5;
+const SECRET_TAP_WINDOW_MS = 3000;
+
 export default function GFScreen({
   visible, onClose,
   gfName, setGfName,
@@ -69,6 +68,39 @@ export default function GFScreen({
   const [tab, setTab] = useState("notes");
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(gfName || "");
+  // The gate starts completely blank -- no PIN field, no hint that one
+  // exists. Tapping anywhere on the screen 5 times in quick succession
+  // (each tap must land within SECRET_TAP_WINDOW_MS of the last) is what
+  // brings the PIN prompt up. The PIN itself still goes through the same
+  // verifyPin/lockout path as the app's own lock screen.
+  const [showPin, setShowPin] = useState(false);
+  const tapCountRef = React.useRef(0);
+  const tapTimerRef = React.useRef(null);
+
+  // Long-pressing any item on this screen opens one shared Edit/Delete
+  // menu. It's an overlay drawn inside this screen rather than another
+  // Modal, so it can never fail to appear on top of this (already modal)
+  // screen. `menu` is { title, onEdit?, onDelete }; items with nothing to
+  // edit (e.g. a kept promise) just leave onEdit out.
+  const [menu, setMenu] = useState(null);
+  function openMenu(m) { hapticImpact(); setMenu(m); }
+  // The photo being viewed full-screen (with zoom), { uri, caption } or null.
+  const [viewer, setViewer] = useState(null);
+  const scrollRef = useRef(null);
+  // Add/edit forms sit at the bottom of their tab, which with a long list
+  // (or a feed of big photos) is well off-screen -- each tab calls this
+  // when its form opens so the form is scrolled into view.
+  function scrollToForm() { scrollRef.current?.scrollToEnd({ animated: true }); }
+
+  function registerSecretTap() {
+    tapCountRef.current += 1;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, SECRET_TAP_WINDOW_MS);
+    if (tapCountRef.current >= SECRET_TAPS_NEEDED) {
+      tapCountRef.current = 0;
+      setShowPin(true);
+    }
+  }
 
   // Re-locks every time the panel is closed and reopened -- this is the
   // "reuse your PIN so the list can't be seen by others" requirement:
@@ -76,7 +108,13 @@ export default function GFScreen({
   // someone who picks up an already-unlocked phone could otherwise open
   // this straight from the heart icon with no further check.
   React.useEffect(() => {
-    if (visible) { setUnlocked(false); setPin(""); setPinError(""); setTab("notes"); }
+    if (visible) {
+      setUnlocked(false); setPin(""); setPinError(""); setTab("notes");
+      setShowPin(false);
+      setMenu(null);
+      setViewer(null);
+      tapCountRef.current = 0;
+    }
   }, [visible]);
 
   async function submitPin(value) {
@@ -100,9 +138,11 @@ export default function GFScreen({
   );
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+    <Modal visible={visible} animationType="slide" onRequestClose={() => { if (viewer) setViewer(null); else if (menu) setMenu(null); else onClose(); }} statusBarTranslucent>
       <View style={[styles.safe, { backgroundColor: theme.bg, paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerRow}>
+        {/* While locked, taps on the header's empty space count toward the
+            5 secret taps too, so "anywhere on the screen" really is anywhere. */}
+        <Pressable style={styles.headerRow} onPress={unlocked ? undefined : registerSecretTap} disabled={unlocked} accessible={false}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1 }}>
             <Heart size={18} color={ACCENT.rose} fill={ACCENT.rose} />
             {editingName ? (
@@ -115,32 +155,37 @@ export default function GFScreen({
                 style={[styles.nameInput, { color: theme.text, borderColor: theme.line }]}
               />
             ) : (
-              <Pressable onPress={() => { setNameDraft(gfName || ""); setEditingName(true); }} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Pressable onPress={() => { if (!unlocked) { registerSecretTap(); return; } setNameDraft(gfName || ""); setEditingName(true); }} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={[styles.h1, { color: theme.text }]}>{gfName || "Her"}</Text>
-                <Edit3 size={12} color={theme.textMuted} />
+                {unlocked && <Edit3 size={12} color={theme.textMuted} />}
               </Pressable>
             )}
           </View>
           <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Close">
             <X size={20} color={theme.textMuted} />
           </Pressable>
-        </View>
+        </Pressable>
 
         {!unlocked ? (
-          <View style={styles.pinWrap}>
-            <Heart size={32} color={ACCENT.rose} fill={ACCENT.rose} style={{ marginBottom: 14 }} />
-            <Text style={[styles.pinLabel, { color: theme.text }]}>Enter your PIN to open this</Text>
-            <TextInput
-              value={pin}
-              onChangeText={submitPin}
-              keyboardType="number-pad"
-              secureTextEntry
-              maxLength={4}
-              autoFocus
-              style={[styles.pinInput, { color: theme.text, borderColor: theme.line, backgroundColor: theme.card }]}
-            />
-            {!!pinError && <Text style={{ color: ACCENT.ember, fontSize: 11, marginTop: 8 }}>{pinError}</Text>}
-          </View>
+          showPin ? (
+            <View style={styles.pinWrap}>
+              <Heart size={32} color={ACCENT.rose} fill={ACCENT.rose} style={{ marginBottom: 14 }} />
+              <Text style={[styles.pinLabel, { color: theme.text }]}>Enter your PIN to open this</Text>
+              <TextInput
+                value={pin}
+                onChangeText={submitPin}
+                keyboardType="number-pad"
+                secureTextEntry
+                maxLength={4}
+                autoFocus
+                style={[styles.pinInput, { color: theme.text, borderColor: theme.line, backgroundColor: theme.card }]}
+              />
+              {!!pinError && <Text style={{ color: ACCENT.ember, fontSize: 11, marginTop: 8 }}>{pinError}</Text>}
+            </View>
+          ) : (
+            // Blank on purpose -- see the comment on registerSecretTap.
+            <Pressable style={{ flex: 1 }} onPress={registerSecretTap} accessible={false} />
+          )
         ) : (
           <>
             <View style={{ paddingHorizontal: 16 }}>
@@ -154,23 +199,64 @@ export default function GFScreen({
                 onChange={setTab}
               />
             </View>
-            <ScrollView style={{ flex: 1, paddingHorizontal: 16 }} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+            <ScrollView ref={scrollRef} style={{ flex: 1, paddingHorizontal: 16 }} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.longPressHint, { color: theme.textMuted }]}>Long press anything to edit or delete it</Text>
               {tab === "notes" && (
                 <NotesTab
                   gfNotes={gfNotes} setGfNotes={setGfNotes}
                   gfLikes={gfLikes} setGfLikes={setGfLikes}
                   gfDislikes={gfDislikes} setGfDislikes={setGfDislikes}
                   gfGiftIdeas={gfGiftIdeas} setGfGiftIdeas={setGfGiftIdeas}
+                  openMenu={openMenu} scrollToForm={scrollToForm} openViewer={setViewer}
                 />
               )}
-              {tab === "dates" && <DatesTab gfDates={gfDates} setGfDates={setGfDates} />}
-              {tab === "promises" && <PromisesTab gfPromises={gfPromises} setGfPromises={setGfPromises} missedCount={missedCount} />}
+              {tab === "dates" && <DatesTab gfDates={gfDates} setGfDates={setGfDates} openMenu={openMenu} scrollToForm={scrollToForm} />}
+              {tab === "promises" && <PromisesTab gfPromises={gfPromises} setGfPromises={setGfPromises} missedCount={missedCount} openMenu={openMenu} scrollToForm={scrollToForm} />}
             </ScrollView>
           </>
         )}
+
+        {unlocked && menu && <ActionMenu menu={menu} onClose={() => setMenu(null)} />}
+        {unlocked && viewer && <ImageViewer uri={viewer.uri} caption={viewer.caption} onClose={() => setViewer(null)} />}
       </View>
     </Modal>
   );
+}
+
+// The shared long-press menu: Edit (when the item can be edited), Delete,
+// Cancel. Picking an action closes the menu first, then runs it.
+function ActionMenu({ menu, onClose }) {
+  const { theme } = useTheme();
+  return (
+    <Pressable style={styles.menuBackdrop} onPress={onClose} accessibilityLabel="Close menu">
+      <Pressable onPress={() => {}} style={[styles.menuCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
+        <Text numberOfLines={2} style={[styles.menuTitle, { color: theme.textMuted }]}>{menu.title}</Text>
+        {menu.onEdit && (
+          <Pressable onPress={() => { onClose(); menu.onEdit(); }} style={[styles.menuBtn, { backgroundColor: theme.bg }]} accessibilityLabel="Edit">
+            <Pencil size={15} color={theme.text} />
+            <Text style={[styles.menuBtnText, { color: theme.text }]}>Edit</Text>
+          </Pressable>
+        )}
+        <Pressable onPress={() => { onClose(); menu.onDelete(); }} style={[styles.menuBtn, { backgroundColor: ACCENT.ember + "1a" }]} accessibilityLabel="Delete">
+          <Trash2 size={15} color={ACCENT.ember} />
+          <Text style={[styles.menuBtnText, { color: ACCENT.ember }]}>Delete</Text>
+        </Pressable>
+        <Pressable onPress={onClose} style={styles.menuCancel} accessibilityLabel="Cancel">
+          <Text style={[styles.menuBtnText, { color: theme.textMuted }]}>Cancel</Text>
+        </Pressable>
+      </Pressable>
+    </Pressable>
+  );
+}
+
+// Runs `onShown` shortly after a tab's add/edit form opens, once it has had
+// a frame to render at the bottom of the list.
+function useScrollToFormOnOpen(showForm, editingId, onShown) {
+  useEffect(() => {
+    if (!showForm || !onShown) return undefined;
+    const t = setTimeout(onShown, 120);
+    return () => clearTimeout(t);
+  }, [showForm, editingId]);
 }
 
 // --- Notes (things she mentioned, Likes, Dislikes, Gift ideas -- one tab,
@@ -184,7 +270,7 @@ const NOTE_KINDS = [
   { id: "gifts", label: "Gift ideas" },
 ];
 
-function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfDislikes, gfGiftIdeas, setGfGiftIdeas }) {
+function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfDislikes, gfGiftIdeas, setGfGiftIdeas, openMenu, scrollToForm, openViewer }) {
   const { theme } = useTheme();
   const [kind, setKind] = useState("notes");
   const [showForm, setShowForm] = useState(false);
@@ -197,6 +283,11 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
   const [popupEnabled, setPopupEnabled] = useState(false);
   const [frequency, setFrequency] = useState("always");
   const [customHours, setCustomHours] = useState("2");
+
+  useScrollToFormOnOpen(showForm, editingId, scrollToForm);
+
+  // One long-press handler for every kind of item in this tab.
+  const menuFor = (item, itemKind, del) => () => openMenu({ title: item.text, onEdit: () => startEdit(item, itemKind), onDelete: () => del(item) });
 
   function resetForm() {
     setText(""); setCategory("food"); setImageUri(null);
@@ -252,8 +343,9 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
   function removeGift(item) { confirmDelete("Remove this idea?", `"${item.text}" will be removed.`, () => { if (item.imageUri) deleteGfImage(item.imageUri); setGfGiftIdeas((prev) => prev.filter((g) => g.id !== item.id)); }); }
   function toggleGiftUsed(item) { setGfGiftIdeas((prev) => prev.map((g) => (g.id === item.id ? { ...g, used: !g.used } : g))); }
 
-  const openGifts = gfGiftIdeas.filter((g) => !g.used);
-  const usedGifts = gfGiftIdeas.filter((g) => g.used);
+  const byNewest = (a, b) => (b.createdAt || 0) - (a.createdAt || 0);
+  const openGifts = useMemo(() => gfGiftIdeas.filter((g) => !g.used).sort(byNewest), [gfGiftIdeas]);
+  const usedGifts = useMemo(() => gfGiftIdeas.filter((g) => g.used).sort(byNewest), [gfGiftIdeas]);
 
   return (
     <View>
@@ -265,16 +357,14 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
         gfNotes.length === 0 && !showForm ? (
           <EmptyState icon={StickyNote} text="Nothing noted yet." />
         ) : gfNotes.map((n) => (
-          <View key={n.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <Pressable key={n.id} onLongPress={menuFor(n, "notes", removeNote)} delayLongPress={350} accessibilityHint="Long press to edit or delete" style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
             <View style={{ flex: 1 }}>
               <Text style={[styles.itemText, { color: theme.text }]}>{n.text}</Text>
               {n.remindPopup?.enabled && (
                 <Text style={[styles.metaText, { color: theme.textMuted }]}>Popup: {FREQUENCY_OPTIONS.find((f) => f.key === n.remindPopup.frequency)?.label}{n.remindPopup.frequency === "custom" ? ` (every ${n.remindPopup.customHours}h)` : ""}</Text>
               )}
             </View>
-            <Pressable onPress={() => startEdit(n, "notes")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit note"><Edit3 size={13} color={theme.textMuted} /></Pressable>
-            <Pressable onPress={() => removeNote(n)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
-          </View>
+          </Pressable>
         ))
       )}
 
@@ -289,12 +379,10 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
                 {items.length === 0 ? (
                   <Text style={[styles.emptyLine, { color: theme.textMuted }]}>Nothing added yet.</Text>
                 ) : items.map((item) => (
-                  <View key={item.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                  <Pressable key={item.id} onLongPress={menuFor(item, "likes", removeLike)} delayLongPress={350} accessibilityHint="Long press to edit or delete" style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
                     {item.imageUri && <Image source={{ uri: item.imageUri }} style={styles.thumb} resizeMode="cover" />}
                     <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{item.text}</Text>
-                    <Pressable onPress={() => startEdit(item, "likes")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit like"><Edit3 size={13} color={theme.textMuted} /></Pressable>
-                    <Pressable onPress={() => removeLike(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             );
@@ -307,11 +395,9 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
         gfDislikes.length === 0 && !showForm ? (
           <EmptyState icon={HandHeart} text="Nothing here yet -- for things to check before repeating." />
         ) : gfDislikes.map((item) => (
-          <View key={item.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <Pressable key={item.id} onLongPress={menuFor(item, "dislikes", removeDislike)} delayLongPress={350} accessibilityHint="Long press to edit or delete" style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
             <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{item.text}</Text>
-            <Pressable onPress={() => startEdit(item, "dislikes")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit"><Edit3 size={13} color={theme.textMuted} /></Pressable>
-            <Pressable onPress={() => removeDislike(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
-          </View>
+          </Pressable>
         ))
       )}
 
@@ -320,25 +406,17 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
           <EmptyState icon={HandHeart} text="No gift ideas yet -- add one to pull from when a date comes up." />
         ) : (
           <>
+            {/* A feed, newest first. An idea with a photo is a big card --
+                the picture at its own proportions with the caption/title
+                under it. An idea without one stays a compact row. */}
             {openGifts.map((g) => (
-              <View key={g.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                {g.imageUri && <Image source={{ uri: g.imageUri }} style={styles.thumb} resizeMode="cover" />}
-                <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{g.text}</Text>
-                <Pressable onPress={() => toggleGiftUsed(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Mark as given"><Circle size={16} color={theme.textMuted} /></Pressable>
-                <Pressable onPress={() => startEdit(g, "gifts")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit gift idea"><Edit3 size={13} color={theme.textMuted} /></Pressable>
-                <Pressable onPress={() => removeGift(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
-              </View>
+              <GiftItem key={g.id} g={g} given={false} onToggle={() => toggleGiftUsed(g)} onLongPress={menuFor(g, "gifts", removeGift)} onView={() => openViewer({ uri: g.imageUri, caption: g.text })} />
             ))}
             {usedGifts.length > 0 && (
               <>
                 <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 8 }]}>Already given</Text>
                 {usedGifts.map((g) => (
-                  <View key={g.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line, opacity: 0.55 }]}>
-                    {g.imageUri && <Image source={{ uri: g.imageUri }} style={styles.thumb} resizeMode="cover" />}
-                    <Text style={[styles.itemText, { color: theme.text, flex: 1, textDecorationLine: "line-through" }]}>{g.text}</Text>
-                    <Pressable onPress={() => toggleGiftUsed(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Mark as not given"><CheckCircle2 size={16} color={ACCENT.leaf} /></Pressable>
-                    <Pressable onPress={() => removeGift(g)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
-                  </View>
+                  <GiftItem key={g.id} g={g} given onToggle={() => toggleGiftUsed(g)} onLongPress={menuFor(g, "gifts", removeGift)} onView={() => openViewer({ uri: g.imageUri, caption: g.text })} />
                 ))}
               </>
             )}
@@ -360,7 +438,7 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
               kind === "notes" ? 'e.g. "wants to try that cafe downtown"'
               : kind === "likes" ? "What does she like?"
               : kind === "dislikes" ? "What should you avoid repeating?"
-              : "Gift idea"
+              : "Caption or title"
             }
             placeholderTextColor={theme.textMuted}
             autoFocus
@@ -370,7 +448,7 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
           {(kind === "likes" || kind === "gifts") && (
             <Pressable onPress={attachPhoto} style={[styles.photoBtn, { borderColor: theme.line }]}>
               {imageUri ? <Image source={{ uri: imageUri }} style={styles.thumb} resizeMode="cover" /> : <Camera size={14} color={theme.textMuted} />}
-              <Text style={{ fontSize: 11, fontWeight: "700", color: theme.textMuted }}>{imageUri ? "Change photo" : "Add photo (optional, any size)"}</Text>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: theme.textMuted }}>{imageUri ? "Change photo" : "Add photo (optional)"}</Text>
             </Pressable>
           )}
           {kind === "notes" && (
@@ -412,37 +490,110 @@ function NotesTab({ gfNotes, setGfNotes, gfLikes, setGfLikes, gfDislikes, setGfD
   );
 }
 
+// --- Gift feed ---
+
+// The photo's own width/height ratio, clamped to Instagram's limits (4:5
+// portrait up to 1.91:1 landscape) so an unusually tall or wide photo can't
+// take over the whole screen. Starts square until the real size is known.
+function useImageAspect(uri) {
+  const [ratio, setRatio] = useState(1);
+  useEffect(() => {
+    if (!uri) return undefined;
+    let alive = true;
+    Image.getSize(
+      uri,
+      (w, h) => { if (alive && w > 0 && h > 0) setRatio(Math.min(1.91, Math.max(0.8, w / h))); },
+      () => {}
+    );
+    return () => { alive = false; };
+  }, [uri]);
+  return ratio;
+}
+
+// One gift idea in the feed: a big photo card when there's an image, a
+// compact row when there isn't. Tapping the circle marks it given (or
+// takes that back); tapping the photo opens it full-screen with zoom;
+// long-pressing anywhere on it opens Edit/Delete.
+function GiftItem({ g, given, onToggle, onLongPress, onView }) {
+  const { theme } = useTheme();
+  const ratio = useImageAspect(g.imageUri);
+  const hit = { top: 8, bottom: 8, left: 8, right: 8 };
+
+  if (!g.imageUri) {
+    return (
+      <Pressable onLongPress={onLongPress} delayLongPress={350} accessibilityHint="Long press to edit or delete" style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line, opacity: given ? 0.55 : 1 }]}>
+        <Text style={[styles.itemText, { color: theme.text, flex: 1, textDecorationLine: given ? "line-through" : "none" }]}>{g.text}</Text>
+        <Pressable onPress={onToggle} hitSlop={hit} accessibilityLabel={given ? "Mark as not given" : "Mark as given"}>
+          {given ? <CheckCircle2 size={16} color={ACCENT.leaf} /> : <Circle size={16} color={theme.textMuted} />}
+        </Pressable>
+      </Pressable>
+    );
+  }
+
+  return (
+    <Pressable onLongPress={onLongPress} delayLongPress={350} accessibilityHint="Long press to edit or delete" style={[styles.postCard, { backgroundColor: theme.card, borderColor: theme.line, opacity: given ? 0.65 : 1 }]}>
+      {/* Tap the photo to view it full-screen and zoom. It also passes the
+          long press up, since a nested Pressable would otherwise swallow it
+          and the card's Edit/Delete menu wouldn't open from the photo. */}
+      <Pressable onPress={onView} onLongPress={onLongPress} delayLongPress={350} accessibilityLabel="View photo">
+        <Image source={{ uri: g.imageUri }} style={{ width: "100%", aspectRatio: ratio }} resizeMode="cover" />
+        {given && <View style={styles.givenBadge}><Text style={styles.givenBadgeText}>GIVEN</Text></View>}
+      </Pressable>
+      <View style={styles.postBody}>
+        <Pressable onPress={onToggle} hitSlop={hit} style={styles.postAction} accessibilityLabel={given ? "Mark as not given" : "Mark as given"}>
+          {given ? <CheckCircle2 size={18} color={ACCENT.leaf} /> : <Circle size={18} color={theme.textMuted} />}
+          <Text style={{ fontSize: 11, fontWeight: "700", color: given ? ACCENT.leaf : theme.textMuted }}>{given ? "Given" : "Mark as given"}</Text>
+        </Pressable>
+        <Text style={[styles.postCaption, { color: theme.text, textDecorationLine: given ? "line-through" : "none" }]}>{g.text}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 // --- Important dates ---
 
-function DatesTab({ gfDates, setGfDates }) {
+function DatesTab({ gfDates, setGfDates, openMenu, scrollToForm }) {
   const { theme } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [label, setLabel] = useState("");
   const [pickDate, setPickDate] = useState(todayISO());
+  // kind: "date" (default) or "anniversary" (gets its own heart badge).
+  // repeat: "yearly" (default) or "monthly" -- e.g. a monthsary, which comes
+  // round on the same day every month.
+  const [kind, setKind] = useState("date");
+  const [repeat, setRepeat] = useState("yearly");
 
-  const sorted = useMemo(() => [...gfDates].sort((a, b) => daysUntilNext(a.date) - daysUntilNext(b.date)), [gfDates]);
+  const sorted = useMemo(() => {
+    const today = todayISO();
+    return [...gfDates].sort((a, b) => daysUntilEntry(a, today) - daysUntilEntry(b, today));
+  }, [gfDates]);
+  useScrollToFormOnOpen(showForm, editingId, scrollToForm);
 
-  function resetForm() { setLabel(""); setPickDate(todayISO()); setShowForm(false); setEditingId(null); }
+  function resetForm() { setLabel(""); setPickDate(todayISO()); setKind("date"); setRepeat("yearly"); setShowForm(false); setEditingId(null); }
   function startEdit(item) {
     setEditingId(item.id);
     setLabel(item.label);
     const now = new Date();
     setPickDate(`${now.getFullYear()}-${item.date}`);
+    setKind(entryKind(item));
+    setRepeat(entryRepeat(item));
     setShowForm(true);
   }
 
   async function saveDate() {
-    if (!label.trim()) return;
+    // Anniversaries and monthsaries have an obvious default name, so the
+    // label can be left blank for them.
+    const finalLabel = label.trim() || (kind === "anniversary" ? "Anniversary" : repeat === "monthly" ? "Monthsary" : "");
+    if (!finalLabel) return;
     const mmdd = pickDate.slice(5); // "YYYY-MM-DD" -> "MM-DD"
     if (editingId) {
       const previous = gfDates.find((d) => d.id === editingId);
-      await rescheduleDateNotifications(previous?.notificationIds || [], null, "");
-      const notificationIds = await rescheduleDateNotifications([], mmdd, label.trim());
-      setGfDates((prev) => prev.map((d) => (d.id === editingId ? { ...d, label: label.trim(), date: mmdd, notificationIds } : d)));
+      const notificationIds = await rescheduleDateNotifications(previous?.notificationIds || [], mmdd, finalLabel, repeat, kind);
+      setGfDates((prev) => prev.map((d) => (d.id === editingId ? { ...d, label: finalLabel, date: mmdd, repeat, kind, notificationIds } : d)));
     } else {
-      const notificationIds = await rescheduleDateNotifications([], mmdd, label.trim());
-      setGfDates((prev) => [...prev, { id: uid(), label: label.trim(), date: mmdd, notificationIds }]);
+      const notificationIds = await rescheduleDateNotifications([], mmdd, finalLabel, repeat, kind);
+      setGfDates((prev) => [...prev, { id: uid(), label: finalLabel, date: mmdd, repeat, kind, notificationIds }]);
     }
     resetForm();
   }
@@ -453,29 +604,70 @@ function DatesTab({ gfDates, setGfDates }) {
     });
   }
 
+  const today = todayISO();
   return (
     <View>
       {sorted.length === 0 && !showForm ? (
-        <EmptyState icon={CalendarHeart} text="No important dates yet -- add a birthday or anniversary." />
+        <EmptyState icon={CalendarHeart} text="No important dates yet -- add a birthday, anniversary or monthsary." />
       ) : sorted.map((d) => {
-        const days = daysUntilNext(d.date);
+        const days = daysUntilEntry(d, today);
+        const monthly = entryRepeat(d) === "monthly";
+        const special = entryKind(d) === "anniversary";
+        const dayNum = Number(d.date.split("-")[1]);
+        const when = days === 0 ? "today!" : days === 1 ? "tomorrow" : `in ${days}d`;
+        const badges = badgesFor(d);
         return (
-          <View key={d.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+          <Pressable
+            key={d.id}
+            onLongPress={() => openMenu({ title: d.label, onEdit: () => startEdit(d), onDelete: () => removeDate(d) })}
+            delayLongPress={350}
+            accessibilityHint="Long press to edit or delete"
+            style={[styles.itemRow, { backgroundColor: special ? ACCENT.rose + "12" : theme.card, borderColor: special ? ACCENT.rose : theme.line }]}
+          >
             <View style={{ flex: 1 }}>
-              <Text style={[styles.itemText, { color: theme.text }]}>{d.label}</Text>
-              <Text style={[styles.metaText, { color: theme.textMuted }]}>{fmtMmdd(d.date)} -- {days === 0 ? "today!" : `in ${days}d`}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                <Text style={[styles.itemText, { color: theme.text }]}>{d.label}</Text>
+                {badges.map((b) => (
+                  <View key={b} style={[styles.dateBadge, { backgroundColor: b === "Anniversary" ? ACCENT.rose : theme.bg, borderColor: b === "Anniversary" ? ACCENT.rose : theme.line }]}>
+                    {b === "Anniversary" && <Heart size={9} color="#fff" fill="#fff" />}
+                    <Text style={[styles.dateBadgeText, { color: b === "Anniversary" ? "#fff" : theme.textMuted }]}>{b}</Text>
+                  </View>
+                ))}
+              </View>
+              <Text style={[styles.metaText, { color: theme.textMuted }]}>{monthly ? `Every month on the ${ordinal(dayNum)}` : fmtMmdd(d.date)} -- {when}</Text>
             </View>
-            <Pressable onPress={() => startEdit(d)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit date"><Edit3 size={13} color={theme.textMuted} /></Pressable>
-            <Pressable onPress={() => removeDate(d)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
-          </View>
+          </Pressable>
         );
       })}
 
       {showForm ? (
         <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <TextInput value={label} onChangeText={setLabel} placeholder="e.g. Birthday, Anniversary" placeholderTextColor={theme.textMuted} autoFocus style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]} />
-          <View style={{ marginBottom: 4 }}><CalendarPicker value={pickDate} onChange={setPickDate} label="Date (repeats every year)" /></View>
-          <Text style={[styles.hint, { color: theme.textMuted, marginBottom: 10 }]}>You'll get a heads-up 7 days before and 1 day before.</Text>
+          <TextInput
+            value={label}
+            onChangeText={setLabel}
+            placeholder={kind === "anniversary" ? "e.g. Our anniversary" : repeat === "monthly" ? "e.g. Monthsary" : "e.g. Birthday"}
+            placeholderTextColor={theme.textMuted}
+            autoFocus
+            style={[styles.input, { color: theme.text, backgroundColor: theme.bg }]}
+          />
+          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Type</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            <Chip label="Date" color={ACCENT.sky} active={kind === "date"} onPress={() => setKind("date")} />
+            <Chip label="Anniversary" color={ACCENT.rose} active={kind === "anniversary"} onPress={() => setKind("anniversary")} />
+          </View>
+          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Repeats</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            <Chip label="Every year" color={ACCENT.plum} active={repeat === "yearly"} onPress={() => setRepeat("yearly")} />
+            <Chip label="Every month" color={ACCENT.plum} active={repeat === "monthly"} onPress={() => setRepeat("monthly")} />
+          </View>
+          <View style={{ marginBottom: 4 }}>
+            <CalendarPicker value={pickDate} onChange={setPickDate} label={repeat === "monthly" ? "Date (the day of the month it repeats on)" : "Date (repeats every year)"} />
+          </View>
+          <Text style={[styles.hint, { color: theme.textMuted, marginBottom: 10 }]}>
+            {repeat === "monthly"
+              ? "Like a monthsary: you'll get a heads-up the day before and a reminder on the day, every month. Short months use their last day."
+              : "You'll get a heads-up 7 days before and 1 day before."}
+          </Text>
           <View style={styles.formActions}>
             <Pressable onPress={resetForm} style={[styles.formBtn, { backgroundColor: theme.bg }]}><Text style={[styles.formBtnText, { color: theme.text }]}>Cancel</Text></Pressable>
             <Pressable onPress={saveDate} style={[styles.formBtn, { backgroundColor: ACCENT.rose }]}><Text style={[styles.formBtnText, { color: "#fff" }]}>{editingId ? "Save changes" : "Add"}</Text></Pressable>
@@ -493,7 +685,7 @@ function DatesTab({ gfDates, setGfDates }) {
 
 // --- Promises ---
 
-function PromisesTab({ gfPromises, setGfPromises, missedCount }) {
+function PromisesTab({ gfPromises, setGfPromises, missedCount, openMenu, scrollToForm }) {
   const { theme } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -514,6 +706,7 @@ function PromisesTab({ gfPromises, setGfPromises, missedCount }) {
     return ka.localeCompare(kb);
   }), [gfPromises]);
   const done = gfPromises.filter((p) => p.done);
+  useScrollToFormOnOpen(showForm, editingId, scrollToForm);
 
   // "Always" only makes sense for a popup-only promise -- an OS
   // notification needs an actual interval to schedule against, so once a
@@ -606,12 +799,10 @@ function PromisesTab({ gfPromises, setGfPromises, missedCount }) {
         const schedule = describeSchedule(p);
         const modeLabel = p.remindMode === "both" ? "notification + popup" : p.remindMode === "notification" ? "notification" : "popup";
         return (
-          <View key={p.id} style={[styles.itemRow, { flexDirection: "column", alignItems: "stretch", backgroundColor: theme.card, borderColor: overdue ? ACCENT.gold : theme.line, borderWidth: overdue ? 1.5 : 1 }]}>
+          <Pressable key={p.id} onLongPress={() => openMenu({ title: p.text, onEdit: () => startEdit(p), onDelete: () => removePromise(p) })} delayLongPress={350} accessibilityHint="Long press to edit or delete" style={[styles.itemRow, { flexDirection: "column", alignItems: "stretch", backgroundColor: theme.card, borderColor: overdue ? ACCENT.gold : theme.line, borderWidth: overdue ? 1.5 : 1 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <Pressable onPress={() => markDone(p)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Mark done"><Circle size={18} color={theme.textMuted} /></Pressable>
               <Text style={[styles.itemText, { color: theme.text, flex: 1 }]}>{p.text}</Text>
-              <Pressable onPress={() => startEdit(p)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit promise"><Edit3 size={13} color={theme.textMuted} /></Pressable>
-              <Pressable onPress={() => removePromise(p)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
             </View>
             {schedule && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4, marginLeft: 28 }}>
@@ -630,7 +821,7 @@ function PromisesTab({ gfPromises, setGfPromises, missedCount }) {
                 </View>
               </View>
             )}
-          </View>
+          </Pressable>
         );
       })}
 
@@ -638,11 +829,11 @@ function PromisesTab({ gfPromises, setGfPromises, missedCount }) {
         <>
           <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 8 }]}>Kept</Text>
           {done.slice(0, 20).map((p) => (
-            <View key={p.id} style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line, opacity: 0.55 }]}>
+            // A kept promise has nothing left to edit, so its menu is Delete only.
+            <Pressable key={p.id} onLongPress={() => openMenu({ title: p.text, onDelete: () => removePromise(p) })} delayLongPress={350} accessibilityHint="Long press to delete" style={[styles.itemRow, { backgroundColor: theme.card, borderColor: theme.line, opacity: 0.55 }]}>
               <CheckCircle2 size={16} color={ACCENT.leaf} />
               <Text style={[styles.itemText, { color: theme.text, flex: 1, textDecorationLine: "line-through" }]}>{p.text}</Text>
-              <Pressable onPress={() => removePromise(p)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}><Trash2 size={13} color={theme.textMuted} /></Pressable>
-            </View>
+            </Pressable>
           ))}
         </>
       )}
@@ -745,5 +936,20 @@ const styles = StyleSheet.create({
   addBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderStyle: "dashed", borderRadius: 14, paddingVertical: 12, marginBottom: 14 },
   snoozeBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   snoozeText: { fontSize: 10, fontWeight: "700" },
+  dateBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, borderWidth: 1 },
+  dateBadgeText: { fontSize: 9.5, fontWeight: "800" },
+  longPressHint: { fontSize: 10.5, marginTop: 4, marginBottom: 10 },
+  menuBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 28, zIndex: 20, elevation: 20 },
+  menuCard: { width: "100%", maxWidth: 320, borderWidth: 1, borderRadius: 22, padding: 16, gap: 8 },
+  menuTitle: { fontSize: 12, fontWeight: "600", marginBottom: 4, textAlign: "center" },
+  menuBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 13, borderRadius: 14 },
+  menuBtnText: { fontSize: 14, fontWeight: "700" },
+  menuCancel: { alignItems: "center", paddingVertical: 10 },
+  postCard: { borderWidth: 1, borderRadius: 18, overflow: "hidden", marginBottom: 16 },
+  postBody: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 14 },
+  postAction: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginBottom: 8 },
+  postCaption: { fontSize: 14, lineHeight: 20, fontWeight: "600" },
+  givenBadge: { position: "absolute", top: 10, right: 10, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.6)" },
+  givenBadgeText: { color: "#fff", fontSize: 10, fontWeight: "800" },
   missedBanner: { borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 12 },
 });

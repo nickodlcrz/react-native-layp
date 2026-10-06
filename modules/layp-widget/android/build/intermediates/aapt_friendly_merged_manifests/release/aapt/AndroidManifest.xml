@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="expo.modules.laypwidget" >
+
+    <uses-sdk android:minSdkVersion="23" />
+
+    <application>
+
+        <!--
+    Spending widget. exported must be true for the launcher to deliver
+    APPWIDGET_UPDATE. The extra actions re-render it when the date or
+    timezone changes, so "Spent today" rolls over at midnight even if the
+    app never runs.
+        -->
+        <receiver
+            android:name="expo.modules.laypwidget.SpendWidgetProvider"
+            android:exported="true"
+            android:label="@string/layp_widget_label" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/layp_spend_widget_info" />
+        </receiver>
+
+        <!--
+    Tasks widget, 4x4 and 4x6: two entries in the widget picker, one
+    implementation.
+        -->
+        <receiver
+            android:name="expo.modules.laypwidget.TaskWidget4x4Provider"
+            android:exported="true"
+            android:label="@string/layp_task_4x4_label" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/layp_task_widget_4x4_info" />
+        </receiver>
+        <receiver
+            android:name="expo.modules.laypwidget.TaskWidget4x6Provider"
+            android:exported="true"
+            android:label="@string/layp_task_4x6_label" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/layp_task_widget_4x6_info" />
+        </receiver>
+
+        <!--
+    Today's classes (2x2): shows the remaining schedule, highlights the first class,
+    and switches to a single live class while it is ongoing.
+        -->
+        <receiver
+            android:name="expo.modules.laypwidget.ClassWidgetProvider"
+            android:exported="true"
+            android:label="@string/layp_class_label" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="expo.modules.laypwidget.CLASS_WIDGET_REFRESH" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/layp_class_widget_2x2_info" />
+        </receiver>
+
+        <!-- Calendar widget (4x2). Its CAL_* actions are the month arrows. -->
+        <receiver
+            android:name="expo.modules.laypwidget.CalendarWidgetProvider"
+            android:exported="true"
+            android:label="@string/layp_calendar_label" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/layp_calendar_widget_info" />
+        </receiver>
+
+        <!--
+    Upcoming events widget, 2x2 and 4x2 - one implementation, two entries
+    in the widget picker.
+        -->
+        <receiver
+            android:name="expo.modules.laypwidget.UpcomingWidget2x2Provider"
+            android:exported="true"
+            android:label="@string/layp_upcoming_2x2_label" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/layp_upcoming_widget_2x2_info" />
+        </receiver>
+        <receiver
+            android:name="expo.modules.laypwidget.UpcomingWidget4x2Provider"
+            android:exported="true"
+            android:label="@string/layp_upcoming_4x2_label" >
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/layp_upcoming_widget_4x2_info" />
+        </receiver>
+
+        <!--
+    Fill the Tasks and Upcoming lists. The bind permission keeps anything
+    but the system from talking to them.
+        -->
+        <service
+            android:name="expo.modules.laypwidget.TaskListService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+        <service
+            android:name="expo.modules.laypwidget.UpcomingListService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <!--
+    Bottom sheets opened from the spending widget. Own task + hidden from
+    Recents so they never drag LAYP itself onto the screen. Not exported:
+    only the widget's own PendingIntents launch them.
+        -->
+        <activity
+            android:name="expo.modules.laypwidget.QuickLogActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@style/LaypWidgetDialog"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+        <activity
+            android:name="expo.modules.laypwidget.SearchActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@style/LaypWidgetDialog"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+        <activity
+            android:name="expo.modules.laypwidget.AddTaskActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@style/LaypWidgetDialog"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
+        <!-- Confirmation popup for cancelling a class from the Today's Classes widget. -->
+        <activity
+            android:name="expo.modules.laypwidget.ClassWidgetActionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/LaypWidgetDialog" />
+        <activity
+            android:name="expo.modules.laypwidget.WidgetActionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!--
+    Takes over handling of notification button taps from expo-notifications
+    (see LaypNotificationsService). expo sends every notification event to the
+    highest-priority receiver registered for this action; its own is -1, so
+    100 makes this one the designated receiver. It forwards everything it
+    doesn't handle itself to expo's normal handling.
+        -->
+        <receiver
+            android:name="expo.modules.laypwidget.LaypNotificationsService"
+            android:exported="false" >
+            <intent-filter android:priority="100" >
+                <action android:name="expo.modules.notifications.NOTIFICATION_EVENT" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

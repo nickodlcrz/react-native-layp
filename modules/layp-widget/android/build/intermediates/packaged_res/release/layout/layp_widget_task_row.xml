@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One task as a small card:
+  - a colored edge (urgency, else status color)
+  - a small, static status ring (tap = next status)
+  - the title (wraps; never cut off with "..."), its category and subject
+    code, then its status and due date
+  - the blinking urgency dot, at the app's speeds: fast = red, medium =
+    yellow, slow = green. Widgets can't run animation code, so each blink is
+    a ViewFlipper cross-fading between a bright and a dim copy of the dot;
+    only the flipper matching the task's tier is visible (the others are
+    GONE and therefore don't run).
+The outer layout only adds the gap between cards. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingBottom="6dp">
+
+  <LinearLayout
+      android:id="@+id/layp_task_row"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:minHeight="52dp"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:background="@drawable/layp_widget_chip_bg">
+
+    <ImageView
+        android:id="@+id/layp_task_bar"
+        android:layout_width="3dp"
+        android:layout_height="24dp"
+        android:layout_marginStart="9dp"
+        android:scaleType="fitXY"
+        android:src="@drawable/layp_task_bar" />
+
+    <FrameLayout
+        android:id="@+id/layp_task_ring"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="3dp">
+
+      <ImageView
+          android:id="@+id/layp_task_ring_img"
+          android:layout_width="22dp"
+          android:layout_height="22dp"
+          android:layout_gravity="center"
+          android:contentDescription="@string/layp_task_status_circle"
+          android:src="@drawable/layp_task_ring_0" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/layp_task_body"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingTop="5dp"
+        android:paddingBottom="5dp"
+        android:paddingEnd="8dp">
+
+      <TextView
+          android:id="@+id/layp_task_name"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_text"
+          android:textSize="14sp" />
+
+      <TextView
+          android:id="@+id/layp_task_meta"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="11sp"
+          android:visibility="gone" />
+
+      <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/layp_task_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/layp_muted"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/layp_task_due"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="@color/layp_muted"
+            android:textSize="11sp" />
+      </LinearLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/layp_task_dotslot"
+        android:layout_width="9dp"
+        android:layout_height="9dp"
+        android:layout_marginEnd="12dp">
+
+      <ViewFlipper
+          android:id="@+id/layp_task_blink_fast"
+          android:layout_width="9dp"
+          android:layout_height="9dp"
+          android:layout_gravity="center"
+          android:autoStart="true"
+          android:flipInterval="280"
+          android:inAnimation="@anim/layp_blink_in_fast"
+          android:outAnimation="@anim/layp_blink_out_fast"
+          android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/layp_task_dot_fast_on"
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:src="@drawable/layp_widget_dot" />
+
+        <ImageView
+            android:id="@+id/layp_task_dot_fast_off"
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:alpha="0.18"
+            android:src="@drawable/layp_widget_dot" />
+      </ViewFlipper>
+
+      <ViewFlipper
+          android:id="@+id/layp_task_blink_medium"
+          android:layout_width="9dp"
+          android:layout_height="9dp"
+          android:layout_gravity="center"
+          android:autoStart="true"
+          android:flipInterval="700"
+          android:inAnimation="@anim/layp_blink_in_medium"
+          android:outAnimation="@anim/layp_blink_out_medium"
+          android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/layp_task_dot_medium_on"
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:src="@drawable/layp_widget_dot" />
+
+        <ImageView
+            android:id="@+id/layp_task_dot_medium_off"
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:alpha="0.18"
+            android:src="@drawable/layp_widget_dot" />
+      </ViewFlipper>
+
+      <ViewFlipper
+          android:id="@+id/layp_task_blink_slow"
+          android:layout_width="9dp"
+          android:layout_height="9dp"
+          android:layout_gravity="center"
+          android:autoStart="true"
+          android:flipInterval="1500"
+          android:inAnimation="@anim/layp_blink_in_slow"
+          android:outAnimation="@anim/layp_blink_out_slow"
+          android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/layp_task_dot_slow_on"
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:src="@drawable/layp_widget_dot" />
+
+        <ImageView
+            android:id="@+id/layp_task_dot_slow_off"
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:alpha="0.18"
+            android:src="@drawable/layp_widget_dot" />
+      </ViewFlipper>
+    </FrameLayout>
+  </LinearLayout>
+</LinearLayout>

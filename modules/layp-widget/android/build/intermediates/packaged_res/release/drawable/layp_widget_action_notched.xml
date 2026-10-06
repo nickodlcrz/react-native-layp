@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain circular action button. The old path punched rectangular notches
+     out of the top and bottom of the circle, which made every button look
+     cut in half. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+  <solid android:color="#40FFFFFF" />
+  <stroke android:width="1dp" android:color="#33FFFFFF" />
+</shape>

@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet, Platform } from "react-native";
-import { Plus, X, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search, Filter, Receipt } from "lucide-react-native";
+import { View, Text, TextInput, Pressable, FlatList, ScrollView, StyleSheet, Platform, Modal } from "react-native";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Plus, X, Trash2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, Search, Filter, Receipt, History, Download } from "lucide-react-native";
 import { useTheme, ACCENT, INCOME_CATEGORIES, SPENDING_LABELS } from "../theme";
 import { peso, uid, todayISO, fmtDay, fmtDaySmart, fmtDateLong, computeAccountBalance, loanInterest, loanTotalDue, isPositiveAmount, computeDailyBudgetReview, nextRecurringDate } from "../utils";
 import { categoryBreakdown, frequentExpenseTemplates, spendingByLabel } from "../selectors";
@@ -12,18 +15,26 @@ import EmptyState from "../components/EmptyState";
 import CalendarPicker from "../components/CalendarPicker";
 import { confirmDelete, confirmAction } from "../components/ConfirmModal";
 import EditSheet from "../components/EditSheet";
+import BillsCard from "../components/BillsCard";
+import { buildLedgerCsv } from "../exportCsv";
 import { DURATION, SPRING, useCardPressAnimation } from "../animation";
 import Reanimated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from "react-native-reanimated";
+import { showAppDialog } from "../components/AppDialog";
+
+// How many of the most recent days with activity the main screen lists.
+const RECENT_DAYS = 5;
 
 export default function SpendingScreen({
   expenses, setExpenses, moneyLog, setMoneyLog, weeklySummaries, splits, loans = [], savingsLog = [], accounts, transfers = [],
   recurringIncome = [], setRecurringIncome, spendingLimits = {}, setSpendingLimits,
+  bills = [], setBills,
 }) {
   const { theme } = useTheme();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [showMoneyForm, setShowMoneyForm] = useState(false);
   const [historyOpen, setHistoryOpen] = useState({});
+  const [showAllActivity, setShowAllActivity] = useState(false);
   const [limitsEditorOpen, setLimitsEditorOpen] = useState(false);
   const [comparisonExpanded, setComparisonExpanded] = useState(false);
 
@@ -94,6 +105,15 @@ export default function SpendingScreen({
     });
   }, [expenses, editingId, setExpenses]);
   const startEdit = useCallback((e) => { if (e.source === "bill") return; setEditingId(e.id); setShowForm(true); }, []);
+  // Money-added entries have no edit form, so unlike expenses there's no
+  // "long-press opens the edit sheet, which has its own Delete button" --
+  // this is the only delete affordance for them, so it deletes directly.
+  const removeMoneyEntry = useCallback((id) => {
+    const m = moneyLog.find((x) => x.id === id);
+    confirmDelete("Delete this entry?", `"${m?.name || "This entry"}" (${peso(m?.amount || 0)}) will be removed for good.`, () => {
+      setMoneyLog((prev) => prev.filter((x) => x.id !== id));
+    });
+  }, [moneyLog, setMoneyLog]);
   // A `recurring` flag on the entry means "also set up a standing template
   // for this" -- the income itself still gets logged today like any other
   // entry (recurringId links it back for reference), and a template is
@@ -175,9 +195,17 @@ export default function SpendingScreen({
       return entries;
     });
     return [
-      ...moneyLog.map((m) => ({ ...m, kind: "in" })),
-      ...expenses.map((e) => ({ ...e, kind: "out" })),
-      ...loanLedgerEntries,
+      // ledgerKind marks which store an item actually lives in (as opposed
+      // to `kind`, which is "in"/"out" for direction) -- expenses already
+      // have their own long-press-to-edit-or-delete via ExpenseRow, and
+      // loan movements are computed here on the fly from `loans` rather
+      // than being real standalone records, so they aren't something this
+      // screen can delete on its own. moneyLog entries are real standalone
+      // records with nothing else offering a delete, hence "moneyLog" being
+      // the one LedgerEntryRow below actually wires a long-press onto.
+      ...moneyLog.map((m) => ({ ...m, kind: "in", ledgerKind: "moneyLog" })),
+      ...expenses.map((e) => ({ ...e, kind: "out", ledgerKind: "expense" })),
+      ...loanLedgerEntries.map((l) => ({ ...l, ledgerKind: "loan" })),
     ].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }, [moneyLog, expenses, loans]);
   const ledgerTotals = useMemo(() => {
@@ -208,23 +236,27 @@ export default function SpendingScreen({
     () => Object.keys(entriesByDate).sort((a, b) => b.localeCompare(a)),
     [entriesByDate]
   );
-  // The History section used to render one group per day the user has
-  // *ever* logged something on, forever -- for someone who's used the app
-  // for months that's an ever-growing, always-fully-rendered list inside a
-  // FlatList header (which doesn't virtualize its own header content).
-  // Capped to a window with a "show more" step instead.
-  const [historyLimit, setHistoryLimit] = useState(20);
-  const pastDates = allPastDates.slice(0, historyLimit);
-  // One consistent list of day-groups -- today included as just the most
-  // recent entry rather than a separately-styled section, income sitting
-  // right alongside outcome in the same group -- so "Recent Activity"
-  // reads as one continuous, uniformly-formatted list instead of a
-  // spending-only block followed by a separate income/outcome ledger.
-  const recentDays = useMemo(() => {
-    const days = pastDates.map((d) => ({ date: d, items: entriesByDate[d] || [], isToday: false }));
+  // Every day that has activity, newest first -- today included as just the
+  // most recent entry rather than a separately-styled section, income
+  // sitting right alongside outcome in the same group. The main screen only
+  // shows the latest few of these (RECENT_DAYS) so the page stays short;
+  // the "All activity" popup (see AllActivityModal) shows every one.
+  const allDays = useMemo(() => {
+    const days = allPastDates.map((d) => ({ date: d, items: entriesByDate[d] || [], isToday: false }));
     if (todayEntries.length > 0) days.unshift({ date: today, items: todayEntries, isToday: true });
     return days;
-  }, [pastDates, entriesByDate, todayEntries, today]);
+  }, [allPastDates, entriesByDate, todayEntries, today]);
+  const recentDays = useMemo(() => allDays.slice(0, RECENT_DAYS), [allDays]);
+  const recentTotals = useMemo(() => {
+    let income = 0, outcome = 0;
+    for (const day of recentDays) {
+      for (const item of day.items) {
+        if (item.kind === "in") income += Number(item.amount);
+        else outcome += Number(item.amount);
+      }
+    }
+    return { income, outcome };
+  }, [recentDays]);
 
   // Search/filter -- matches name or label (case-insensitive substring),
   // optionally narrowed further to one spending label. Active whenever
@@ -286,11 +318,14 @@ export default function SpendingScreen({
           <View style={styles.headerRow}>
             <Text style={[styles.h1, { color: theme.text }]}>Spending</Text>
             <View style={{ flexDirection: "row", gap: 8 }}>
-              <Pressable onPress={() => { setShowMoneyForm((s) => !s); setShowForm(false); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel={showMoneyForm ? "Close form" : "Add money"}>
-                {showMoneyForm ? <X size={16} color="#fff" /> : <ArrowDownCircle size={16} color="#fff" />}
+              <Pressable onPress={() => setShowAllActivity(true)} style={[styles.roundBtn, { backgroundColor: theme.neutralDark }]} accessibilityLabel="View all activity">
+                <History size={16} color="#fff" />
               </Pressable>
-              <Pressable onPress={() => { setEditingId(null); setShowForm((s) => !s); setShowMoneyForm(false); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel={showForm ? "Close form" : "Log expense"}>
-                {showForm ? <X size={16} color="#fff" /> : <Plus size={16} color="#fff" />}
+              <Pressable onPress={() => { setShowForm(false); setEditingId(null); setShowMoneyForm(true); }} style={[styles.roundBtn, { backgroundColor: ACCENT.leaf }]} accessibilityLabel="Add money">
+                <ArrowDownCircle size={16} color="#fff" />
+              </Pressable>
+              <Pressable onPress={() => { setEditingId(null); setShowMoneyForm(false); setShowForm(true); }} style={[styles.roundBtn, { backgroundColor: theme.accentDark }]} accessibilityLabel="Log expense">
+                <Plus size={16} color="#fff" />
               </Pressable>
             </View>
           </View>
@@ -339,62 +374,60 @@ export default function SpendingScreen({
             )}
           </View>
 
-          {!showForm && !showMoneyForm && (
-            <View style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.line }]}>
-              <View style={styles.panelHeaderRow}>
-                <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 0 }]}>Spending limits</Text>
-                <Pressable onPress={() => setLimitsEditorOpen((s) => !s)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT.sky }}>{limitsEditorOpen ? "Done" : "Edit"}</Text>
-                </Pressable>
-              </View>
-              {limitsEditorOpen ? (
-                <View style={{ marginTop: 8, gap: 8 }}>
-                  {SPENDING_LABELS.map((l) => (
-                    <View key={l.id} style={styles.limitEditRow}>
-                      <Text style={[styles.limitEditLabel, { color: theme.text }]}>{l.label}</Text>
-                      <TextInput
-                        value={spendingLimits[l.label] != null ? String(spendingLimits[l.label]) : ""}
-                        onChangeText={(v) => {
-                          const clean = v.replace(/[^0-9.]/g, "");
-                          setSpendingLimits((prev) => {
-                            const next = { ...prev };
-                            if (clean) next[l.label] = clean;
-                            else delete next[l.label];
-                            return next;
-                          });
-                        }}
-                        placeholder="No limit"
-                        keyboardType="decimal-pad"
-                        placeholderTextColor={theme.textMuted}
-                        style={[styles.limitEditInput, { backgroundColor: theme.bg, color: theme.text }]}
-                      />
-                    </View>
-                  ))}
-                </View>
-              ) : limitProgress.length === 0 ? (
-                <Text style={[styles.hint, { color: theme.textMuted, marginTop: 4 }]}>No limits set. Tap Edit to set a monthly cap per label (e.g. Food: P3,000).</Text>
-              ) : (
-                <View style={{ marginTop: 8, gap: 10 }}>
-                  {limitProgress.map((p) => {
-                    const barColor = p.percent >= 1 ? ACCENT.ember : p.percent >= 0.8 ? ACCENT.gold : ACCENT.leaf;
-                    return (
-                      <View key={p.label}>
-                        <View style={styles.limitRow}>
-                          <Text style={[styles.limitLabel, { color: theme.text }]}>{p.label}</Text>
-                          <Text style={[styles.limitAmount, { color: theme.textMuted }]}>{peso(p.spent)} / {peso(p.limit)}</Text>
-                        </View>
-                        <View style={[styles.progressTrack, { backgroundColor: theme.bg }]}>
-                          <View style={[styles.progressFill, { width: `${p.percent * 100}%`, backgroundColor: barColor }]} />
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              )}
+          <View style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.line }]}>
+            <View style={styles.panelHeaderRow}>
+              <Text style={[styles.miniLabel, { color: theme.textMuted, marginBottom: 0 }]}>Spending limits</Text>
+              <Pressable onPress={() => setLimitsEditorOpen((s) => !s)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT.sky }}>{limitsEditorOpen ? "Done" : "Edit"}</Text>
+              </Pressable>
             </View>
-          )}
+            {limitsEditorOpen ? (
+              <View style={{ marginTop: 8, gap: 8 }}>
+                {SPENDING_LABELS.map((l) => (
+                  <View key={l.id} style={styles.limitEditRow}>
+                    <Text style={[styles.limitEditLabel, { color: theme.text }]}>{l.label}</Text>
+                    <TextInput
+                      value={spendingLimits[l.label] != null ? String(spendingLimits[l.label]) : ""}
+                      onChangeText={(v) => {
+                        const clean = v.replace(/[^0-9.]/g, "");
+                        setSpendingLimits((prev) => {
+                          const next = { ...prev };
+                          if (clean) next[l.label] = clean;
+                          else delete next[l.label];
+                          return next;
+                        });
+                      }}
+                      placeholder="No limit"
+                      keyboardType="decimal-pad"
+                      placeholderTextColor={theme.textMuted}
+                      style={[styles.limitEditInput, { backgroundColor: theme.bg, color: theme.text }]}
+                    />
+                  </View>
+                ))}
+              </View>
+            ) : limitProgress.length === 0 ? (
+              <Text style={[styles.hint, { color: theme.textMuted, marginTop: 4 }]}>No limits set. Tap Edit to set a monthly cap per label (e.g. Food: P3,000).</Text>
+            ) : (
+              <View style={{ marginTop: 8, gap: 10 }}>
+                {limitProgress.map((p) => {
+                  const barColor = p.percent >= 1 ? ACCENT.ember : p.percent >= 0.8 ? ACCENT.gold : ACCENT.leaf;
+                  return (
+                    <View key={p.label}>
+                      <View style={styles.limitRow}>
+                        <Text style={[styles.limitLabel, { color: theme.text }]}>{p.label}</Text>
+                        <Text style={[styles.limitAmount, { color: theme.textMuted }]}>{peso(p.spent)} / {peso(p.limit)}</Text>
+                      </View>
+                      <View style={[styles.progressTrack, { backgroundColor: theme.bg }]}>
+                        <View style={[styles.progressFill, { width: `${p.percent * 100}%`, backgroundColor: barColor }]} />
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
 
-          {!showForm && !showMoneyForm && recurringIncome.length > 0 && (
+          {recurringIncome.length > 0 && (
             <View style={[styles.panel, { backgroundColor: theme.card, borderColor: theme.line }]}>
               <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Recurring income</Text>
               <View style={{ gap: 8 }}>
@@ -415,47 +448,43 @@ export default function SpendingScreen({
             </View>
           )}
 
-          {!showForm && !showMoneyForm && (
-            <View style={{ marginBottom: 14 }}>
-              <View style={[styles.searchRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                <Search size={14} color={theme.textMuted} />
-                <TextInput
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder="Search expenses..."
-                  placeholderTextColor={theme.textMuted}
-                  style={[styles.searchInput, { color: theme.text }]}
-                />
-                {isFiltering && (
-                  <Pressable onPress={() => { setSearchQuery(""); setFilterLabel(null); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Clear search">
-                    <X size={14} color={theme.textMuted} />
-                  </Pressable>
-                )}
-                <Pressable
-                  onPress={() => setFilterOpen((s) => !s)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  style={[styles.filterBtn, { backgroundColor: filterLabel || filterOpen ? theme.neutralDark : "transparent" }]}
-                  accessibilityLabel={filterOpen ? "Hide category filter" : "Filter by category"}
-                >
-                  <Filter size={13} color={filterLabel || filterOpen ? "#fff" : theme.textMuted} />
-                  {filterLabel && <Text style={styles.filterBtnText}>{filterLabel}</Text>}
+          <View style={{ marginBottom: 14 }}>
+            <View style={[styles.searchRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+              <Search size={14} color={theme.textMuted} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search expenses..."
+                placeholderTextColor={theme.textMuted}
+                style={[styles.searchInput, { color: theme.text }]}
+              />
+              {isFiltering && (
+                <Pressable onPress={() => { setSearchQuery(""); setFilterLabel(null); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Clear search">
+                  <X size={14} color={theme.textMuted} />
                 </Pressable>
-              </View>
-              {/* Category filter row -- tucked behind the Filter button
-                  instead of always shown, so the search bar isn't followed
-                  by a permanent wall of 8 chips on every visit to this
-                  screen. */}
-              {filterOpen && (
-                <View style={[styles.chipWrap, { marginTop: 8, marginBottom: 0 }]}>
-                  {SPENDING_LABELS.map((l) => (
-                    <Chip key={l.id} label={l.label} color={l.color} small active={filterLabel === l.label} onPress={() => setFilterLabel((cur) => (cur === l.label ? null : l.label))} />
-                  ))}
-                </View>
               )}
+              <Pressable
+                onPress={() => setFilterOpen((s) => !s)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={[styles.filterBtn, { backgroundColor: filterLabel || filterOpen ? theme.neutralDark : "transparent" }]}
+                accessibilityLabel={filterOpen ? "Hide category filter" : "Filter by category"}
+              >
+                <Filter size={13} color={filterLabel || filterOpen ? "#fff" : theme.textMuted} />
+                {filterLabel && <Text style={styles.filterBtnText}>{filterLabel}</Text>}
+              </Pressable>
             </View>
-          )}
-
-          {showMoneyForm && <MoneyForm accounts={accounts} ctx={ctx} onSave={saveMoney} />}
+            {/* Category filter row -- tucked behind the Filter button
+                instead of always shown, so the search bar isn't followed
+                by a permanent wall of 8 chips on every visit to this
+                screen. */}
+            {filterOpen && (
+              <View style={[styles.chipWrap, { marginTop: 8, marginBottom: 0 }]}>
+                {SPENDING_LABELS.map((l) => (
+                  <Chip key={l.id} label={l.label} color={l.color} small active={filterLabel === l.label} onPress={() => setFilterLabel((cur) => (cur === l.label ? null : l.label))} />
+                ))}
+              </View>
+            )}
+          </View>
 
           {isFiltering ? (
             <View style={{ marginBottom: 16 }}>
@@ -471,66 +500,38 @@ export default function SpendingScreen({
           ) : (recentDays.length > 0 || weeklySummaries.length > 0) && (
             <View style={{ marginBottom: 16 }}>
               <Text style={[styles.h2, { color: theme.text, marginBottom: 4 }]}>Recent Activity</Text>
-              <Text style={[styles.ledgerSubtitle, { color: theme.textMuted, marginBottom: 8 }]}>Every peso in and out, day by day</Text>
+              <Text style={[styles.ledgerSubtitle, { color: theme.textMuted, marginBottom: 8 }]}>Your latest {RECENT_DAYS} days · tap the history button for everything</Text>
               <View style={styles.ledgerPreviewRow}>
-                <Text style={[styles.ledgerPreviewText, { color: ACCENT.leaf }]}>Income {peso(ledgerTotals.income)}</Text>
-                <Text style={[styles.ledgerPreviewText, { color: ACCENT.ember }]}>Outcome {peso(ledgerTotals.outcome)}</Text>
+                <Text style={[styles.ledgerPreviewText, { color: ACCENT.leaf }]}>Income {peso(recentTotals.income)}</Text>
+                <Text style={[styles.ledgerPreviewText, { color: ACCENT.ember }]}>Outcome {peso(recentTotals.outcome)}</Text>
               </View>
               <View style={{ gap: 8 }}>
-                {recentDays.length === 0 && <EmptyState icon={Receipt} text="Nothing logged yet." />}
-                {recentDays.map(({ date: d, items: dayItems, isToday }) => {
-                  const dayNet = dayItems.reduce((s, it) => s + (it.kind === "in" ? Number(it.amount) : -Number(it.amount)), 0);
-                  // Today defaults open (so what you just logged is visible
-                  // right away) until the person deliberately collapses it;
-                  // every other day defaults closed. Either way, once
-                  // they've tapped a day once, their choice sticks.
-                  const open = historyOpen[d] !== undefined ? !!historyOpen[d] : isToday;
-                  return (
-                    <View key={d} style={[styles.historyGroup, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                      <Pressable onPress={() => setHistoryOpen((prev) => ({ ...prev, [d]: !open }))} style={styles.historyHeader} accessibilityLabel={open ? `Collapse ${fmtDateLong(d)}` : `Expand ${fmtDateLong(d)}`}>
-                        <View style={styles.historyHeaderTopRow}>
-                          <Text style={[styles.historyDate, { color: theme.text }]}>{isToday ? "Today" : fmtDaySmart(d)}</Text>
-                          <Text style={[styles.historyTotal, { color: dayNet < 0 ? ACCENT.ember : ACCENT.leaf }]}>{dayNet < 0 ? "-" : "+"}{peso(Math.abs(dayNet))}</Text>
-                        </View>
-                        <View style={styles.historyHeaderBottomRow}>
-                          <Text style={[styles.historyCount, { color: theme.textMuted }]}>{dayItems.length} transaction{dayItems.length === 1 ? "" : "s"}</Text>
-                          {open ? <ChevronUp size={13} color={theme.textMuted} /> : <ChevronDown size={13} color={theme.textMuted} />}
-                        </View>
-                      </Pressable>
-                      {open && (
-                        <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 10 }}>
-                          {dayItems.map((item) => isExpenseEntry(item)
-                            ? <ExpenseRow key={item.id} e={item} splits={splits} accounts={accounts} compact onEdit={startEdit} onRemove={remove} />
-                            : <LedgerEntryRow key={item.id} item={item} accounts={accounts} compact />
-                          )}
-                        </View>
-                      )}
-                    </View>
-                  );
-                })}
-                {historyLimit < allPastDates.length && (
-                  <Pressable
-                    onPress={() => setHistoryLimit((n) => n + 20)}
-                    style={[styles.historyGroup, { backgroundColor: theme.card, borderColor: theme.line, alignItems: "center", paddingVertical: 12 }]}
-                  >
-                    <Text style={[styles.metaText, { color: theme.textMuted }]}>
-                      Show {Math.min(20, allPastDates.length - historyLimit)} more days ({allPastDates.length - historyLimit} total remaining)
-                    </Text>
-                  </Pressable>
-                )}
-                {[...weeklySummaries].sort((a, b) => b.startDate.localeCompare(a.startDate)).map((w) => (
-                  <View key={w.id} style={[styles.weekSummaryRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                    <View>
-                      <Text style={[styles.historyDate, { color: theme.text }]}>Week of {fmtDay(w.startDate)} - {fmtDay(w.endDate)}</Text>
-                      <Text style={[styles.weekSummarySub, { color: theme.textMuted }]}>{w.count} entries, summarized</Text>
-                    </View>
-                    <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(w.total)}</Text>
-                  </View>
+                {recentDays.length === 0 && <EmptyState icon={Receipt} text="Nothing in the last few days. Tap the history button to see older activity." />}
+                {recentDays.map(({ date: d, items: dayItems, isToday }) => (
+                  <DayGroup
+                    key={d}
+                    date={d}
+                    items={dayItems}
+                    isToday={isToday}
+                    // Today defaults open (so what you just logged is visible
+                    // right away) until the person deliberately collapses it;
+                    // every other day defaults closed. Either way, once
+                    // they've tapped a day once, their choice sticks.
+                    open={historyOpen[d] !== undefined ? !!historyOpen[d] : isToday}
+                    onToggle={() => setHistoryOpen((prev) => ({ ...prev, [d]: !(prev[d] !== undefined ? !!prev[d] : isToday) }))}
+                    splits={splits}
+                    accounts={accounts}
+                    onEdit={startEdit}
+                    onRemoveExpense={remove}
+                    onRemoveMoney={removeMoneyEntry}
+                  />
                 ))}
               </View>
-              <Text style={[styles.rollupNote, { color: theme.textMuted }]}>ⓘ Older transactions are automatically grouped into weekly summaries.</Text>
             </View>
           )}
+
+          {/* Bills -- at the very bottom of the Spending screen. */}
+          <BillsCard bills={bills} setBills={setBills} setExpenses={setExpenses} accounts={accounts} splits={splits} ctx={ctx} />
         </>
       }
     />
@@ -556,7 +557,168 @@ export default function SpendingScreen({
         onLogAgain={(t) => { logAgain(t); setShowForm(false); }}
       />
     </EditSheet>
+
+    {/* Money received / added is a popped-up sheet too, same as Log expense. */}
+    <EditSheet
+      visible={showMoneyForm}
+      title="Money received / added"
+      onClose={() => setShowMoneyForm(false)}
+    >
+      <MoneyForm accounts={accounts} ctx={ctx} onSave={saveMoney} />
+    </EditSheet>
+
+    <AllActivityModal
+      visible={showAllActivity}
+      onClose={() => setShowAllActivity(false)}
+      days={allDays}
+      totals={ledgerTotals}
+      ledger={ledger}
+      weeklySummaries={weeklySummaries}
+      splits={splits}
+      accounts={accounts}
+      onEdit={startEdit}
+      onRemoveExpense={remove}
+      onRemoveMoney={removeMoneyEntry}
+    />
     </>
+  );
+}
+
+// One day's worth of activity as a collapsible card -- shared by the main
+// Recent Activity list and the All activity popup so both look identical.
+// `open`/`onToggle` are controlled by the caller so each list keeps its own
+// expanded/collapsed state.
+function DayGroup({ date, items, isToday, open, onToggle, splits, accounts, onEdit, onRemoveExpense, onRemoveMoney }) {
+  const { theme } = useTheme();
+  const dayNet = items.reduce((s, it) => s + (it.kind === "in" ? Number(it.amount) : -Number(it.amount)), 0);
+  return (
+    <View style={[styles.historyGroup, { backgroundColor: theme.card, borderColor: theme.line }]}>
+      <Pressable onPress={onToggle} style={styles.historyHeader} accessibilityLabel={open ? `Collapse ${fmtDateLong(date)}` : `Expand ${fmtDateLong(date)}`}>
+        <View style={styles.historyHeaderTopRow}>
+          <Text style={[styles.historyDate, { color: theme.text }]}>{isToday ? "Today" : fmtDaySmart(date)}</Text>
+          <Text style={[styles.historyTotal, { color: dayNet < 0 ? ACCENT.ember : ACCENT.leaf }]}>{dayNet < 0 ? "-" : "+"}{peso(Math.abs(dayNet))}</Text>
+        </View>
+        <View style={styles.historyHeaderBottomRow}>
+          <Text style={[styles.historyCount, { color: theme.textMuted }]}>{items.length} transaction{items.length === 1 ? "" : "s"}</Text>
+          {open ? <ChevronUp size={13} color={theme.textMuted} /> : <ChevronDown size={13} color={theme.textMuted} />}
+        </View>
+      </Pressable>
+      {open && (
+        <View style={{ paddingHorizontal: 12, paddingBottom: 12, gap: 10 }}>
+          {items.map((item) => isExpenseEntry(item)
+            ? <ExpenseRow key={item.id} e={item} splits={splits} accounts={accounts} compact onEdit={onEdit} onRemove={onRemoveExpense} />
+            : <LedgerEntryRow key={item.id} item={item} accounts={accounts} compact onRemove={onRemoveMoney} />
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Full-screen popup listing every day of activity (not just the latest
+// few), with an Export button that saves it all as a CSV and opens the
+// share sheet. Editing/deleting from in here closes the popup first: the
+// edit sheet and the delete-confirm dialog are their own modals, and a
+// modal can't reliably open on top of another one on iOS.
+function AllActivityModal({ visible, onClose, days, totals, ledger, weeklySummaries, splits, accounts, onEdit, onRemoveExpense, onRemoveMoney }) {
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const [openMap, setOpenMap] = useState({});
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => { if (visible) setOpenMap({}); }, [visible]);
+
+  const afterClose = (fn) => (...args) => {
+    onClose();
+    setTimeout(() => fn(...args), 350);
+  };
+
+  async function exportCsv() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const csv = buildLedgerCsv(ledger, weeklySummaries, { splits, accounts, incomeCategories: INCOME_CATEGORIES });
+      const uri = FileSystem.documentDirectory + `layp-spending-${todayISO()}.csv`;
+      // Leading BOM so Excel opens non-ASCII names correctly.
+      await FileSystem.writeAsStringAsync(uri, "\uFEFF" + csv, { encoding: FileSystem.EncodingType.UTF8 });
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(uri, { mimeType: "text/csv", dialogTitle: "Export spending", UTI: "public.comma-separated-values-text" });
+      } else {
+        showAppDialog("Export saved", `Saved to:\n${uri}\n\nSharing isn't available on this device, so move the file manually if you need a copy elsewhere.`);
+      }
+    } catch (e) {
+      showAppDialog("Export failed", "Couldn't create the spending file. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const sortedSummaries = useMemo(() => [...weeklySummaries].sort((a, b) => b.startDate.localeCompare(a.startDate)), [weeklySummaries]);
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top + 8, paddingHorizontal: 16 }}>
+        <View style={styles.headerRow}>
+          <Text style={[styles.h1, { color: theme.text }]}>All activity</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+            <Pressable onPress={exportCsv} disabled={exporting} style={[styles.exportBtn, { backgroundColor: theme.accentDark, opacity: exporting ? 0.6 : 1 }]} accessibilityLabel="Export spending as CSV">
+              <Download size={14} color="#fff" />
+              <Text style={styles.exportBtnText}>{exporting ? "Exporting..." : "Export"}</Text>
+            </Pressable>
+            <Pressable onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Close">
+              <X size={20} color={theme.textMuted} />
+            </Pressable>
+          </View>
+        </View>
+
+        <FlatList
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24, gap: 8 }}
+          data={days}
+          keyExtractor={(d) => d.date}
+          initialNumToRender={12}
+          windowSize={7}
+          ListHeaderComponent={
+            <View style={[styles.ledgerPreviewRow, { marginBottom: 4 }]}>
+              <Text style={[styles.ledgerPreviewText, { color: ACCENT.leaf }]}>Income {peso(totals.income)}</Text>
+              <Text style={[styles.ledgerPreviewText, { color: ACCENT.ember }]}>Outcome {peso(totals.outcome)}</Text>
+            </View>
+          }
+          ListEmptyComponent={<EmptyState icon={Receipt} text="Nothing logged yet." />}
+          renderItem={({ item: day }) => (
+            <DayGroup
+              date={day.date}
+              items={day.items}
+              isToday={day.isToday}
+              open={openMap[day.date] !== undefined ? !!openMap[day.date] : false}
+              onToggle={() => setOpenMap((prev) => ({ ...prev, [day.date]: !prev[day.date] }))}
+              splits={splits}
+              accounts={accounts}
+              onEdit={afterClose(onEdit)}
+              onRemoveExpense={afterClose(onRemoveExpense)}
+              onRemoveMoney={afterClose(onRemoveMoney)}
+            />
+          )}
+          ListFooterComponent={
+            sortedSummaries.length > 0 ? (
+              <View style={{ gap: 8, marginTop: 0 }}>
+                {sortedSummaries.map((w) => (
+                  <View key={w.id} style={[styles.weekSummaryRow, { backgroundColor: theme.card, borderColor: theme.line }]}>
+                    <View>
+                      <Text style={[styles.historyDate, { color: theme.text }]}>Week of {fmtDay(w.startDate)} - {fmtDay(w.endDate)}</Text>
+                      <Text style={[styles.weekSummarySub, { color: theme.textMuted }]}>{w.count} entries, summarized</Text>
+                    </View>
+                    <Text style={[styles.historyTotal, { color: ACCENT.ember }]}>-{peso(w.total)}</Text>
+                  </View>
+                ))}
+                <Text style={[styles.rollupNote, { color: theme.textMuted }]}>ⓘ Older transactions are automatically grouped into weekly summaries.</Text>
+              </View>
+            ) : null
+          }
+        />
+      </View>
+    </Modal>
   );
 }
 
@@ -607,15 +769,22 @@ function isExpenseEntry(item) {
   return item.kind === "out" && Object.prototype.hasOwnProperty.call(item, "splitId");
 }
 
-// Read-only row for a non-expense ledger entry (money added, or a
-// lend/borrow movement) inside the merged Recent Activity day groups --
-// same visual rhythm as ExpenseRow, but nothing to edit or delete since
-// these aren't stored as directly-editable records here.
-const LedgerEntryRow = React.memo(function LedgerEntryRow({ item, accounts, compact }) {
+// Row for a non-expense ledger entry (money added, or a lend/borrow
+// movement) inside the merged Recent Activity day groups -- same visual
+// rhythm as ExpenseRow. Loan movements stay fully read-only here (they're
+// computed on the fly from `loans`, not standalone records -- deleting one
+// belongs on the Borrow tab, not here). Money-added entries (ledgerKind
+// "moneyLog") ARE real standalone records though, and had no delete
+// affordance anywhere -- long-press now deletes directly, since (unlike
+// expenses) there's no edit form for these to open into instead.
+const LedgerEntryRow = React.memo(function LedgerEntryRow({ item, accounts, compact, onRemove }) {
   const { theme } = useTheme();
   const account = accounts.find((a) => a.id === item.account);
   const cat = item.kind === "in" && item.category ? INCOME_CATEGORIES.find((c) => c.id === item.category) : null;
-  return (
+  const isDeletable = item.ledgerKind === "moneyLog";
+  const { style: pressStyle, pressIn, pressOut, handleLongPress } = useCardPressAnimation(() => onRemove && onRemove(item.id));
+
+  const content = (
     <View style={[styles.row, { backgroundColor: compact ? theme.bg : theme.card }]}>
       {item.kind === "in" ? <ArrowDownCircle size={15} color={ACCENT.leaf} /> : <ArrowUpCircle size={15} color={ACCENT.ember} />}
       <View style={{ flex: 1 }}>
@@ -627,6 +796,14 @@ const LedgerEntryRow = React.memo(function LedgerEntryRow({ item, accounts, comp
       </View>
       <Text style={[styles.amount, { color: item.kind === "in" ? ACCENT.leaf : ACCENT.ember }]}>{item.kind === "in" ? "+" : "-"}{peso(item.amount)}</Text>
     </View>
+  );
+
+  if (!isDeletable) return content;
+
+  return (
+    <Pressable onLongPress={handleLongPress} delayLongPress={350} onPressIn={pressIn} onPressOut={pressOut} accessibilityLabel={`"${item.name || "Money added"}" entry`} accessibilityHint="Long press to delete">
+      <Reanimated.View style={pressStyle}>{content}</Reanimated.View>
+    </Pressable>
   );
 });
 
@@ -813,8 +990,7 @@ function MoneyForm({ accounts, ctx, onSave }) {
   const canSave = isPositiveAmount(amount);
   const currentBalance = ctx ? computeAccountBalance(account, ctx) : null;
   return (
-    <View style={[styles.formCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-      <Text style={[styles.formTitle, { color: theme.text }]}>Money received / added</Text>
+    <View style={styles.formCardBare}>
       <TextInput value={note} onChangeText={setNote} placeholder="e.g. Allowance, salary, gift (optional)" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} />
       <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Source</Text>
       <View style={styles.chipWrap}>
@@ -884,6 +1060,8 @@ const styles = StyleSheet.create({
   summaryComparisonRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 },
   summaryComparisonText: { fontSize: 11, fontWeight: "700" },
   summaryComparisonDetail: { fontSize: 10, marginTop: 4, fontFamily: "monospace" },
+  exportBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999 },
+  exportBtnText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   formCard: { borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 12 },
   formCardBare: { paddingTop: 2, paddingBottom: 4 },
   formTitle: { fontSize: 13, fontWeight: "700", marginBottom: 10 },

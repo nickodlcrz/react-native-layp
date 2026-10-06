@@ -1,19 +1,19 @@
 import React, { useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
-import { Copy, Check, Lock, Share2, FolderOpen } from "lucide-react-native";
+import { Copy, Check, Share2, FolderOpen } from "lucide-react-native";
 import { useTheme, ACCENT } from "../theme";
 import { peso, todayISO, fmtDay, fmtDateLong, savingsTotal as computeSavingsTotal, computeAccountBalance } from "../utils";
-import { AUTO_LOCK_OPTIONS } from "../autoLockPreference";
-import Chip from "../components/Chip";
+import BackupPanel from "../components/BackupPanel";
 import { confirmAction } from "../components/ConfirmModal";
 import { validateBackup } from "../backupSchema";
 import { markBackupExported } from "../backupReminder";
+import { showAppDialog } from "../components/AppDialog";
 
-function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore, autoLockMinutes, onChangeAutoLockMinutes }) {
+function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummaries, savingsLog, loans, accounts = [], transfers = [], backup, onRestore }) {
   const { theme } = useTheme();
   const [copied, setCopied] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
@@ -97,7 +97,7 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
   async function copyBackup() {
     await Clipboard.setStringAsync(JSON.stringify(backup));
     await markBackupExported();
-    Alert.alert("Backup copied", "Save the copied text somewhere private. It contains your financial data.");
+    showAppDialog("Backup copied", "Save the copied text somewhere private. It contains your financial data.");
   }
 
   // File-based export/import: a real JSON file the person can save to
@@ -113,10 +113,10 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
       if (canShare) {
         await Sharing.shareAsync(uri, { mimeType: "application/json", dialogTitle: "Save your LAYP backup" });
       } else {
-        Alert.alert("Backup saved", `Saved to:\n${uri}\n\nSharing isn't available on this device, so move the file manually if you need a copy elsewhere.`);
+        showAppDialog("Backup saved", `Saved to:\n${uri}\n\nSharing isn't available on this device, so move the file manually if you need a copy elsewhere.`);
       }
     } catch (e) {
-      Alert.alert("Export failed", "Couldn't create the backup file. \"Copy full backup\" still works as a fallback.");
+      showAppDialog("Export failed", "Couldn't create the backup file. \"Copy full backup\" still works as a fallback.");
     }
   }
 
@@ -148,19 +148,19 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
       const raw = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.UTF8 });
       const parsed = parseAndValidateBackup(raw);
       if (!parsed.ok) {
-        Alert.alert("Backup not recognized", parsed.error);
+        showAppDialog("Backup not recognized", parsed.error);
         return;
       }
       confirmRestore(parsed.data);
     } catch (e) {
-      Alert.alert("Import failed", "Couldn't read that file.");
+      showAppDialog("Import failed", "Couldn't read that file.");
     }
   }
 
   function restoreBackup() {
     const parsed = parseAndValidateBackup(restoreText);
     if (!parsed.ok) {
-      Alert.alert("Backup not recognized", parsed.error);
+      showAppDialog("Backup not recognized", parsed.error);
       return;
     }
     confirmRestore(parsed.data, () => { onRestore(parsed.data); setRestoreText(""); setShowRestore(false); });
@@ -171,34 +171,14 @@ function SummaryScreen({ todos, splits, bills, expenses, moneyLog, weeklySummari
       <Text style={[styles.h1, { color: theme.text }]}>Summary</Text>
       <Text style={[styles.sub, { color: theme.textMuted }]}>A plain-text snapshot of your tasks, budget, spending, and borrow tracker -- copy it anywhere.</Text>
 
-      {onChangeAutoLockMinutes && (
-        <View style={[styles.restoreCard, { backgroundColor: theme.card, borderColor: theme.line }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
-            <Lock size={13} color={theme.textMuted} />
-            <Text style={[styles.backupBtnText, { color: theme.text }]}>App lock</Text>
-          </View>
-          <Text style={[styles.restoreHint, { color: theme.textMuted }]}>
-            How long LAYP can stay open in the background before it needs your PIN again.
-          </Text>
-          <View style={styles.chipWrap}>
-            {AUTO_LOCK_OPTIONS.map((opt) => (
-              <Chip
-                key={opt.label}
-                label={opt.label}
-                small
-                active={autoLockMinutes === opt.minutes}
-                onPress={() => onChangeAutoLockMinutes(opt.minutes)}
-              />
-            ))}
-          </View>
-        </View>
-      )}
-
       <Pressable onPress={copy} style={[styles.copyBtn, { backgroundColor: theme.accentDark }]}>
         {copied ? <Check size={16} color={ACCENT.leaf} /> : <Copy size={16} color={ACCENT.gold} />}
         <Text style={styles.copyBtnText}>{copied ? "Copied!" : "Copy to clipboard"}</Text>
       </Pressable>
 
+      <BackupPanel backup={backup} />
+
+      <Text style={[styles.restoreHint, { color: theme.textMuted, marginBottom: 8 }]}>Manual backup tools</Text>
       <View style={styles.backupRow}>
         <Pressable onPress={exportBackupToFile} style={[styles.backupBtn, { borderColor: theme.line, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center" }]}>
           <Share2 size={13} color={theme.text} />

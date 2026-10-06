@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="28"
+    android:viewportHeight="28">
+  <!-- Circular log-expense button with small top/bottom glass cutouts. -->
+  <path
+      android:fillColor="#E6FFFFFF"
+      android:fillType="evenOdd"
+      android:pathData="M14,1 A13,13 0,1 1,14,27 A13,13 0,1 1,14,1 Z M10,0 H18 V5 H10 Z M10,23 H18 V28 H10 Z" />
+</vector>

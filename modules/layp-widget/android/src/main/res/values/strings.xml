@@ -1,0 +1,15 @@
+<resources>
+  <string name="layp_widget_label">LAYP Spending</string>
+  <string name="layp_class_label">LAYP Today\'s Classes</string>
+  <string name="layp_class_description">Today\'s classes, with the current class highlighted and quick suspension.</string>
+  <string name="layp_widget_description">See what you spent today, log expenses, search past ones and add money.</string>
+  <string name="layp_task_4x4_label">LAYP Tasks (4x4)</string>
+  <string name="layp_task_4x6_label">LAYP Tasks (4x6)</string>
+  <string name="layp_task_description">Your open tasks. Tap a circle to move a task to its next status.</string>
+  <string name="layp_task_status_circle">Task status</string>
+  <string name="layp_calendar_label">LAYP Calendar</string>
+  <string name="layp_calendar_description">This month at a glance, with upcoming deadlines, payments and special dates.</string>
+  <string name="layp_upcoming_2x2_label">LAYP Upcoming (2x2)</string>
+  <string name="layp_upcoming_4x2_label">LAYP Upcoming (4x2)</string>
+  <string name="layp_upcoming_description">The next 7 days: task deadlines, payments and special dates. Scroll for more.</string>
+</resources>

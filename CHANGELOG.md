@@ -4,6 +4,61 @@ All notable changes to LAYP are documented here. Newest entries first.
 
 ## [Unreleased]
 
+### Added — Upcoming events widget, gear settings, Google Drive + weekly backup; widget redesign
+- **Upcoming events widget** (2x2 and 4x2): scrollable, only the next 7 days with today included (Mon shows Mon to Sun, Tue shows Tue to Mon), sliding forward at midnight; full titles, no "...".
+- **Calendar widget**: the upcoming-events pane is gone; the month is maximized and each day with something coming up gets a vector mark (heart / pencil / coin / check / bell) next to its number, plus today's big date.
+- **Spending widget**: SVG vector icons instead of emoji, compact fixed-height chips (no more stretching), and text that auto-sizes instead of being cut off ("Transp..."); short names for long labels.
+- **Tasks widget**: shows each task's category and subject code; titles wrap instead of ending in "...".
+- **Gear button** replaces the Summary and Sun/Moon header buttons. Settings has General (Light/Dark, lock screen timeout), Widgets (what the Calendar and Upcoming widgets show, per widget) and Summary (the improved summary with backup).
+- **Backup**: connect a Google account (Drive `drive.file` scope, a "LAYP Backups" folder), automatic backup every 7 days (checked when LAYP opens) to the phone, optionally a folder you choose, and to Drive; Back up now; newest 8 kept. Needs a one-time Google Cloud client ID: see docs/GOOGLE_DRIVE_SETUP.md. New dependency `@react-native-google-signin/google-signin` (requires a fresh native build).
+- New tested logic: `src/backupSchedule.js`, `src/googleDrive.js` (against a mocked fetch), `src/backupService.js`, `src/widgetPrefsLogic.js`.
+
+### Added — add-task button, animated task circle and blinking dot on the Tasks widget
+- A **+** in the Tasks widget header opens an "Add task" sheet (title, due date: today / tomorrow / in 3 days / pick / none, category) that works without opening the app. The task shows on the widget at once; LAYP creates it on its next run with the in-app form's defaults and reminders (`pendingToTodos`, tested).
+- The status circle is animated (spinning arc while "Work in progress", breathing halo at "To pass") and task rows now have the app's blinking urgency dot at the same speeds: fast red, medium yellow, slow green. Built from ViewFlipper cross-fades and an animated-rotate spinner, since widgets can't run animation code.
+
+### Fixed / changed — Calendar widget loading, widget redesign
+- Fix: the Calendar widget said "Can't load widget" because its layout contained a plain `<View>` (the divider), which a widget can't inflate. Removed; all widget layouts are now checked against the allowed view classes.
+- Redesign of all three widgets in the app's navy theme: spending hero card (gradient, large amount with smaller peso sign and cents), Tasks header band with a "due soon" pill and task cards with a colored status/urgency edge, Calendar with accent/soft pills on the month and gradient pages for today and upcoming events. Bottom sheets get a grab handle.
+
+### Added — Tasks and Calendar widgets, widget search/money, quiet notification buttons, GF repeats
+- **Tasks widget** (4x4 and 4x6): open tasks with a tappable circle that steps the status (Not starting yet, Work in progress, To pass, completed) like the app's circle; urgency dot/colors follow the app's rules. **Calendar widget** (4x2): month grid, today as a big date, and a swipeable stack of upcoming task deadlines, bills, loans, reminders and GF dates.
+- **Spending widget**: search past expenses, receive/add money, dark mode that follows LAYP's own theme, and spending can no longer go past an account's balance (blocked in the dialog and re-checked when LAYP absorbs it; rejected ones are reported).
+- **Notification buttons** (task "Have you started/passed?", daily budget save/keep) no longer open the app. On Android a native receiver (`LaypNotificationsService`) saves the answer in a durable queue and dismisses the notification; LAYP applies it next time it runs. Class alarm buttons are unchanged.
+- **GF dates**: "Every month" repeat (monthsaries; reminders re-armed on each launch) and an "Anniversary" type with its own heart badge. New pure helpers in `src/gfDates.js`, `src/widgetEvents.js`.
+- Fix: the task card's urgency dot sits in its own slot beside the dropdown arrow instead of on top of it, with no layout shift.
+- Native module now needs `expo-notifications` at build time; requires a fresh native build.
+
+### Added — Android home-screen spending widget
+- New native module `modules/layp-widget` (Kotlin): a 4x2 widget showing today's spending with quick-log chips for your most-used labels, and a bottom-sheet "Log expense" dialog (amount, quick +20/+50/+100/+500, note, label, budget category, account) that works without opening LAYP.
+- Expenses logged from the widget are queued natively and absorbed into LAYP on launch/foreground (de-duplicated by id); the app pushes today's total, balances, categories and accounts back to the widget. Honors the hide-money switch and dark mode.
+- New `src/widgetSummary.js` (+ tests) and a small sync block in `App.js`. Requires a fresh native build.
+
+### Added — clickable links in task descriptions
+- Links in a task's description (http://, https:// and www.) are underlined and open in the browser when tapped (new `linkify.js` + `LinkText` component). Trailing punctuation like "." or ")" isn't swallowed into the link, and long-pressing a link still opens the task editor.
+
+### Changed — task indicator colors, blink speeds, dot placement
+- **Tasks**: status "To pass" now shows a green border and green dot with a slow blink (this wins over the deadline). Due in 2 days: yellow border, yellow dot, medium blink, and the checkbox circle turns yellow. Due tomorrow/today/overdue: red border, red dot, fast blink. Finished tasks stay default.
+- The dot sits further in from the card's upper-right corner (12px instead of 7px).
+
+### Changed — deadline-based task indicators, Remember long press, zoomable gift photos
+- **Tasks**: the card border and the blinking dot now follow the deadline only. Due tomorrow, today or overdue: red border + blinking red dot. Due in 2 days: yellow border + blinking yellow dot. 3+ days away, no due date, or finished: default (no colored border, no dot). Status no longer affects either.
+- **Remember**: the inline Edit and Delete buttons are gone; long-press a reminder for an Edit / Delete menu (new `LongPressMenu` component).
+- **GF gift ideas**: tap a photo to view it full-screen with pinch-to-zoom, pan, double-tap zoom and swipe-down-to-close (new `ImageViewer` component). New photos are saved at higher quality (0.9) so zoomed-in views stay sharp. Android back closes the viewer/menu before the GF screen.
+
+### Changed — GF long-press menus and gift feed, Remember "Both", task borders
+- **GF screen**: every item (notes, likes, dislikes, gift ideas, dates, promises) now uses a long press to open an Edit / Delete menu instead of inline pencil/trash icons. Kept promises offer Delete only. Add/edit forms scroll into view when opened.
+- **Gift ideas** are now a feed, newest first: an idea with a photo is a big card (photo at its own proportions, clamped to Instagram's 4:5 to 1.91:1, with the caption/title beneath); ideas without a photo stay compact rows.
+- **Remember**: reminders can now use "Both" (notification + popup), same as GF Promises. Time-based and interval scheduling already matched.
+- **Tasks**: every task card has a thin 1px border in its status color (gray = not started, blue = work in progress, green = to pass / finished).
+
+### Changed — Face unlock removed, Todo dot, Spending rework
+- **Removed** the GF section's face unlock (scan screen, enrollment, model, camera permission, and the `expo-camera`, `react-native-fast-tflite`, `jpeg-js`, `expo-image-manipulator` packages). Requires `npm install` and a fresh native build.
+- **GF lock** now opens to a blank screen; tapping anywhere 5 times (within 3s of each other) brings up the PIN prompt.
+- **Todo urgency**: the glowing/blinking card halo is replaced by a small blinking dot in the card's upper-right corner (absolutely positioned, no layout shift).
+- **Bills card** moved from the Borrow tab to the bottom of the Spending screen (now `components/BillsCard.js`).
+- **Spending**: main list shows the latest 5 days of activity; a new history button opens an "All activity" popup with every day and an Export (CSV) button. "Money received / added" is now a popup sheet like "Log expense".
+
 ### Changed — Accessibility pass
 Went through every screen's `Pressable`s looking for ones a screen reader user would get nothing useful from:
 

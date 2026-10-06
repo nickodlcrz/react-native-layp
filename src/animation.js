@@ -7,15 +7,15 @@
 // Import DURATION for withTiming/Animated.timing calls, and SPRING for
 // withSpring calls that want that same snappy feel but with a natural
 // settle instead of a hard stop.
-export const DURATION = 200; // ms
+export const DURATION = 180; // ms
 
 // Tuned so a spring driven by this config finishes in roughly DURATION ms
 // with a small, natural overshoot -- not a slow, floaty settle.
-export const SPRING = { damping: 20, stiffness: 260 };
+export const SPRING = { damping: 24, stiffness: 320 };
 
 // A slightly softer spring for larger movements (sheets, bigger surfaces)
 // where a bit more travel time reads as smooth rather than abrupt.
-export const SPRING_SOFT = { damping: 18, stiffness: 200 };
+export const SPRING_SOFT = { damping: 22, stiffness: 240 };
 
 import { useSharedValue, useAnimatedStyle, withTiming, withSequence, withSpring } from "react-native-reanimated";
 

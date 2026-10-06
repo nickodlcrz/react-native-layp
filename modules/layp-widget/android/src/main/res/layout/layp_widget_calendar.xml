@@ -1,0 +1,1588 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Calendar widget: the month takes most of the width, with a small mark on
+each day that has something coming up (a heart for dates, a pencil for school
+work, a coin for payments, a check for tasks, a bell for reminders), and
+today as a big date on a navy panel at the right. The arrows browse months,
+the title comes back to today. No plain View anywhere (RemoteViews can't
+inflate one). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layp_cal_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:padding="11dp"
+    android:background="@drawable/layp_widget_glass_dark">
+
+  <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="match_parent"
+      android:layout_weight="2.1"
+      android:layout_marginEnd="9dp"
+      android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="20dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+      <TextView
+          android:id="@+id/layp_cal_prev"
+          android:layout_width="24dp"
+          android:layout_height="match_parent"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:text="&#8249;"
+          android:textColor="@color/layp_muted"
+          android:textSize="17sp" />
+
+      <TextView
+          android:id="@+id/layp_cal_title"
+          android:layout_width="0dp"
+          android:layout_height="match_parent"
+          android:layout_weight="1"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_text"
+          android:maxLines="1"
+          android:autoSizeTextType="uniform"
+          android:autoSizeMinTextSize="9sp"
+          android:autoSizeMaxTextSize="13sp"
+          android:autoSizeStepGranularity="1sp" />
+
+      <TextView
+          android:id="@+id/layp_cal_next"
+          android:layout_width="24dp"
+          android:layout_height="match_parent"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:text="&#8250;"
+          android:textColor="@color/layp_muted"
+          android:textSize="17sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="12dp"
+        android:layout_marginTop="2dp"
+        android:orientation="horizontal">
+      <TextView
+          android:id="@+id/layp_cal_w0"
+          android:layout_width="0dp"
+          android:layout_height="match_parent"
+          android:layout_weight="1"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="8sp" />
+      <TextView
+          android:id="@+id/layp_cal_w1"
+          android:layout_width="0dp"
+          android:layout_height="match_parent"
+          android:layout_weight="1"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="8sp" />
+      <TextView
+          android:id="@+id/layp_cal_w2"
+          android:layout_width="0dp"
+          android:layout_height="match_parent"
+          android:layout_weight="1"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="8sp" />
+      <TextView
+          android:id="@+id/layp_cal_w3"
+          android:layout_width="0dp"
+          android:layout_height="match_parent"
+          android:layout_weight="1"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="8sp" />
+      <TextView
+          android:id="@+id/layp_cal_w4"
+          android:layout_width="0dp"
+          android:layout_height="match_parent"
+          android:layout_weight="1"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="8sp" />
+      <TextView
+          android:id="@+id/layp_cal_w5"
+          android:layout_width="0dp"
+          android:layout_height="match_parent"
+          android:layout_weight="1"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="8sp" />
+      <TextView
+          android:id="@+id/layp_cal_w6"
+          android:layout_width="0dp"
+          android:layout_height="match_parent"
+          android:layout_weight="1"
+          android:gravity="center"
+          android:includeFontPadding="false"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="@color/layp_muted"
+          android:textSize="8sp" />
+    </LinearLayout>
+
+      <LinearLayout
+          android:id="@+id/layp_cal_row0"
+          android:layout_width="match_parent"
+          android:layout_height="0dp"
+          android:layout_weight="1"
+          android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/layp_cal_c0"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t0"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a0"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b0"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t1"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a1"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b1"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t2"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a2"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b2"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t3"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a3"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b3"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c4"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t4"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a4"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b4"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c5"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t5"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a5"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b5"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c6"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t6"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a6"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b6"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+      </LinearLayout>
+
+      <LinearLayout
+          android:id="@+id/layp_cal_row1"
+          android:layout_width="match_parent"
+          android:layout_height="0dp"
+          android:layout_weight="1"
+          android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/layp_cal_c7"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t7"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a7"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b7"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c8"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t8"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a8"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b8"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c9"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t9"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a9"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b9"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c10"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t10"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a10"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b10"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c11"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t11"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a11"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b11"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c12"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t12"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a12"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b12"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c13"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t13"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a13"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b13"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+      </LinearLayout>
+
+      <LinearLayout
+          android:id="@+id/layp_cal_row2"
+          android:layout_width="match_parent"
+          android:layout_height="0dp"
+          android:layout_weight="1"
+          android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/layp_cal_c14"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t14"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a14"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b14"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c15"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t15"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a15"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b15"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c16"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t16"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a16"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b16"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c17"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t17"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a17"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b17"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c18"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t18"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a18"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b18"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c19"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t19"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a19"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b19"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c20"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t20"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a20"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b20"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+      </LinearLayout>
+
+      <LinearLayout
+          android:id="@+id/layp_cal_row3"
+          android:layout_width="match_parent"
+          android:layout_height="0dp"
+          android:layout_weight="1"
+          android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/layp_cal_c21"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t21"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a21"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b21"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c22"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t22"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a22"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b22"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c23"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t23"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a23"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b23"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c24"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t24"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a24"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b24"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c25"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t25"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a25"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b25"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c26"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t26"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a26"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b26"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c27"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t27"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a27"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b27"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+      </LinearLayout>
+
+      <LinearLayout
+          android:id="@+id/layp_cal_row4"
+          android:layout_width="match_parent"
+          android:layout_height="0dp"
+          android:layout_weight="1"
+          android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/layp_cal_c28"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t28"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a28"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b28"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c29"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t29"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a29"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b29"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c30"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t30"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a30"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b30"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c31"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t31"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a31"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b31"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c32"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t32"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a32"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b32"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c33"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t33"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a33"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b33"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c34"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t34"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a34"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b34"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+      </LinearLayout>
+
+      <LinearLayout
+          android:id="@+id/layp_cal_row5"
+          android:layout_width="match_parent"
+          android:layout_height="0dp"
+          android:layout_weight="1"
+          android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/layp_cal_c35"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t35"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a35"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b35"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c36"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t36"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a36"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b36"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c37"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t37"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a37"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b37"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c38"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t38"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a38"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b38"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c39"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t39"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a39"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b39"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c40"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t40"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a40"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b40"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/layp_cal_c41"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="1dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+          <TextView
+              android:id="@+id/layp_cal_t41"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:includeFontPadding="false"
+              android:textColor="@color/layp_text"
+              android:textSize="9sp" />
+
+          <ImageView
+              android:id="@+id/layp_cal_a41"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:layout_marginStart="1dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+
+          <ImageView
+              android:id="@+id/layp_cal_b41"
+              android:layout_width="7dp"
+              android:layout_height="7dp"
+              android:src="@drawable/layp_ic_heart"
+              android:visibility="gone" />
+        </LinearLayout>
+      </LinearLayout>
+  </LinearLayout>
+
+  <LinearLayout
+      android:id="@+id/layp_cal_today_panel"
+      android:layout_width="0dp"
+      android:layout_height="match_parent"
+      android:layout_weight="1"
+      android:orientation="vertical"
+      android:gravity="center"
+      android:padding="7dp"
+      android:background="@drawable/layp_widget_glass_panel_dark">
+
+    <TextView
+        android:id="@+id/layp_cal_weekday"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="#B3FFFFFF"
+        android:letterSpacing="0.05"
+        android:maxLines="1"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="13sp"
+        android:autoSizeStepGranularity="1sp" />
+
+    <TextView
+        android:id="@+id/layp_cal_daynum"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="#FFFFFF"
+        android:maxLines="1"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="20sp"
+        android:autoSizeMaxTextSize="64sp"
+        android:autoSizeStepGranularity="2sp" />
+
+    <TextView
+        android:id="@+id/layp_cal_monthyear"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:textColor="#B3FFFFFF"
+        android:maxLines="1"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="12sp"
+        android:autoSizeStepGranularity="1sp" />
+  </LinearLayout>
+</LinearLayout>

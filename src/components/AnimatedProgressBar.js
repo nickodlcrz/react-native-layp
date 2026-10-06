@@ -9,7 +9,7 @@ import Reanimated, { useSharedValue, useAnimatedStyle, withTiming } from "react-
 export default function AnimatedProgressBar({ percent, color, trackColor, height = 6 }) {
   const width = useSharedValue(0);
   useEffect(() => {
-    width.value = withTiming(Math.max(0, Math.min(100, percent)), { duration: 500 });
+    width.value = withTiming(Math.max(0, Math.min(100, percent)), { duration: 360 });
   }, [percent]);
   const fillStyle = useAnimatedStyle(() => ({
     width: `${width.value}%`,

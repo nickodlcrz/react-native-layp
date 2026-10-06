@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Right pane, first page: today as a big date on the navy gradient. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layp_cal_today_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="8dp"
+    android:background="@drawable/layp_widget_glass_panel_dark">
+
+  <TextView
+      android:id="@+id/layp_cal_weekday"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:includeFontPadding="false"
+      android:fontFamily="sans-serif-medium"
+      android:textColor="#B3FFFFFF"
+      android:textSize="13sp"
+      android:letterSpacing="0.06"
+      android:maxLines="1" />
+
+  <TextView
+      android:id="@+id/layp_cal_daynum"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:includeFontPadding="false"
+      android:fontFamily="sans-serif-medium"
+      android:textColor="#FFFFFF"
+      android:textSize="56sp"
+      android:maxLines="1" />
+
+  <TextView
+      android:id="@+id/layp_cal_monthyear"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:includeFontPadding="false"
+      android:textColor="#B3FFFFFF"
+      android:textSize="12sp"
+      android:maxLines="1" />
+
+  <TextView
+      android:id="@+id/layp_cal_hint"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:paddingStart="9dp"
+      android:paddingEnd="9dp"
+      android:paddingTop="3dp"
+      android:paddingBottom="3dp"
+      android:includeFontPadding="false"
+      android:textColor="#FFFFFF"
+      android:textSize="10sp"
+      android:maxLines="1"
+      android:background="@drawable/layp_hero_pill" />
+</LinearLayout>

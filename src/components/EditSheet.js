@@ -9,7 +9,6 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import { BlurView } from "expo-blur";
 import { X } from "lucide-react-native";
 import { useTheme } from "../theme";
 import { DURATION, SPRING } from "../animation";
@@ -35,7 +34,7 @@ const ANDROID_BLUR_METHOD = "dimezisBlurView";
 // expense) so both features share one animation implementation instead of
 // each screen inventing its own.
 export default function EditSheet({ visible, onClose, title, children, maxHeightRatio = 0.86 }) {
-  const { theme, dark } = useTheme();
+  const { theme } = useTheme();
   const [mounted, setMounted] = useState(visible);
   const progress = useSharedValue(0); // 0 = fully hidden, 1 = fully shown
   const dragY = useSharedValue(0);
@@ -90,13 +89,7 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
     <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={requestClose}>
       <Animated.View style={[StyleSheet.absoluteFillObject, backdropStyle]}>
         <Pressable style={StyleSheet.absoluteFillObject} onPress={requestClose} accessibilityLabel="Close">
-          <BlurView
-            intensity={60}
-            tint={dark ? "dark" : "light"}
-            style={StyleSheet.absoluteFillObject}
-            experimentalBlurMethod={Platform.OS === "android" ? ANDROID_BLUR_METHOD : undefined}
-          />
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: dark ? "#00000066" : "#00000033" }]} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "rgba(0,0,0,0.62)" }]} />
         </Pressable>
       </Animated.View>
 
@@ -108,10 +101,11 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
         <Animated.View
           style={[
             styles.sheet,
-            { backgroundColor: theme.card, borderColor: theme.line, maxHeight: SCREEN_H * maxHeightRatio },
+            { maxHeight: SCREEN_H * maxHeightRatio },
             sheetStyle,
           ]}
         >
+          <View style={[styles.solidSheet, { backgroundColor: theme.card, borderColor: theme.line }]}>
           <GestureDetector gesture={pan}>
             <View>
               <View style={[styles.handle, { backgroundColor: theme.line }]} />
@@ -125,9 +119,15 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
               ) : null}
             </View>
           </GestureDetector>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          <ScrollView
+            style={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
             {children}
           </ScrollView>
+          </View>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
@@ -137,20 +137,33 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
 const styles = StyleSheet.create({
   centerWrap: { flex: 1, justifyContent: "flex-end" },
   sheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderWidth: 1,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderBottomWidth: 0,
-    paddingTop: 8,
-    paddingHorizontal: 16,
+    overflow: "hidden",
     // Shadow so the sheet reads as lifted above the blurred backdrop, not
     // flush with it.
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.08,
     shadowRadius: 10,
-    elevation: 8,
+    elevation: 10,
   },
+  // flexShrink (NOT flex:1): the sheet is auto-height with only a maxHeight,
+  // so a flex:1 child collapses to nothing and the whole editor gets cut
+  // off. flexShrink lets it size to its content and only scroll once it
+  // reaches maxHeight.
+  solidSheet: {
+    flexShrink: 1,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 8,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    overflow: "hidden",
+  },
+  scroll: { flexGrow: 0, flexShrink: 1 },
   handle: {
     alignSelf: "center",
     width: 36,
@@ -167,5 +180,5 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: { fontSize: 16, fontWeight: "700" },
-  scrollContent: { paddingBottom: 28 },
+  scrollContent: { paddingBottom: 36 },
 });

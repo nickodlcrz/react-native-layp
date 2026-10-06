@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tasks widget: a dark Liquid Glass-inspired header band (title, open count, "due soon" pill, add button)
+over a scrolling list of task cards. The (+) in the header adds a task. Rows are layp_widget_task_row.xml,
+filled by TaskListService. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layp_task_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/layp_widget_glass_dark">
+
+  <LinearLayout
+      android:id="@+id/layp_task_header"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:paddingStart="15dp"
+      android:paddingEnd="13dp"
+      android:paddingTop="11dp"
+      android:paddingBottom="11dp"
+      android:background="@drawable/layp_widget_glass_top_dark">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+      <TextView
+          android:id="@+id/layp_task_title"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:text="Tasks"
+          android:fontFamily="sans-serif-medium"
+          android:textColor="#FFFFFF"
+          android:textSize="18sp"
+          android:maxLines="1" />
+
+      <TextView
+          android:id="@+id/layp_task_count"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:textColor="#B3FFFFFF"
+          android:textSize="12sp"
+          android:maxLines="1" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/layp_task_pill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="#FFFFFF"
+        android:textSize="11sp"
+        android:maxLines="1"
+        android:background="@drawable/layp_hero_pill"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/layp_task_add"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginStart="10dp"
+        android:gravity="center"
+        android:text="+"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="#24463B"
+        android:textSize="20sp"
+        android:background="@drawable/layp_hero_add" />
+  </LinearLayout>
+
+  <FrameLayout
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1"
+      android:padding="6dp">
+
+    <ListView
+        android:id="@+id/layp_task_list"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:scrollbars="none" />
+
+    <TextView
+        android:id="@+id/layp_task_empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:text="All caught up"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="@color/layp_muted"
+        android:textSize="14sp" />
+  </FrameLayout>
+</LinearLayout>

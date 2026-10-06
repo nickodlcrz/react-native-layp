@@ -9,9 +9,18 @@ import EmptyState from "./EmptyState";
 import CalendarPicker from "./CalendarPicker";
 import TimePicker from "./TimePicker";
 import EditSheet from "./EditSheet";
+import LongPressMenu from "./LongPressMenu";
+import { hapticImpact } from "../haptics";
 import { confirmDelete } from "./ConfirmModal";
 import { scheduleItemNotification, cancelTodoNotifications } from "../notifications";
-import { isScheduledPopupDue, describeSchedule } from "../reminderLogic";
+import { isScheduledPopupDue, isIntervalPopupDue, describeSchedule, FREQUENCY_OPTIONS } from "../reminderLogic";
+
+// "notification" and "both" both need a real OS notification scheduled;
+// "popup" and "both" both get the in-app popup (handled by the shared due
+// checks in reminderLogic.js, which already cover "both").
+function needsNotification(mode) {
+  return mode === "notification" || mode === "both";
+}
 
 function isOverdue(r) {
   if (r.done || !r.remindTime) return false;
@@ -38,6 +47,8 @@ export default function RememberList({ reminders, setReminders }) {
   const [statusView, setStatusView] = useState("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTag, setActiveTag] = useState(null);
+  // Long-pressing a reminder opens an Edit / Delete menu (no inline buttons).
+  const [menuFor, setMenuFor] = useState(null);
 
   const allTags = useMemo(() => {
     const set = new Set();
@@ -67,15 +78,15 @@ export default function RememberList({ reminders, setReminders }) {
     if (editingId) {
       const prev = reminders.find((r) => r.id === editingId);
       const merged = { ...prev, ...data, popupFired: false, lastPopupShownDate: null };
-      const notificationId = data.remindMode === "notification"
-        ? await scheduleItemNotification(prev.notificationId, { date: data.remindDate, time: data.remindTime, until: data.remindUntil }, notifTitle, merged.text, { type: "reminder" })
+      const notificationId = needsNotification(data.remindMode)
+        ? await scheduleItemNotification(prev.notificationId, { date: data.remindDate, time: data.remindTime, until: data.remindUntil, scheduleKind: data.scheduleKind, interval: data.remindInterval }, notifTitle, merged.text, { type: "reminder" })
         : (await cancelTodoNotifications(prev.notificationId ? [prev.notificationId] : []), null);
       setReminders((list) => list.map((r) => (r.id === editingId ? { ...merged, notificationId } : r)));
       setEditingId(null);
     } else {
       const draft = { id: uid(), ...data, done: false, createdAt: Date.now(), popupFired: false, lastPopupShownDate: null };
-      const notificationId = data.remindMode === "notification"
-        ? await scheduleItemNotification(null, { date: data.remindDate, time: data.remindTime, until: data.remindUntil }, notifTitle, draft.text, { type: "reminder" })
+      const notificationId = needsNotification(data.remindMode)
+        ? await scheduleItemNotification(null, { date: data.remindDate, time: data.remindTime, until: data.remindUntil, scheduleKind: data.scheduleKind, interval: data.remindInterval }, notifTitle, draft.text, { type: "reminder" })
         : null;
       setReminders((list) => [...list, { ...draft, notificationId }]);
     }
@@ -96,13 +107,14 @@ export default function RememberList({ reminders, setReminders }) {
   }, [setReminders]);
 
   const startEdit = useCallback((r) => { setEditingId(r.id); setShowForm(true); }, []);
+  const openMenu = useCallback((r) => { hapticImpact(); setMenuFor(r); }, []);
   const startAdd = useCallback(() => { setEditingId(null); setShowForm(true); }, []);
 
   // Snoozes from *now*, not from the reminder's original time -- "10 min"
   // means "remind me again in 10 minutes from this moment", which is what
-  // every phone's own alarm snooze does too. Works the same for both
-  // delivery modes: notification mode reschedules the real OS notification,
-  // popup mode just moves the target moment and clears the "already
+  // every phone's own alarm snooze does too. Works the same for every
+  // delivery mode: notification (and "both") reschedules the real OS
+  // notification, popup mode just moves the target moment and clears the "already
   // shown" flags so the due-check picks it up again.
   const snooze = useCallback(async (r, kind) => {
     const base = new Date();
@@ -115,17 +127,20 @@ export default function RememberList({ reminders, setReminders }) {
     }
     const remindDate = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
     const remindTime = `${String(next.getHours()).padStart(2, "0")}:${String(next.getMinutes()).padStart(2, "0")}`;
-    const notificationId = r.remindMode === "notification"
-      ? await scheduleItemNotification(r.notificationId, { date: remindDate, time: remindTime }, "Reminder", r.text, { type: "reminder" })
+    const notificationId = needsNotification(r.remindMode)
+      ? await scheduleItemNotification(r.notificationId, { date: remindDate, time: remindTime, scheduleKind: "time" }, "Reminder", r.text, { type: "reminder" })
       : null;
-    setReminders((list) => list.map((x) => (x.id === r.id ? { ...x, remindDate, remindTime, remindUntil: null, notificationId, popupFired: false, lastPopupShownDate: null } : x)));
+    // Snoozing always lands on a concrete moment, even if the reminder was
+    // on an interval schedule before -- "remind me again in 10 min" is a
+    // one-off ask about *now*, not "switch to repeating every 10 min".
+    setReminders((list) => list.map((x) => (x.id === r.id ? { ...x, scheduleKind: "time", remindDate, remindTime, remindUntil: null, remindInterval: null, notificationId, popupFired: false, lastPopupShownDate: null } : x)));
   }, [setReminders]);
 
   const editing = editingId ? reminders.find((r) => r.id === editingId) : null;
 
   const renderItem = useCallback(({ item: r }) => (
-    <ReminderRow r={r} onToggle={toggleDone} onEdit={startEdit} onRemove={remove} onSnooze={snooze} />
-  ), [toggleDone, startEdit, remove, snooze]);
+    <ReminderRow r={r} onToggle={toggleDone} onMenu={openMenu} onSnooze={snooze} />
+  ), [toggleDone, openMenu, snooze]);
 
   return (
     <>
@@ -177,6 +192,9 @@ export default function RememberList({ reminders, setReminders }) {
             value={statusView}
             onChange={setStatusView}
           />
+          {filtered.length > 0 && (
+            <Text style={[styles.longPressHint, { color: theme.textMuted }]}>Long press a reminder to edit or delete it</Text>
+          )}
         </>
       }
     />
@@ -184,16 +202,21 @@ export default function RememberList({ reminders, setReminders }) {
     <EditSheet visible={showForm} title={editing ? "Edit reminder" : "Remember something"} onClose={() => { setShowForm(false); setEditingId(null); }}>
       <ReminderForm initial={editing} onSave={saveReminder} onCancel={() => { setShowForm(false); setEditingId(null); }} onDelete={(id) => { setShowForm(false); setEditingId(null); remove({ id, text: editing?.text, notificationId: editing?.notificationId }); }} />
     </EditSheet>
+
+    <LongPressMenu
+      menu={menuFor ? { title: menuFor.text, onEdit: () => startEdit(menuFor), onDelete: () => remove(menuFor) } : null}
+      onClose={() => setMenuFor(null)}
+    />
     </>
   );
 }
 
-const ReminderRow = React.memo(function ReminderRow({ r, onToggle, onEdit, onRemove, onSnooze }) {
+const ReminderRow = React.memo(function ReminderRow({ r, onToggle, onMenu, onSnooze }) {
   const { theme } = useTheme();
   const overdue = isOverdue(r);
   const schedule = describeSchedule(r);
   return (
-    <Pressable onLongPress={() => onEdit(r)} delayLongPress={350} style={[styles.row, { backgroundColor: theme.card, borderColor: overdue ? ACCENT.gold : theme.line, borderWidth: overdue ? 1.5 : 1 }]}>
+    <Pressable onLongPress={() => onMenu(r)} delayLongPress={350} accessibilityHint="Long press to edit or delete" style={[styles.row, { backgroundColor: theme.card, borderColor: overdue ? ACCENT.gold : theme.line, borderWidth: overdue ? 1.5 : 1 }]}>
       <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
         <Pressable onPress={() => onToggle(r)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel={r.done ? "Mark not done" : "Mark done"}>
           {r.done ? <CheckCircle2 size={19} color={ACCENT.leaf} /> : <Circle size={19} color={theme.textMuted} />}
@@ -203,7 +226,8 @@ const ReminderRow = React.memo(function ReminderRow({ r, onToggle, onEdit, onRem
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 3, flexWrap: "wrap" }}>
             {schedule && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                {r.remindMode === "notification" ? <BellRing size={10} color={overdue ? ACCENT.gold : theme.textMuted} /> : <MessageSquare size={10} color={overdue ? ACCENT.gold : theme.textMuted} />}
+                {needsNotification(r.remindMode) && <BellRing size={10} color={overdue ? ACCENT.gold : theme.textMuted} />}
+                {r.remindMode !== "notification" && <MessageSquare size={10} color={overdue ? ACCENT.gold : theme.textMuted} />}
                 <Text style={[styles.metaText, { color: overdue ? ACCENT.gold : theme.textMuted }]}>{schedule}</Text>
               </View>
             )}
@@ -212,12 +236,6 @@ const ReminderRow = React.memo(function ReminderRow({ r, onToggle, onEdit, onRem
             ))}
           </View>
         </View>
-        <Pressable onPress={() => onEdit(r)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Edit reminder">
-          <Text style={{ fontSize: 10, fontWeight: "700", color: ACCENT.sky }}>Edit</Text>
-        </Pressable>
-        <Pressable onPress={() => onRemove(r)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Delete reminder">
-          <Trash2 size={14} color={theme.textMuted} />
-        </Pressable>
       </View>
       {!r.done && r.remindTime && (
         <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
@@ -234,24 +252,46 @@ function ReminderForm({ initial, onSave, onCancel, onDelete }) {
   const { theme } = useTheme();
   const [text, setText] = useState(initial?.text || "");
   const [tagsText, setTagsText] = useState((initial?.tags || []).join(", "));
-  const [showReminder, setShowReminder] = useState(!!initial?.remindTime);
+  const [showReminder, setShowReminder] = useState(!!initial?.remindTime || initial?.scheduleKind === "interval");
   const [remindMode, setRemindMode] = useState(initial?.remindMode || "notification");
+  const [scheduleKind, setScheduleKind] = useState(initial?.scheduleKind === "interval" ? "interval" : "time"); // "time" | "interval"
   const [hasDate, setHasDate] = useState(!!initial?.remindDate);
   const [date, setDate] = useState(initial?.remindDate || todayISO());
   const [time, setTime] = useState(initial?.remindTime || "09:00");
   const [hasUntil, setHasUntil] = useState(!!initial?.remindUntil);
   const [until, setUntil] = useState(initial?.remindUntil || todayISO());
+  const [frequency, setFrequency] = useState(initial?.remindInterval?.frequency || "1h");
+  const [customHours, setCustomHours] = useState(initial?.remindInterval?.customHours != null ? String(initial.remindInterval.customHours) : "2");
   const canSave = text.trim().length > 0;
+
+  // "Always" only makes sense for a popup-only reminder -- an OS
+  // notification needs an actual interval to schedule against, so once
+  // a notification is involved (Notification or Both), that option is
+  // hidden and a real interval is required instead (same rule as GF
+  // Promises).
+  const wantsNotification = needsNotification(remindMode);
+  const intervalOptions = wantsNotification ? FREQUENCY_OPTIONS.filter((f) => f.key !== "always") : FREQUENCY_OPTIONS;
+
+  // "Always" isn't offered once a notification is involved, so switching
+  // to Notification/Both while it's selected falls back to a real interval
+  // instead of leaving a now-hidden option silently chosen.
+  function pickMode(mode) {
+    setRemindMode(mode);
+    if (needsNotification(mode) && frequency === "always") setFrequency("1h");
+  }
 
   function attemptSave() {
     if (!canSave) return;
     const tags = tagsText.split(",").map((t) => t.trim()).filter(Boolean);
+    const useInterval = showReminder && scheduleKind === "interval";
     onSave({
       text: text.trim(), tags,
       remindMode: showReminder ? remindMode : "none",
-      remindDate: showReminder && hasDate ? date : null,
-      remindTime: showReminder ? time : null,
-      remindUntil: showReminder && !hasDate && hasUntil ? until : null,
+      scheduleKind: showReminder ? scheduleKind : "time",
+      remindDate: showReminder && !useInterval && hasDate ? date : null,
+      remindTime: showReminder && !useInterval ? time : null,
+      remindUntil: showReminder && !useInterval && !hasDate && hasUntil ? until : null,
+      remindInterval: useInterval ? { frequency, customHours: frequency === "custom" ? Number(customHours) || 1 : null } : null,
     });
   }
 
@@ -280,29 +320,56 @@ function ReminderForm({ initial, onSave, onCancel, onDelete }) {
       {showReminder ? (
         <>
           <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Remind me with</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <Chip label="Notification" color={ACCENT.sky} active={remindMode === "notification"} onPress={() => pickMode("notification")} />
+            <Chip label="Popup when app opens" color={ACCENT.plum} active={remindMode === "popup"} onPress={() => pickMode("popup")} />
+            <Chip label="Both" color={ACCENT.gold} active={remindMode === "both"} onPress={() => pickMode("both")} />
+          </View>
+
+          <Text style={[styles.miniLabel, { color: theme.textMuted }]}>Schedule</Text>
           <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-            <Chip label="Notification" color={ACCENT.sky} active={remindMode === "notification"} onPress={() => setRemindMode("notification")} />
-            <Chip label="Popup when app opens" color={ACCENT.plum} active={remindMode === "popup"} onPress={() => setRemindMode("popup")} />
+            <Chip label="Specific time" color={ACCENT.sky} active={scheduleKind === "time"} onPress={() => setScheduleKind("time")} />
+            <Chip label="Interval" color={ACCENT.teal} active={scheduleKind === "interval"} onPress={() => setScheduleKind("interval")} />
           </View>
 
-          <Pressable onPress={() => setHasDate((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            {hasDate ? <CheckCircle2 size={16} color={ACCENT.sky} /> : <Circle size={16} color={theme.textMuted} />}
-            <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>On a specific date (leave off to repeat daily)</Text>
-          </Pressable>
-
-          <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-            {hasDate && <CalendarPicker value={date} onChange={setDate} label="Date" />}
-            <TimePicker value={time} onChange={setTime} label="Time" />
-          </View>
-
-          {!hasDate && (
+          {scheduleKind === "time" ? (
             <>
-              <Pressable onPress={() => setHasUntil((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                {hasUntil ? <CheckCircle2 size={16} color={ACCENT.sky} /> : <Circle size={16} color={theme.textMuted} />}
-                <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>Stop repeating after a date</Text>
+              <Pressable onPress={() => setHasDate((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                {hasDate ? <CheckCircle2 size={16} color={ACCENT.sky} /> : <Circle size={16} color={theme.textMuted} />}
+                <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>On a specific date (leave off to repeat daily)</Text>
               </Pressable>
-              {hasUntil && <View style={{ marginBottom: 10 }}><CalendarPicker value={until} onChange={setUntil} label="Until" /></View>}
+
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                {hasDate && <CalendarPicker value={date} onChange={setDate} label="Date" />}
+                <TimePicker value={time} onChange={setTime} label="Time" />
+              </View>
+
+              {!hasDate && (
+                <>
+                  <Pressable onPress={() => setHasUntil((s) => !s)} style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    {hasUntil ? <CheckCircle2 size={16} color={ACCENT.sky} /> : <Circle size={16} color={theme.textMuted} />}
+                    <Text style={{ fontSize: 11, color: theme.textMuted, flex: 1 }}>Stop repeating after a date</Text>
+                  </Pressable>
+                  {hasUntil && <View style={{ marginBottom: 10 }}><CalendarPicker value={until} onChange={setUntil} label="Until" /></View>}
+                </>
+              )}
             </>
+          ) : (
+            <View style={{ marginBottom: 12 }}>
+              <Text style={[styles.miniLabel, { color: theme.textMuted }]}>How often</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: frequency === "custom" ? 8 : 0 }}>
+                {intervalOptions.map((f) => <Chip key={f.key} label={f.label} color={ACCENT.sky} active={frequency === f.key} onPress={() => setFrequency(f.key)} small />)}
+              </View>
+              {frequency === "custom" && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <TextInput value={customHours} onChangeText={(v) => setCustomHours(v.replace(/[^0-9]/g, ""))} keyboardType="number-pad" placeholder="2" placeholderTextColor={theme.textMuted} style={[styles.customHoursInput, { backgroundColor: theme.bg, color: theme.text, borderColor: theme.line }]} />
+                  <Text style={{ fontSize: 11, color: theme.textMuted }}>hours between reminders</Text>
+                </View>
+              )}
+              {wantsNotification && (
+                <Text style={{ fontSize: 11, color: theme.textMuted, marginTop: 8 }}>"Always" isn't available here since a notification needs a real interval to schedule against -- pick an hour count, or switch to popup-only above.</Text>
+              )}
+            </View>
           )}
 
           <Pressable onPress={() => setShowReminder(false)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} style={{ marginBottom: 12 }}>
@@ -333,6 +400,7 @@ function ReminderForm({ initial, onSave, onCancel, onDelete }) {
 }
 
 const styles = StyleSheet.create({
+  longPressHint: { fontSize: 10.5, marginTop: 8, marginBottom: 4 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   h1: { fontSize: 20, fontWeight: "700" },
   roundBtn: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
@@ -347,6 +415,7 @@ const styles = StyleSheet.create({
   snoozeText: { fontSize: 10, fontWeight: "700" },
   formCardBare: { paddingTop: 2, paddingBottom: 4 },
   miniLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase", marginBottom: 6 },
+  customHoursInput: { width: 60, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, textAlign: "center" },
   input: { fontSize: 13, fontWeight: "500", marginBottom: 10, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
   formActions: { flexDirection: "row", gap: 8 },
   formBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: "center" },

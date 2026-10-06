@@ -15,7 +15,7 @@ function easeOutCubic(t) {
   return 1 - Math.pow(1 - t, 3);
 }
 
-export default function AnimatedNumber({ value, formatter, style, duration = 500 }) {
+export default function AnimatedNumber({ value, formatter, style, duration = 360 }) {
   const [display, setDisplay] = useState(value);
   const prevValueRef = useRef(value);
   const rafRef = useRef(null);

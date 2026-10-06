@@ -26,7 +26,19 @@ export default function SegmentedTabs({ options, value, onChange, style }) {
   const { theme } = useTheme();
   const [barWidth, setBarWidth] = useState(0);
   const activeIndex = Math.max(0, options.findIndex((o) => o.key === value));
-  const segWidth = barWidth / (options.length || 1);
+  // barWidth (from onLayout on `wrap` below) is the row's own outer width,
+  // which includes `wrap`'s own padding (styles.wrap.padding, WRAP_PAD on
+  // every side) -- but each segment Pressable only actually gets the
+  // *inner* width (barWidth - WRAP_PAD*2) to divide between them. Dividing
+  // the raw outer barWidth by options.length instead (the old math) made
+  // each computed "slot" wider than a real segment, so the indicator drifted
+  // further right than the segment it was supposed to sit under -- a small
+  // offset for 2 segments, compounding with each extra one (most visible on
+  // Borrow's 5-way Overview/Savings/Activity/Spending/Borrow row).
+  const WRAP_PAD = 3; // matches styles.wrap.padding
+  const INSET = 3; // small gap so the pill doesn't touch its neighbors
+  const innerWidth = Math.max(0, barWidth - WRAP_PAD * 2);
+  const segWidth = innerWidth / (options.length || 1);
   const didInitialize = React.useRef(false);
 
   // Snap to place on the very first layout instead of visibly sliding in
@@ -36,9 +48,9 @@ export default function SegmentedTabs({ options, value, onChange, style }) {
   }, [barWidth]);
 
   const indicatorStyle = useAnimatedStyle(() => {
-    const toValue = activeIndex * segWidth + 3;
+    const toValue = WRAP_PAD + activeIndex * segWidth + INSET;
     return {
-      width: segWidth - 6,
+      width: Math.max(0, segWidth - INSET * 2),
       transform: [{ translateX: didInitialize.current ? withSpring(toValue, SPRING) : toValue }],
     };
   }, [activeIndex, segWidth]);
@@ -48,9 +60,7 @@ export default function SegmentedTabs({ options, value, onChange, style }) {
       style={[styles.wrap, { backgroundColor: theme.bg, borderColor: theme.line }, style]}
       onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
     >
-      {barWidth > 0 && (
-        <Reanimated.View pointerEvents="none" style={[styles.indicator, { backgroundColor: theme.card }, indicatorStyle]} />
-      )}
+      {barWidth > 0 && <Reanimated.View pointerEvents="none" style={[styles.indicator, indicatorStyle]} />}
       {options.map((o) => {
         const active = o.key === value;
         return (
@@ -67,7 +77,7 @@ export default function SegmentedTabs({ options, value, onChange, style }) {
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.8}
-              style={[styles.label, { color: active ? theme.text : theme.textMuted, fontWeight: active ? "700" : "600" }]}
+              style={[styles.label, { color: active ? ACTIVE_TEXT : theme.textMuted, fontWeight: active ? "700" : "600" }]}
             >
               {o.label}
             </Text>
@@ -77,6 +87,15 @@ export default function SegmentedTabs({ options, value, onChange, style }) {
     </View>
   );
 }
+
+// The indicator used to be theme.card on theme.bg -- in dark mode that's
+// #161616 on #101010, close enough to be nearly invisible, and not much
+// better in light mode. Making it plain white fixes that in both themes,
+// with a soft shadow so it still reads as a raised pill against a light
+// background too. A fixed dark label color for the active tab (rather
+// than theme.text, which is near-white in dark mode) keeps the label
+// readable against the white pill regardless of theme.
+const ACTIVE_TEXT = "#141414";
 
 const styles = StyleSheet.create({
   wrap: {
@@ -96,6 +115,12 @@ const styles = StyleSheet.create({
     bottom: 3,
     left: 0,
     borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   seg: {
     flex: 1,

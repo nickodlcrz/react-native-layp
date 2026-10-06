@@ -1,0 +1,18 @@
+<lint-module
+    format="1"
+    dir="D:\Project\layp-app\modules\layp-widget\android"
+    name=":layp-widget"
+    type="LIBRARY"
+    maven="expo.modules.laypwidget:layp-widget:"
+    agpVersion="8.2.1"
+    buildFolder="build"
+    bootClassPath="C:\Android\platforms\android-34\android.jar;C:\Android\build-tools\34.0.0\core-lambda-stubs.jar"
+    javaSourceLevel="17"
+    compileTarget="android-34"
+    neverShrinking="true">
+  <lintOptions
+      absolutePaths="true"
+      checkReleaseBuilds="true"
+      explainIssues="true"/>
+  <variant name="release"/>
+</lint-module>

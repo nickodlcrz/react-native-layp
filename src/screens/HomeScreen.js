@@ -6,6 +6,7 @@ import { peso, todayISO, daysUntil, fmtDay, fmtTime12, computeAccountBalance, sa
 import { totalBalance, netWorth as selectNetWorth, safeToSpend as selectSafeToSpend, monthlySummary, billCoverageByAccount } from "../selectors";
 import { getActivePeriod, subjectsForPeriod, blocksForWeekday, todayExpoWeekday, minutesRemaining, minutesSinceMidnight } from "../school";
 import AnimatedNumber from "../components/AnimatedNumber";
+import LiquidGlass from "../components/LiquidGlass";
 import EmptyState from "../components/EmptyState";
 import { shouldShowBackupReminder, dismissBackupReminder } from "../backupReminder";
 
@@ -96,7 +97,7 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
       )}
 
       {/* Total money, animated */}
-      <View style={[styles.heroCard, { backgroundColor: theme.accentDark }]}>
+      <LiquidGlass radius={24} background={theme.accentDark} style={styles.heroGlass} contentStyle={styles.heroCard}>
         <View style={styles.heroLabelRow}>
           <Text style={[styles.heroLabel, { color: ACCENT.gold }]}>Total money</Text>
           {onToggleBudgetHidden && (
@@ -115,13 +116,13 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
             </View>
           ))}
         </View>
-      </View>
+      </LiquidGlass>
 
       {/* Safe to spend -- the card hierarchy puts this right under Total
           money and gives it the app's blue as a solid surface, the same
           "hero" treatment as Total money above, so it's the most visible
           number on the screen after your balance. */}
-      <View style={[styles.safeCard, { backgroundColor: ACCENT.sky }]}>
+      <LiquidGlass radius={24} background={ACCENT.sky} style={styles.safeGlass} contentStyle={styles.safeCard}>
         <View style={styles.safeLabelRow}>
           <Wallet size={12} color="#ffffffcc" />
           <Text style={styles.safeLabel}>SAFE TO SPEND</Text>
@@ -131,7 +132,7 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
           {budgetHidden ? "hidden" : daysLeftInMonth > 0 ? `\u2248 ${peso(perDay)}/day for the rest of the month` : "end of month"}
         </Text>
         <Text style={styles.estimateNote}>Estimate only, not financial advice -- total money minus unpaid bills.</Text>
-      </View>
+      </LiquidGlass>
 
       {/* Upcoming tasks -- soonest-due unfinished todos across all categories, capped at 3 */}
       <Pressable onPress={onViewTodos} style={[styles.schoolCard, { backgroundColor: theme.card, borderColor: theme.line }]} accessibilityLabel="View all tasks">
@@ -351,7 +352,8 @@ const styles = StyleSheet.create({
   backupBanner: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, padding: 12, marginBottom: 14 },
   backupBannerTitle: { fontSize: 12.5, fontWeight: "700" },
   backupBannerSub: { fontSize: 10.5, lineHeight: 14, marginTop: 2 },
-  heroCard: { borderRadius: 20, padding: 18, marginBottom: 16 },
+  heroGlass: { marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+  heroCard: { padding: 18 },
   heroLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   heroLabel: { fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
   heroValue: { fontSize: 32, fontWeight: "800", color: "#fff", fontFamily: "monospace", marginTop: 4 },
@@ -380,7 +382,8 @@ const styles = StyleSheet.create({
   // above it -- this is meant to be the single most visible card on the
   // Overview after your balance, so it gets a filled color instead of a
   // muted card + border like the rest of the screen.
-  safeCard: { borderRadius: 20, padding: 18, marginBottom: 16, alignItems: "center" },
+  safeGlass: { marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.10, shadowRadius: 18, shadowOffset: { width: 0, height: 6 }, elevation: 3 },
+  safeCard: { padding: 18, alignItems: "center" },
   safeLabelRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   safeLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5, color: "#ffffffcc" },
   safeValue: { fontSize: 32, fontWeight: "800", fontFamily: "monospace", marginTop: 6, color: "#fff" },

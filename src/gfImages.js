@@ -26,7 +26,8 @@ export async function pickAndSaveGfImage() {
     if (!perm.granted) return null;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.6,
+      // High enough that zooming in on a gift photo still looks sharp.
+      quality: 0.9,
     });
     if (result.canceled || !result.assets?.[0]) return null;
     const picked = result.assets[0].uri;

@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark frosted-glass spending widget. Shortcut actions stay visible; recent spending is compact. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layp_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:paddingStart="10dp"
+    android:paddingEnd="10dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
+    android:background="@drawable/layp_widget_glass_dark">
+
+  <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="32dp"
+      android:orientation="horizontal"
+      android:gravity="center_vertical">
+    <TextView
+        android:id="@+id/layp_widget_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="Spent today"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="#D8FFFFFF"
+        android:textSize="12sp"
+        android:letterSpacing="0.03"
+        android:maxLines="1" />
+    <ImageView
+        android:id="@+id/layp_widget_search"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="4dp"
+        android:padding="6dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/layp_ic_search"
+        android:background="@drawable/layp_widget_action_notched" />
+    <ImageView
+        android:id="@+id/layp_widget_money"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="4dp"
+        android:padding="6dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/layp_ic_money_in"
+        android:background="@drawable/layp_widget_action_notched" />
+    <TextView
+        android:id="@+id/layp_widget_add"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginStart="4dp"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:text="+"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:background="@drawable/layp_widget_action_notched" />
+  </LinearLayout>
+
+  <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="32dp"
+      android:orientation="horizontal"
+      android:gravity="center_vertical">
+    <TextView
+        android:id="@+id/layp_widget_amount"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:gravity="center_vertical|start"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="#FFFFFF"
+        android:maxLines="1"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="15sp"
+        android:autoSizeMaxTextSize="28sp"
+        android:autoSizeStepGranularity="1sp" />
+    <TextView
+        android:id="@+id/layp_widget_count"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="end|center_vertical"
+        android:textColor="#92FFFFFF"
+        android:maxLines="1"
+        android:autoSizeTextType="uniform"
+        android:autoSizeMinTextSize="8sp"
+        android:autoSizeMaxTextSize="10sp"
+        android:autoSizeStepGranularity="1sp" />
+  </LinearLayout>
+
+  <!-- Four high-value shortcuts: compact enough to stay visible with recent spending. -->
+  <LinearLayout
+      android:id="@+id/layp_widget_shortcuts"
+      android:layout_width="match_parent"
+      android:layout_height="30dp"
+      android:layout_marginTop="4dp"
+      android:orientation="horizontal"
+      android:gravity="center_vertical">
+
+    <LinearLayout
+        android:id="@+id/layp_widget_shortcut_transport"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginEnd="3dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:background="@drawable/layp_widget_chip_bg_dark">
+      <ImageView android:layout_width="16dp" android:layout_height="16dp" android:padding="1dp" android:src="@drawable/layp_ic_transport" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Transport" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layp_widget_shortcut_food"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginEnd="3dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:background="@drawable/layp_widget_chip_bg_dark">
+      <ImageView android:layout_width="16dp" android:layout_height="16dp" android:padding="1dp" android:src="@drawable/layp_ic_food" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Food" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layp_widget_shortcut_school"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginEnd="3dp"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:background="@drawable/layp_widget_chip_bg_dark">
+      <ImageView android:layout_width="16dp" android:layout_height="16dp" android:padding="1dp" android:src="@drawable/layp_ic_school" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="School" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layp_widget_shortcut_other"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingStart="3dp"
+        android:paddingEnd="3dp"
+        android:background="@drawable/layp_widget_chip_bg_dark">
+      <ImageView android:layout_width="16dp" android:layout_height="16dp" android:padding="1dp" android:src="@drawable/layp_ic_other" />
+      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Other" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+  </LinearLayout>
+
+  <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1"
+      android:orientation="vertical"
+      android:paddingTop="5dp">
+
+    <LinearLayout
+        android:id="@+id/layp_widget_recent_0"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:background="@drawable/layp_hero_chip">
+      <TextView android:id="@+id/layp_widget_recent_name_0" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:fontFamily="sans-serif-medium" android:textColor="#E8FFFFFF" android:textSize="9sp" android:maxLines="1" />
+      <TextView android:id="@+id/layp_widget_recent_amount_0" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:fontFamily="sans-serif-medium" android:textColor="#FFFFFF" android:textSize="9sp" android:maxLines="1" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layp_widget_recent_1"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="3dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:background="@drawable/layp_hero_chip">
+      <TextView android:id="@+id/layp_widget_recent_name_1" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:fontFamily="sans-serif-medium" android:textColor="#E8FFFFFF" android:textSize="9sp" android:maxLines="1" />
+      <TextView android:id="@+id/layp_widget_recent_amount_1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:fontFamily="sans-serif-medium" android:textColor="#FFFFFF" android:textSize="9sp" android:maxLines="1" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layp_widget_recent_2"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="3dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:background="@drawable/layp_hero_chip">
+      <TextView android:id="@+id/layp_widget_recent_name_2" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:fontFamily="sans-serif-medium" android:textColor="#E8FFFFFF" android:textSize="9sp" android:maxLines="1" />
+      <TextView android:id="@+id/layp_widget_recent_amount_2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:fontFamily="sans-serif-medium" android:textColor="#FFFFFF" android:textSize="9sp" android:maxLines="1" />
+    </LinearLayout>
+  </LinearLayout>
+</LinearLayout>

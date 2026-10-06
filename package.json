@@ -1,18 +1,23 @@
 {
   "name": "layp-app",
-  "version": "1.0.0",
+  "version": "4.1.2",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "test": "jest"
+    "test": "jest",
+    "release:android": "node scripts/release.js",
+    "release:patch": "node scripts/release.js patch",
+    "release:minor": "node scripts/release.js minor",
+    "release:major": "node scripts/release.js major"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-community/slider": "4.5.2",
+    "@react-native-google-signin/google-signin": "^13.1.0",
     "expo": "~51.0.0",
-    "expo-blur": "~13.0.2",
+    "expo-blur": "~13.0.3",
     "expo-clipboard": "~6.0.3",
     "expo-crypto": "~13.0.2",
     "expo-dev-client": "~4.0.29",
