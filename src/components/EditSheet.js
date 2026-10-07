@@ -7,6 +7,7 @@ import Animated, {
   withSpring,
   runOnJS,
   Easing,
+  useReducedMotion,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { X } from "lucide-react-native";
@@ -35,6 +36,7 @@ const ANDROID_BLUR_METHOD = "dimezisBlurView";
 // each screen inventing its own.
 export default function EditSheet({ visible, onClose, title, children, maxHeightRatio = 0.86 }) {
   const { theme } = useTheme();
+  const reduceMotion = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
   const progress = useSharedValue(0); // 0 = fully hidden, 1 = fully shown
   const dragY = useSharedValue(0);
@@ -43,13 +45,13 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
     if (visible) {
       setMounted(true);
       dragY.value = 0;
-      progress.value = withTiming(1, { duration: DURATION, easing: Easing.out(Easing.cubic) });
+      progress.value = withTiming(1, { duration: reduceMotion ? 0 : DURATION, easing: Easing.out(Easing.cubic) });
     } else {
-      progress.value = withTiming(0, { duration: DURATION, easing: Easing.in(Easing.cubic) }, (finished) => {
+      progress.value = withTiming(0, { duration: reduceMotion ? 0 : DURATION, easing: Easing.in(Easing.cubic) }, (finished) => {
         if (finished) runOnJS(setMounted)(false);
       });
     }
-  }, [visible]);
+  }, [visible, reduceMotion]);
 
   function requestClose() {
     onClose && onClose();
@@ -75,11 +77,11 @@ export default function EditSheet({ visible, onClose, title, children, maxHeight
     })
     .onEnd((e) => {
       if (e.translationY > DISMISS_DISTANCE || e.velocityY > DISMISS_VELOCITY) {
-        dragY.value = withTiming(SCREEN_H, { duration: DURATION, easing: Easing.in(Easing.cubic) }, (finished) => {
+        dragY.value = withTiming(SCREEN_H, { duration: reduceMotion ? 0 : DURATION, easing: Easing.in(Easing.cubic) }, (finished) => {
           if (finished) runOnJS(requestClose)();
         });
       } else {
-        dragY.value = withSpring(0, SPRING);
+        dragY.value = reduceMotion ? 0 : withSpring(0, SPRING);
       }
     });
 

@@ -32,7 +32,7 @@ class BudgetWidgetProvider : AppWidgetProvider() {
         val views = RemoteViews(context.packageName, R.layout.layp_widget_budget)
         views.setTextViewText(R.id.layp_budget_privacy, if (hidden) "Show" else "Hide")
         views.setContentDescription(R.id.layp_budget_privacy, if (hidden) "Show account balances" else "Hide account balances")
-        views.setTextViewText(R.id.layp_budget_empty, if (summary.accounts.isEmpty()) "Open LAYP to sync accounts" else "")
+        views.setTextViewText(R.id.layp_budget_empty, if (summary.accounts.isEmpty()) "Open LAYP to sync accounts" else "No accounts selected\nChoose accounts in Settings")
         views.setEmptyView(R.id.layp_budget_grid, R.id.layp_budget_empty)
         views.setRemoteAdapter(R.id.layp_budget_grid, Intent(context, BudgetListService::class.java).apply {
           putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id); data = Uri.parse("layp://budget/$id")
@@ -40,6 +40,7 @@ class BudgetWidgetProvider : AppWidgetProvider() {
         views.setPendingIntentTemplate(R.id.layp_budget_grid, WidgetIntents.itemTemplate(context, 9200 + id))
         views.setOnClickPendingIntent(R.id.layp_budget_privacy, PendingIntent.getBroadcast(context, 9300 + id, Intent(context, BudgetWidgetProvider::class.java).setAction(TOGGLE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         WidgetIntents.openApp(context, 9400 + id)?.let { views.setOnClickPendingIntent(R.id.layp_budget_title, it) }
+        WidgetAppearance.apply(context, views, R.layout.layp_widget_budget, R.id.layp_budget_root)
         manager.updateAppWidget(id, views)
       }
       if (ids.isNotEmpty()) manager.notifyAppWidgetViewDataChanged(ids, R.id.layp_budget_grid)
@@ -56,7 +57,7 @@ class BudgetListFactory(private val context: Context) : RemoteViewsService.Remot
   override fun onCreate() {}
   override fun onDataSetChanged() {
     val summary = WidgetStore.readSummary(context)
-    accounts = summary.accounts.map { it.copy(balance = WidgetStore.availableBalance(context, it.id)) }
+    accounts = summary.accounts.filter { summary.budgetAccountIds == null || it.id in summary.budgetAccountIds }.map { it.copy(balance = WidgetStore.availableBalance(context, it.id)) }
     hidden = WidgetStore.budgetHidden(context); currency = summary.currency
   }
   override fun onDestroy() {}
@@ -68,6 +69,7 @@ class BudgetListFactory(private val context: Context) : RemoteViewsService.Remot
     rv.setTextViewText(R.id.layp_budget_account_amount, if (hidden) "••••" else account.balance?.let { WidgetStore.formatMoney(currency, it) } ?: "Sync needed")
     rv.setTextColor(R.id.layp_budget_account_amount, if (!hidden && (account.balance ?: 0.0) < 0) Palette.DARK.error else Palette.DARK.text)
     rv.setOnClickFillInIntent(R.id.layp_budget_account, Intent().putExtra(WidgetActionActivity.EXTRA_OP, WidgetActionActivity.OP_OPEN))
+    WidgetAppearance.apply(context, rv, R.layout.layp_widget_budget_account)
     return rv
   }
   override fun getLoadingView(): RemoteViews? = null

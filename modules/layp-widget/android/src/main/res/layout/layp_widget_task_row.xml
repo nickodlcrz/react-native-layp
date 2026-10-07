@@ -75,6 +75,8 @@ The outer layout only adds the gap between cards. -->
           android:textSize="11sp"
           android:visibility="gone" />
 
+      <TextView android:id="@+id/layp_task_progress" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:textSize="11sp" android:textColor="#9CE8CC" android:visibility="gone" />
+      <ProgressBar android:id="@+id/layp_task_progress_bar" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="4dp" android:layout_marginTop="4dp" android:layout_marginBottom="5dp" android:progressTint="#9CE8CC" android:progressBackgroundTint="#33FFFFFF" android:visibility="gone" />
       <LinearLayout
           android:layout_width="match_parent"
           android:layout_height="wrap_content"

@@ -1,4 +1,5 @@
 import { blocksForWeekday, getActivePeriod, subjectsForPeriod, weekdayLabel, minutesSinceMidnight } from "./school";
+import { normalizeWidgetPrefs } from "./widgetPrefsLogic";
 // Pure helpers for the Android spending widget (modules/layp-widget). No
 // React Native imports, so everything here can be unit tested on its own.
 
@@ -59,8 +60,9 @@ const STATUS_ORDER = ["not_started", "wip", "to_pass"];
 // math) so this stays free of app dependencies.
 export function buildWidgetSummary({
   expenses = [], splits = [], accounts = [], balanceOf = () => 0, hidden = false, today, currency = "\u20B1",
-  dark = false, incomeCategories = [], todos = [], events = [], upcoming = [], subjects = [], categories = [], academicPeriods = [], scheduleEntries = [], cancelledClasses = [], appliedWidgetIds = [],
+  dark = false, incomeCategories = [], todos = [], events = [], upcoming = [], subjects = [], categories = [], academicPeriods = [], scheduleEntries = [], cancelledClasses = [], appliedWidgetIds = [], widgetPrefs = null,
 }) {
+  const prefs = normalizeWidgetPrefs(widgetPrefs);
   const todays = expenses.filter((e) => e.date === today);
   const recent = [...expenses]
     .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.createdAt || 0) - (a.createdAt || 0))
@@ -69,13 +71,13 @@ export function buildWidgetSummary({
   const subjectCode = (t) => (t.subjectId ? subjects.find((s) => s.id === t.subjectId)?.code || "" : "");
   const categoryLabel = (t) => categories.find((c) => c.id === t.category)?.label || "";
   const tasks = todos
-    .filter((t) => !t.completed)
+    .filter((t) => !t.completed && (!t.subjectId || prefs.subjectIds === null || prefs.subjectIds.includes(t.subjectId)))
     .sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"))
-    .map((t) => ({ id: t.id, title: t.title || "Untitled task", status: STATUS_ORDER.includes(t.status) ? t.status : "not_started", due: t.dueDate || null, dueTime: t.dueTime || null, category: t.category || "", categoryLabel: categoryLabel(t), subject: subjectCode(t) }));
+    .map((t) => ({ id: t.id, title: t.title || "Untitled task", status: STATUS_ORDER.includes(t.status) ? t.status : "not_started", due: t.dueDate || null, dueTime: t.dueTime || null, category: t.category || "", categoryLabel: categoryLabel(t), subject: subjectCode(t), subtaskCount: (t.subtasks || []).length, subtaskDone: (t.subtasks || []).filter((s) => s.done).length }));
   const activePeriod = getActivePeriod(academicPeriods);
   const activeSubjects = activePeriod ? subjectsForPeriod(subjects, activePeriod.id) : [];
   const activeIds = new Set(activeSubjects.map((s) => s.id));
-  const activeEntries = scheduleEntries.filter((e) => activeIds.has(e.subjectId));
+  const activeEntries = scheduleEntries.filter((e) => activeIds.has(e.subjectId) && (prefs.subjectIds === null || prefs.subjectIds.includes(e.subjectId)));
   // Use the supplied local calendar date, not a second clock read.
   const todayId = new Date(`${today}T12:00:00`).getDay() + 1;
   const cancelledToday = new Set(cancelledClasses.filter((c) => c.date === today).map((c) => c.entryId));
@@ -126,6 +128,10 @@ export function buildWidgetSummary({
   }
   return {
     date: today,
+    fontScale: prefs.fontScale,
+    opacity: prefs.opacity,
+    budgetAccountIds: prefs.accountIds,
+    visibleSubjectIds: prefs.subjectIds,
     appliedWidgetIds,
     todaySpent: round2(todays.reduce((sum, e) => sum + Number(e.amount || 0), 0)),
     todayCount: todays.length,

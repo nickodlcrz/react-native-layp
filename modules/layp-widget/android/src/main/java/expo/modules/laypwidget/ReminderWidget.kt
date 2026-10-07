@@ -25,6 +25,7 @@ class ReminderWidgetProvider : AppWidgetProvider() {
         }
         views.setRemoteAdapter(R.id.layp_reminder_list, service)
         views.setPendingIntentTemplate(R.id.layp_reminder_list, WidgetIntents.itemTemplate(context, 9600 + id))
+        WidgetAppearance.apply(context, views, views.layoutId, R.id.layp_reminder_root)
         manager.updateAppWidget(id, views)
         manager.notifyAppWidgetViewDataChanged(intArrayOf(id), R.id.layp_reminder_list)
       }
@@ -46,6 +47,7 @@ class ReminderListFactory(private val context: Context) : android.widget.RemoteV
     v.setTextViewText(R.id.layp_reminder_hint, if (count > 0) "$count saved\nOpen LAYP to activate" else "Capture a thought\nChoose when to remember")
     v.setOnClickFillInIntent(R.id.layp_reminder_add, Intent().putExtra(WidgetActionActivity.EXTRA_OP, WidgetActionActivity.OP_ADD_REMINDER))
     v.setOnClickFillInIntent(R.id.layp_reminder_title, Intent().putExtra(WidgetActionActivity.EXTRA_OP, WidgetActionActivity.OP_OPEN))
+    WidgetAppearance.apply(context, v, v.layoutId)
     return v
   }
   override fun getLoadingView(): RemoteViews? = null

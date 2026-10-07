@@ -2,6 +2,24 @@
 
 All notable changes to LAYP are documented here. Newest entries first.
 
+## [4.2.0] — 2026-10-07
+
+### Added
+- Weekly planner combining classes, deadlines and scheduled general reminders, with conflict warnings and available study gaps.
+- Widget appearance settings: previews, text sizes, glass opacity, selected accounts and subjects.
+- Alarm health checks and a cancellable ten-second native alarm test, including alarm channel visibility checks.
+- Seven-/thirty-day budget forecasts with recurring income, outstanding bills, savings reserves and early shortfall warnings.
+- Subtask completion counts and progress bars in task cards and Android task widgets.
+
+### Changed
+- Compact planner entry on Home; keep urgent tasks and reminders ahead of the forecast.
+- Consistent settings cards and buttons; reduced-motion support for sheets and segmented controls.
+- Refresh planner dates and alarm permissions on foreground. Keep cancelled classes and hidden balances consistent across the new views.
+
+### Fixed
+- Ignore whitespace-only expense shortcut names; update outdated tests to preserve first-entry shortcuts and latest prices.
+- Validate widget appearance preferences while preserving existing event filters and quick-logging choices.
+
 ## [Unreleased]
 
 ### Added — Upcoming events widget, gear settings, Google Drive + weekly backup; widget redesign

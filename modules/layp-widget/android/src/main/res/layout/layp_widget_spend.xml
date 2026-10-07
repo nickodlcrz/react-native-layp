@@ -111,7 +111,7 @@
         android:paddingEnd="3dp"
         android:background="@drawable/layp_widget_chip_bg_dark">
       <ImageView android:layout_width="16dp" android:layout_height="16dp" android:padding="1dp" android:src="@drawable/layp_ic_transport" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Transport" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+      <TextView android:id="@+id/layp_widget_spend_label_5" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Transport" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
     </LinearLayout>
 
     <LinearLayout
@@ -126,7 +126,7 @@
         android:paddingEnd="3dp"
         android:background="@drawable/layp_widget_chip_bg_dark">
       <ImageView android:layout_width="16dp" android:layout_height="16dp" android:padding="1dp" android:src="@drawable/layp_ic_food" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Food" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+      <TextView android:id="@+id/layp_widget_spend_label_6" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Food" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
     </LinearLayout>
 
     <LinearLayout
@@ -141,7 +141,7 @@
         android:paddingEnd="3dp"
         android:background="@drawable/layp_widget_chip_bg_dark">
       <ImageView android:layout_width="16dp" android:layout_height="16dp" android:padding="1dp" android:src="@drawable/layp_ic_school" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="School" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+      <TextView android:id="@+id/layp_widget_spend_label_7" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="School" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
     </LinearLayout>
 
     <LinearLayout
@@ -155,7 +155,7 @@
         android:paddingEnd="3dp"
         android:background="@drawable/layp_widget_chip_bg_dark">
       <ImageView android:layout_width="16dp" android:layout_height="16dp" android:padding="1dp" android:src="@drawable/layp_ic_other" />
-      <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Other" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
+      <TextView android:id="@+id/layp_widget_spend_label_8" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="3dp" android:text="Other" android:textColor="#D5FFFFFF" android:textSize="9sp" android:includeFontPadding="false" android:maxLines="1" android:ellipsize="end" />
     </LinearLayout>
   </LinearLayout>
 

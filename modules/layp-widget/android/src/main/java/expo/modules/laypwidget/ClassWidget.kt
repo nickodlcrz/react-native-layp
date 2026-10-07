@@ -162,6 +162,7 @@ private object ClassRenderer {
     val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
     v.setPendingIntentTemplate(R.id.layp_class_list, PendingIntent.getActivity(context, 890000 + widgetId, Intent(context, ClassWidgetActionActivity::class.java).setAction(ClassWidgetActionActivity.ACTION), flags))
     WidgetIntents.openApp(context, 896000 + widgetId)?.let { v.setOnClickPendingIntent(R.id.layp_class_header, it) }
+    WidgetAppearance.apply(context, v, v.layoutId, R.id.layp_class_root)
     return v
   }
 }
@@ -190,6 +191,7 @@ class ClassListFactory(private val context: Context) : android.widget.RemoteView
       v.setChronometerCountDown(R.id.layp_class_remaining, true)
       v.setChronometer(R.id.layp_class_remaining, android.os.SystemClock.elapsedRealtime() + end - System.currentTimeMillis(), null, true)
       v.setOnClickFillInIntent(R.id.layp_class_live_cancel, Intent().putExtra(ClassWidgetActionActivity.EXTRA_ENTRY_ID, live.entryId).putExtra(ClassWidgetActionActivity.EXTRA_DATE, WidgetStore.today()))
+      WidgetAppearance.apply(context, v, v.layoutId)
       return v
     }
     val v = RemoteViews(context.packageName, R.layout.layp_widget_class_row)
@@ -200,6 +202,7 @@ class ClassListFactory(private val context: Context) : android.widget.RemoteView
     v.setViewVisibility(R.id.layp_class_row_room, if (c.room.isNotBlank() || c.dayLabel != "Today") View.VISIBLE else View.GONE)
     v.setViewVisibility(R.id.layp_class_row_cancel, if (c.dayLabel == "Today") View.VISIBLE else View.GONE)
     v.setOnClickFillInIntent(R.id.layp_class_row_cancel, Intent().putExtra(ClassWidgetActionActivity.EXTRA_ENTRY_ID, c.entryId).putExtra(ClassWidgetActionActivity.EXTRA_DATE, WidgetStore.today()))
+    WidgetAppearance.apply(context, v, v.layoutId)
     return v
   }
   override fun getLoadingView(): RemoteViews? = null

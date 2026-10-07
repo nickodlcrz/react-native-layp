@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.text.SimpleDateFormat
@@ -100,16 +101,40 @@ class LaypAlarmModule : Module(), AlarmEventBus.Listener {
       val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
       val exactAllowed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) am.canScheduleExactAlarms() else true
       val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-      val notificationsEnabled = nm.areNotificationsEnabled()
+      val notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+      val channel = if (Build.VERSION.SDK_INT >= 26) nm.getNotificationChannel("layp_alarm_engine") else null
       val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
       val ignoringBatteryOptimizations =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) pm.isIgnoringBatteryOptimizations(context.packageName) else true
       mapOf(
         "exactAlarmsAllowed" to exactAllowed,
         "notificationsEnabled" to notificationsEnabled,
+        "alarmChannelEnabled" to (channel == null || channel.importance >= NotificationManager.IMPORTANCE_HIGH),
         "fullScreenAlarmsAllowed" to (if (Build.VERSION.SDK_INT >= 34) nm.canUseFullScreenIntent() else true),
         "ignoringBatteryOptimizations" to ignoringBatteryOptimizations
       )
+    }
+
+    AsyncFunction("testAlarm") {
+      val triggerAt = System.currentTimeMillis() + 10_000L
+      val cal = Calendar.getInstance().apply { timeInMillis = triggerAt }
+      AlarmScheduler.cancelGroup(context, "layp:test")
+      AlarmScheduler.arm(context, StoredAlarm(
+        key = "layp:test#once", groupId = "layp:test", requestCode = AlarmStore.requestCodeFor("layp:test#once"),
+        title = "LAYP test alarm", body = "Alarm sound and screen check", heading = "Test alarm",
+        subheading = "Your alarm check is ringing", details = listOf("Dismiss this alarm to finish the check."),
+        hour = cal.get(Calendar.HOUR_OF_DAY), minute = cal.get(Calendar.MINUTE), dayOfWeek = 0,
+        repeatWeekly = false, oneShotDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time), kind = "test"
+      ), triggerAt)
+      triggerAt
+    }
+
+    AsyncFunction("openAlarmNotificationSettings") {
+      val intent = if (Build.VERSION.SDK_INT >= 26) Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        putExtra(Settings.EXTRA_CHANNEL_ID, "layp_alarm_engine")
+      } else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = Uri.parse("package:${context.packageName}") }
+      context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     AsyncFunction("openExactAlarmSettings") {

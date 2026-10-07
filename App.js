@@ -46,6 +46,7 @@ import ErrorBoundary from "./src/components/ErrorBoundary";
 import TabBar from "./src/components/TabBar";
 import GFScreen from "./src/screens/GFScreen";
 import RemindPopup from "./src/components/RemindPopup";
+import PlannerScreen from "./src/screens/PlannerScreen";
 
 // Single source of truth for which tabs exist, their order, icons, and
 // labels -- the old version had this order duplicated as a bare array of
@@ -175,6 +176,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
   }, []);
   // The gear menu (Settings): which tab it opens on, and what the date widgets show.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [plannerOpen, setPlannerOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState("general");
   const [widgetPrefs, setWidgetPrefs] = useState(DEFAULT_WIDGET_PREFS);
   useEffect(() => { loadWidgetPrefs().then(setWidgetPrefs); }, []);
@@ -876,6 +878,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
         hidden: budgetHidden,
         today,
         dark,
+        widgetPrefs,
         incomeCategories: INCOME_CATEGORIES,
         todos,
         subjects,
@@ -1158,6 +1161,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
   // School, Budget, and Summary to all re-render and recompute along with it.
   const goToSchool = useCallback(() => setTab("school"), []);
   const goToTodo = useCallback(() => setTab("todo"), []);
+  const goToPlanner = useCallback(() => setPlannerOpen(true), []);
   const goToSummary = useCallback(() => { setSettingsTab("summary"); setSettingsOpen(true); }, []);
   const clearPrefillSubject = useCallback(() => setPrefillSubjectId(null), []);
   const goToTodoForSubject = useCallback((subjectId) => { setPrefillSubjectId(subjectId); setTab("todo"); }, []);
@@ -1216,6 +1220,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
             accounts={accounts} moneyLog={moneyLog} expenses={expenses} weeklySummaries={weeklySummaries}
             loans={loans} savingsLog={savingsLog} transfers={transfers} bills={bills} splits={splits}
             goals={goals} todos={todos} reminders={reminders}
+            recurringIncome={recurringIncome} onViewPlanner={goToPlanner}
             periods={academicPeriods} subjects={subjects} scheduleEntries={scheduleEntries} cancelledClasses={cancelledClasses}
             onViewSchedule={goToSchool}
             onViewTodos={goToTodo}
@@ -1318,6 +1323,10 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
           autoLockMinutes={autoLockMinutes}
           onChangeAutoLockMinutes={onChangeAutoLockMinutes}
           widgetPrefs={widgetPrefs}
+          widgetAccounts={accounts.map((a) => ({ ...a, balance: computeAccountBalance(a.id, { moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers }) }))}
+          widgetSubjects={activeSubjects}
+          widgetTodos={todos}
+          budgetHidden={budgetHidden}
           onChangeWidgetPrefs={onChangeWidgetPrefs}
           gfScreenEnabled={gfScreenEnabled}
           onChangeGfScreenEnabled={onChangeGfScreenEnabled}
@@ -1327,6 +1336,7 @@ function AppShellComponent({ onLock, unlocked, autoLockMinutes, onChangeAutoLock
             onRestore: restoreBackup,
           }}
         />
+        <PlannerScreen visible={plannerOpen} onClose={() => setPlannerOpen(false)} onViewTasks={goToTodo} periods={academicPeriods} subjects={subjects} entries={scheduleEntries} cancelledClasses={cancelledClasses} todos={todos} reminders={reminders} />
         {gfScreenEnabled && <GFScreen
           visible={gfOpen}
           onClose={() => setGfOpen(false)}

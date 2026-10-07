@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import Reanimated, { useAnimatedStyle, withSpring } from "react-native-reanimated";
+import Reanimated, { useAnimatedStyle, withSpring, useReducedMotion } from "react-native-reanimated";
 import { useTheme } from "../theme";
 import { SPRING } from "../animation";
 
@@ -24,6 +24,7 @@ import { SPRING } from "../animation";
 // free instead of each screen's tab bar animating slightly differently.
 export default function SegmentedTabs({ options, value, onChange, style }) {
   const { theme } = useTheme();
+  const reduceMotion = useReducedMotion();
   const [barWidth, setBarWidth] = useState(0);
   const activeIndex = Math.max(0, options.findIndex((o) => o.key === value));
   // barWidth (from onLayout on `wrap` below) is the row's own outer width,
@@ -51,9 +52,9 @@ export default function SegmentedTabs({ options, value, onChange, style }) {
     const toValue = WRAP_PAD + activeIndex * segWidth + INSET;
     return {
       width: Math.max(0, segWidth - INSET * 2),
-      transform: [{ translateX: didInitialize.current ? withSpring(toValue, SPRING) : toValue }],
+      transform: [{ translateX: didInitialize.current && !reduceMotion ? withSpring(toValue, SPRING) : toValue }],
     };
-  }, [activeIndex, segWidth]);
+  }, [activeIndex, segWidth, reduceMotion]);
 
   return (
     <View

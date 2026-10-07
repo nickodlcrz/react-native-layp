@@ -75,6 +75,15 @@ export async function getAlarmStatus() {
   return LaypAlarmNative.getAlarmStatus();
 }
 
+export async function testAlarm() {
+  if (!LaypAlarmNative) return null;
+  return LaypAlarmNative.testAlarm();
+}
+export async function openAlarmNotificationSettings() {
+  if (!LaypAlarmNative) return;
+  await LaypAlarmNative.openAlarmNotificationSettings();
+}
+
 // Opens the OS "Alarms & reminders" (exact alarm) settings screen for this
 // app -- Android 12+ requires the person to grant this explicitly, and
 // LAYP's alarms silently degrade to inexact timing without it. Surface

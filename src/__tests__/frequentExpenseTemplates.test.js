@@ -5,9 +5,10 @@ function expense(overrides = {}) {
 }
 
 describe("frequentExpenseTemplates", () => {
-  test("a one-off expense doesn't show up (needs 2+ occurrences)", () => {
+  test("remembers an expense after its first entry", () => {
     const result = frequentExpenseTemplates([expense({ id: "e1" })]);
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("Coffee");
   });
 
   test("the same name+amount logged twice becomes one template", () => {
@@ -28,15 +29,16 @@ describe("frequentExpenseTemplates", () => {
     expect(frequentExpenseTemplates(expenses)).toHaveLength(1);
   });
 
-  test("a different amount for the same name is a different template", () => {
+  test("a price change updates the same named shortcut with the latest amount", () => {
     const expenses = [
-      expense({ id: "e1", amount: 60 }),
-      expense({ id: "e2", amount: 60 }),
-      expense({ id: "e3", amount: 90 }),
-      expense({ id: "e4", amount: 90 }),
+      expense({ id: "e1", amount: 60, createdAt: 1000 }),
+      expense({ id: "e2", amount: 60, createdAt: 2000 }),
+      expense({ id: "e3", amount: 90, createdAt: 3000 }),
+      expense({ id: "e4", amount: 90, createdAt: 4000 }),
     ];
     const result = frequentExpenseTemplates(expenses);
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
+    expect(result[0].amount).toBe(90);
   });
 
   test("uses the most recently logged occurrence as the template", () => {
@@ -57,13 +59,16 @@ describe("frequentExpenseTemplates", () => {
     expect(frequentExpenseTemplates(expenses)).toHaveLength(0);
   });
 
-  test("sorts most-repeated first and respects the limit", () => {
+  test("sorts by recent use and respects the limit even when an older item is more frequent", () => {
     const expenses = [
       ...[1, 2, 3].map((i) => expense({ id: `a${i}`, name: "Jeepney", amount: 15, createdAt: i })),
-      ...[1, 2].map((i) => expense({ id: `b${i}`, name: "Coffee", amount: 60, createdAt: i })),
+      ...[1, 2].map((i) => expense({ id: `b${i}`, name: "Coffee", amount: 60, createdAt: i + 100 })),
     ];
     const result = frequentExpenseTemplates(expenses, 1);
     expect(result).toHaveLength(1);
-    expect(result[0].name).toBe("Jeepney"); // 3 occurrences beats 2
+    expect(result[0].name).toBe("Coffee");
+  });
+  test("does not save blank or whitespace-only names", () => {
+    expect(frequentExpenseTemplates([expense({ name: "   " }), expense({ name: "" })])).toEqual([]);
   });
 });

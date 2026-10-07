@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, Modal, ScrollView, StyleSheet, Platform } from "react-native";
+import { View, Text, Pressable, Modal, ScrollView, StyleSheet } from "react-native";
 import { X, Sun, Moon, Lock, Check, Heart, Info } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, ACCENT } from "../theme";
@@ -10,8 +10,9 @@ import SegmentedTabs from "../components/SegmentedTabs";
 import Chip from "../components/Chip";
 import SummaryScreen from "./SummaryScreen";
 import { isNativeWidgetAvailable, requestPinWidget } from "../../modules/layp-widget";
-import { isNativeAlarmAvailable, openFullScreenAlarmSettings, openExactAlarmSettings } from "../../modules/layp-alarm";
 import { showAppDialog } from "../components/AppDialog";
+import AlarmHealthCard from "../components/AlarmHealthCard";
+import WidgetCustomization from "../components/WidgetCustomization";
 
 const TABS = [
   { key: "general", label: "General" },
@@ -27,6 +28,7 @@ export default function SettingsScreen({
   dark, setDark,
   autoLockMinutes, onChangeAutoLockMinutes,
   widgetPrefs, onChangeWidgetPrefs,
+  widgetAccounts, widgetSubjects, widgetTodos, budgetHidden,
   gfScreenEnabled, onChangeGfScreenEnabled,
   summaryProps,
 }) {
@@ -84,14 +86,7 @@ export default function SettingsScreen({
               </View>
             </View>
 
-            {isNativeAlarmAvailable() && <>
-              <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 22 }]}>Alarm display</Text>
-              <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
-                <Text style={[styles.hint, { color: theme.textMuted }]}>On Android 14 or newer, allow full-screen alarms to show the ringing screen. You can also tap the ringing notification to open it.</Text>
-                {Platform.OS === "android" && Number(Platform.Version) >= 34 && <Pressable onPress={openFullScreenAlarmSettings} style={{ paddingVertical: 10 }} accessibilityRole="button"><Text style={{ color: ACCENT.gold }}>Full-screen alarm permission</Text></Pressable>}
-                <Pressable onPress={openExactAlarmSettings} style={{ paddingVertical: 10 }} accessibilityRole="button"><Text style={{ color: ACCENT.gold }}>Alarms &amp; reminders permission</Text></Pressable>
-              </View>
-            </>}
+            {visible && <AlarmHealthCard />}
             <Text style={[styles.sectionLabel, { color: theme.textMuted, marginTop: 22 }]}>Private features</Text>
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line }]}>
               <View style={styles.cardHead}>
@@ -129,6 +124,7 @@ export default function SettingsScreen({
 
         {tab === "widgets" && (
           <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 24 }}>
+            <WidgetCustomization prefs={widgetPrefs} onChange={onChangeWidgetPrefs} accounts={widgetAccounts} subjects={widgetSubjects} todos={widgetTodos} hidden={budgetHidden} />
             <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.line, marginBottom: 14 }]}>
               <Text style={[styles.cardTitle, { color: theme.text }]}>Add to your home screen</Text>
               <Text style={[styles.hint, { color: theme.textMuted }]}>Dark transparent widgets. Swipe the task list or account grid to see more.</Text>
@@ -199,7 +195,7 @@ const styles = StyleSheet.create({
   themeRow: { flexDirection: "row", gap: 10 },
   themeCard: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderRadius: 20, paddingVertical: 16 },
   themeLabel: { fontSize: 13, fontWeight: "700" },
-  card: { borderWidth: 1, borderRadius: 22, padding: 15, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 15, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 16 },
   cardHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
   cardTitle: { fontSize: 13, fontWeight: "700" },
   hint: { fontSize: 11.5, lineHeight: 17 },

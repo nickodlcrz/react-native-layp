@@ -135,7 +135,7 @@ export function spendingByLabel(expenses, refDate = new Date()) {
 export function frequentExpenseTemplates(expenses, limit = 8) {
   const groups = new Map();
   for (const e of expenses) {
-    if (e.source === "bill" || !e.name) continue;
+    if (e.source === "bill" || !e.name?.trim()) continue;
     const key = e.name.trim().toLowerCase();
     const existing = groups.get(key);
     if (existing) {

@@ -9,8 +9,10 @@ import AnimatedNumber from "../components/AnimatedNumber";
 import LiquidGlass from "../components/LiquidGlass";
 import EmptyState from "../components/EmptyState";
 import { shouldShowBackupReminder, dismissBackupReminder } from "../backupReminder";
+import BudgetForecastCard from "../components/BudgetForecastCard";
+import { ActionButton, featureStyles as fs } from "../components/FeatureUI";
 
-function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], reminders = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden, onGoToBackup }) {
+function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savingsLog, transfers, bills, splits, goals = [], todos = [], reminders = [], periods = [], subjects = [], scheduleEntries = [], cancelledClasses = [], recurringIncome = [], onViewPlanner, onViewSchedule, onViewTodos, budgetHidden = false, onToggleBudgetHidden, onGoToBackup }) {
   const { theme } = useTheme();
   const [showBackupBanner, setShowBackupBanner] = useState(false);
   useEffect(() => {
@@ -81,7 +83,10 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
 
   return (
     <ScrollView showsHorizontalScrollIndicator={false} showsVerticalScrollIndicator={false} style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 12 }}>
-      <Text style={[styles.h1, { color: theme.text }]}>Overview</Text>
+      <View style={[fs.row, { marginBottom: 14 }]}>
+        <Text style={[styles.h1, { color: theme.text, marginBottom: 0 }]}>Overview</Text>
+        <ActionButton label="Plan week" accessibilityLabel="Open weekly planner" secondary onPress={onViewPlanner} />
+      </View>
 
       {showBackupBanner && (
         <Pressable onPress={onGoToBackup} style={[styles.backupBanner, { backgroundColor: theme.card, borderColor: ACCENT.gold }]}>
@@ -236,6 +241,8 @@ function HomeScreen({ accounts, moneyLog, expenses, weeklySummaries, loans, savi
           </View>
         </Pressable>
       )}
+
+      <BudgetForecastCard balance={totalMoney} bills={bills} recurringIncome={recurringIncome} hidden={budgetHidden} />
 
       {/* Monthly overview */}
       <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>{monthLabel}</Text>

@@ -626,6 +626,10 @@ const TodoRow = React.memo(function TodoRow({ t, now, subject, onToggle, onEdit,
               <Text style={[styles.metaText, { color: theme.textMuted, marginTop: 4, fontWeight: "700" }]}>No due date</Text>
             )}
 
+            {subtasks.length > 0 && <View style={{ marginTop: 8 }}>
+              <Text style={[styles.metaText, { color: ACCENT.leaf, fontWeight: "700" }]}>{subDone}/{subtasks.length} steps completed · {Math.round(subDone / subtasks.length * 100)}%</Text>
+              <View style={[styles.subProgressTrack, { backgroundColor: theme.line, marginTop: 5 }]}><View style={[styles.subProgressFill, { width: `${subDone / subtasks.length * 100}%`, backgroundColor: ACCENT.leaf }]} /></View>
+            </View>}
             {/* Everything below is the "detail" tier -- hidden by default so
                 the card reads at a glance, and morphs open with the card's
                 own layout animation (see `layout` above) when the chevron

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/layp_reminder_square" android:layout_width="match_parent" android:layout_height="match_parent">
-  <FrameLayout android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/layp_widget_glass_dark">
+  <FrameLayout android:id="@+id/layp_reminder_root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/layp_widget_glass_dark">
     <ListView android:id="@+id/layp_reminder_list" android:layout_width="match_parent" android:layout_height="match_parent" android:divider="@null" android:scrollbars="none" />
   </FrameLayout>
 </FrameLayout>

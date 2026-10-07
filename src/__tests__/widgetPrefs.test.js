@@ -16,12 +16,16 @@ describe("widget prefs", () => {
   });
 
   test("an empty list stays empty (the person turned everything off)", () => {
-    expect(normalizeWidgetPrefs({ calendarKinds: [], upcomingKinds: [] })).toEqual({ calendarKinds: [], upcomingKinds: [] });
+    expect(normalizeWidgetPrefs({ calendarKinds: [], upcomingKinds: [] })).toEqual({ ...DEFAULT_WIDGET_PREFS, calendarKinds: [], upcomingKinds: [] });
   });
 
   test("toggleKind switches one kind on or off", () => {
     expect(toggleKind(["school", "bill"], "bill")).toEqual(["school"]);
     expect(toggleKind(["school"], "bill")).toEqual(["school", "bill"]);
+  });
+  test("preserves explicit visibility choices and validates appearance values", () => {
+    expect(normalizeWidgetPrefs({ accountIds: [], subjectIds: ["s", "s", 42], fontScale: 1.15, opacity: 0.35 })).toMatchObject({ accountIds: [], subjectIds: ["s"], fontScale: 1.15, opacity: 0.35 });
+    expect(normalizeWidgetPrefs({ accountIds: "bad", fontScale: Infinity, opacity: -1 })).toMatchObject({ accountIds: null, fontScale: 1, opacity: 0.65 });
   });
 });
 

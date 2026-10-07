@@ -24,7 +24,9 @@ data class WidgetTask(
   val category: String,
   val categoryLabel: String = "",
   val subject: String = "",
-  val dueTime: String? = null
+  val dueTime: String? = null,
+  val subtaskCount: Int = 0,
+  val subtaskDone: Int = 0
 )
 
 data class WidgetEvent(val date: String, val title: String, val kind: String, val amount: Double?)
@@ -65,7 +67,11 @@ data class WidgetSummary(
   val subjects: List<Choice>,
   val classes: List<WidgetClass>,
   val classSchedule: List<WidgetClass> = emptyList(),
-  val cancelledClassKeys: Set<String> = emptySet()
+  val cancelledClassKeys: Set<String> = emptySet(),
+  val fontScale: Float = 1f,
+  val opacity: Float = 0.65f,
+  val budgetAccountIds: Set<String>? = null,
+  val visibleSubjectIds: Set<String>? = null
 )
 
 // An expense logged from the widget that the app hasn't absorbed yet.
@@ -204,6 +210,10 @@ object WidgetStore {
     hidden = o.optBoolean("hidden", false),
     currency = o.optString("currency", "\u20B1"),
     theme = o.optString("theme", ""),
+    fontScale = o.optDouble("fontScale", 1.0).toFloat().let { if (it.isFinite()) it.coerceIn(0.9f, 1.15f) else 1f },
+    opacity = o.optDouble("opacity", 0.65).toFloat().let { if (it.isFinite()) it.coerceIn(0.35f, 0.85f) else 0.65f },
+    budgetAccountIds = if (o.optJSONArray("budgetAccountIds") == null) null else strings(o.optJSONArray("budgetAccountIds")).toSet(),
+    visibleSubjectIds = if (o.optJSONArray("visibleSubjectIds") == null) null else strings(o.optJSONArray("visibleSubjectIds")).toSet(),
     labels = strings(o.optJSONArray("labels")),
     splits = choices(o.optJSONArray("splits")),
     accounts = choices(o.optJSONArray("accounts")),
@@ -224,7 +234,9 @@ object WidgetStore {
         it.optString("category", ""),
         it.optString("categoryLabel", ""),
         it.optString("subject", ""),
-        it.optString("dueTime", "").takeIf { time -> time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) }
+        it.optString("dueTime", "").takeIf { time -> time.matches(Regex("(?:[01][0-9]|2[0-3]):[0-5][0-9]")) },
+        it.optInt("subtaskCount", 0).coerceAtLeast(0),
+        it.optInt("subtaskDone", 0).coerceIn(0, it.optInt("subtaskCount", 0).coerceAtLeast(0))
       )
     },
     events = events(o.optJSONArray("events")),
@@ -496,12 +508,13 @@ object WidgetStore {
   // and survives a refresh before the app has caught up). Same ordering as
   // the app's Active list: soonest due first, undated last.
   fun displayTasks(context: Context): List<WidgetTask> {
-    val tasks = readSummary(context).tasks.toMutableList()
+    val summary = readSummary(context)
+    val tasks = summary.tasks.toMutableList()
     // Tasks just added from the widget, until the app has created them (and
     // pushed a snapshot that includes them).
     val known = tasks.map { it.id }.toSet()
     for (n in pendingTasks(context).sortedBy { it.createdAt }) {
-      if (n.id !in known) tasks.add(WidgetTask(n.id, n.title, TaskStatus.NOT_STARTED, n.due, n.category, TaskMeta.categoryLabel(n.category), readSummary(context).subjects.firstOrNull { it.id == n.subjectId }?.label.orEmpty(), n.dueTime))
+      if (n.id !in known && (n.subjectId == null || summary.visibleSubjectIds == null || n.subjectId in summary.visibleSubjectIds)) tasks.add(WidgetTask(n.id, n.title, TaskStatus.NOT_STARTED, n.due, n.category, TaskMeta.categoryLabel(n.category), summary.subjects.firstOrNull { it.id == n.subjectId }?.label.orEmpty(), n.dueTime))
     }
     for (op in taskOps(context).sortedBy { it.at }) {
       val i = tasks.indexOfFirst { it.id == op.taskId }

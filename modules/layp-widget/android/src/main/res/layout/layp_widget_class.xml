@@ -3,7 +3,7 @@
   <LinearLayout android:id="@+id/layp_class_root" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="12dp" android:background="@drawable/layp_widget_glass_dark">
     <LinearLayout android:id="@+id/layp_class_header" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:paddingBottom="9dp">
       <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Classes today" android:textSize="12sp" android:textColor="#FFFFFF" android:fontFamily="sans-serif-medium" android:includeFontPadding="false" />
+        <TextView android:id="@+id/layp_widget_class_label_1" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Classes today" android:textSize="12sp" android:textColor="#FFFFFF" android:fontFamily="sans-serif-medium" android:includeFontPadding="false" />
         <TextView android:id="@+id/layp_class_date" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textSize="9sp" android:textColor="#BFFFFFFF" android:includeFontPadding="false" />
       </LinearLayout>
       <TextView android:id="@+id/layp_class_header_state" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="4dp" android:textSize="9sp" android:textColor="#BFFFFFFF" android:includeFontPadding="false" />

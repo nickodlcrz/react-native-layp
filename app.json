@@ -2,7 +2,7 @@
   "expo": {
     "name": "LAYP",
     "slug": "layp-app",
-    "version": "4.1.2",
+    "version": "4.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -28,7 +28,7 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ],
-      "versionCode": 14
+      "versionCode": 15
     },
     "plugins": [
       "expo-notifications",

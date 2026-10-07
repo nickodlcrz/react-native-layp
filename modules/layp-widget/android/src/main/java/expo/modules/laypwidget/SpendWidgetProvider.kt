@@ -164,6 +164,7 @@ object WidgetRenderer {
     views.setContentDescription(R.id.layp_widget_shortcut_other, "Log other expense")
 
     WidgetIntents.openApp(context, REQUEST_OPEN_APP)?.let { views.setOnClickPendingIntent(R.id.layp_widget_root, it) }
+    WidgetAppearance.apply(context, views, views.layoutId, R.id.layp_widget_root)
     return views
   }
 

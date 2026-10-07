@@ -88,6 +88,7 @@ object UpcomingRenderer {
     views.setEmptyView(R.id.layp_up_list, R.id.layp_up_empty)
     views.setPendingIntentTemplate(R.id.layp_up_list, WidgetIntents.itemTemplate(context, REQUEST_TEMPLATE))
     WidgetIntents.openApp(context, REQUEST_OPEN_APP)?.let { views.setOnClickPendingIntent(R.id.layp_up_header, it) }
+    WidgetAppearance.apply(context, views, views.layoutId, R.id.layp_up_root)
     return views
   }
 }
@@ -153,6 +154,7 @@ class UpcomingListFactory(private val context: Context) : RemoteViewsService.Rem
     rv.setInt(R.id.layp_up_icon, "setColorFilter", EventStyle.color(e.kind))
 
     rv.setOnClickFillInIntent(R.id.layp_up_row, Intent().putExtra(WidgetActionActivity.EXTRA_OP, WidgetActionActivity.OP_OPEN))
+    WidgetAppearance.apply(context, rv, rv.layoutId)
     return rv
   }
 

@@ -131,6 +131,7 @@ object TaskRenderer {
       PendingIntent.getActivity(context, REQUEST_ADD_TASK, addIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     )
     views.setContentDescription(R.id.layp_task_add, "Add a task")
+    WidgetAppearance.apply(context, views, views.layoutId, R.id.layp_task_root)
     return views
   }
 }
@@ -178,6 +179,10 @@ class TaskListFactory(private val context: Context) : RemoteViewsService.RemoteV
     rv.setViewVisibility(R.id.layp_task_meta, if (meta.isEmpty()) View.GONE else View.VISIBLE)
     rv.setTextColor(R.id.layp_task_meta, p.eventText)
     rv.setTextViewText(R.id.layp_task_status, TaskStatus.label(t.status))
+    rv.setTextViewText(R.id.layp_task_progress, if (t.subtaskCount > 0) "${t.subtaskDone}/${t.subtaskCount} steps completed · ${t.subtaskDone * 100 / t.subtaskCount}%" else "")
+    rv.setViewVisibility(R.id.layp_task_progress, if (t.subtaskCount > 0) View.VISIBLE else View.GONE)
+    rv.setViewVisibility(R.id.layp_task_progress_bar, if (t.subtaskCount > 0) View.VISIBLE else View.GONE)
+    rv.setProgressBar(R.id.layp_task_progress_bar, 100, if (t.subtaskCount > 0) t.subtaskDone * 100 / t.subtaskCount else 0, false)
     rv.setTextColor(R.id.layp_task_status, p.muted)
 
     // Same urgency rules as the dot/border on the app's task cards.
@@ -215,6 +220,7 @@ class TaskListFactory(private val context: Context) : RemoteViewsService.RemoteV
       R.id.layp_task_body,
       Intent().putExtra(WidgetActionActivity.EXTRA_OP, WidgetActionActivity.OP_OPEN)
     )
+    WidgetAppearance.apply(context, rv, rv.layoutId)
     return rv
   }
 

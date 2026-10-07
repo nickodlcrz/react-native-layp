@@ -21,6 +21,10 @@ export default function Chip({ label, color, active, onPress, small }) {
   if (color) {
     return (
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ selected: !!active }}
+        hitSlop={4}
         onPress={onPress}
         style={[
           styles.base,
@@ -40,6 +44,10 @@ export default function Chip({ label, color, active, onPress, small }) {
   const activeBgColor = theme.neutralDark;
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected: !!active }}
+      hitSlop={4}
       onPress={onPress}
       style={[
         styles.base,
@@ -53,9 +61,9 @@ export default function Chip({ label, color, active, onPress, small }) {
 }
 
 const styles = StyleSheet.create({
-  base: { flexDirection: "row", alignItems: "center", borderRadius: 999, borderWidth: 1.5, marginRight: 8 },
+  base: { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: StyleSheet.hairlineWidth },
   regular: { paddingHorizontal: 12, paddingVertical: 6 },
-  small: { paddingHorizontal: 10, paddingVertical: 4 },
+  small: { paddingHorizontal: 10, paddingVertical: 6, minHeight: 30 },
   dot: { width: 7, height: 7, borderRadius: 3.5, marginRight: 6 },
   label: { fontSize: 11, fontWeight: "600" },
   labelSmall: { fontSize: 10 },

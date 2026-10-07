@@ -76,9 +76,9 @@ object AlarmScheduler {
     return trigger.timeInMillis
   }
 
-  fun arm(context: Context, alarm: StoredAlarm) {
+  fun arm(context: Context, alarm: StoredAlarm, triggerAtMillis: Long? = null) {
     AlarmStore.put(context, alarm)
-    val triggerAt = nextTriggerMillis(alarm)
+    val triggerAt = triggerAtMillis ?: nextTriggerMillis(alarm)
     val pi = pendingIntentFor(context, alarm)
     val am = alarmManager(context)
     try {
@@ -121,6 +121,8 @@ object AlarmScheduler {
   // AlarmManager entries don't survive a reboot -- BootReceiver calls this
   // to put everything LAYP still has on record back on the clock.
   fun rearmAll(context: Context) {
-    AlarmStore.all(context).values.forEach { arm(context, it) }
+    AlarmStore.all(context).values.forEach {
+      if (it.groupId == "layp:test") cancelGroup(context, it.groupId) else arm(context, it)
+    }
   }
 }

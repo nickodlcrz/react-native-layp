@@ -131,7 +131,6 @@ object CalendarRenderer {
       val cell = grid.cells[i]
       val isToday = cell.iso == todayIso
       val dayEvents = eventsByDay[cell.iso].orEmpty()
-      views.setTextViewTextSize(CalendarIds.TEXTS[i], android.util.TypedValue.COMPLEX_UNIT_SP, if (compact) 10f else 12f)
       views.setContentDescription(CalendarIds.CELLS[i], "${cell.iso}${if (isToday) ", Today" else ""}${if (dayEvents.isNotEmpty()) ", " + dayEvents.joinToString { it.title } else ""}")
       views.setTextViewText(CalendarIds.TEXTS[i], cell.day.toString())
       when {
@@ -172,6 +171,8 @@ object CalendarRenderer {
     views.setTextViewText(R.id.layp_cal_monthyear, CalendarMath.monthTitle(today[0], today[1]))
 
     WidgetIntents.openApp(context, REQUEST_OPEN_APP)?.let { views.setOnClickPendingIntent(R.id.layp_cal_today_panel, it) }
+    WidgetAppearance.apply(context, views, views.layoutId, R.id.layp_cal_root)
+    CalendarIds.TEXTS.forEach { views.setTextViewTextSize(it, android.util.TypedValue.COMPLEX_UNIT_SP, (if (compact) 10f else 12f) * summary.fontScale) }
     return views
   }
 }

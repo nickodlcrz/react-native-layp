@@ -4,6 +4,17 @@ A personal productivity + budgeting app: tasks with real reminders, a
 budget split across E-cash/Physical accounts, spending tracking, a
 lend/borrow tracker, and a plain-text summary export.
 
+## New in 4.2.0
+
+- **Home → Plan week:** a shared weekly view of active classes, unfinished task deadlines and scheduled general reminders, with class conflicts and study gaps between 8 AM and 8 PM. Cancelled classes free their study time. Interval reminders appear separately.
+- **Settings → Widgets:** illustrative previews, Small/Normal/Large text, three glass opacity levels, and account/subject visibility. The existing dark transparent theme is preserved. Hidden balances stay hidden in previews; filters affect display, not alarms or quick logging.
+- **Settings → General → Alarm health:** notification/channel, exact-alarm, full-screen and battery checks with shortcuts to Android settings. Schedule or cancel a real alarm test ten seconds ahead, then verify sound and screen display on your phone.
+- **Tasks:** subtask counts and completion bars remain visible when collapsed and appear in the Android task widgets.
+- **Home → Budget forecast:** seven- or thirty-day estimates from current balances, unpaid/recurring bills and scheduled recurring income. An additional savings reserve is a device preference, not a savings transaction. Everyday spending and loan repayments are not included; this is an estimate, not a spending limit. The money visibility switch masks it.
+- More consistent buttons and settings cards; sheets and segmented controls respect the device's reduced-motion preference.
+
+The native widgets and alarm test require the updated APK rather than Expo Go. Automated checks cover the scheduling, forecast, visibility, subtask summary and settings interactions. Real launcher layout and alarm display must still be checked on a phone.
+
 ## Running it
 
 ```
@@ -198,6 +209,6 @@ With Java 17, the Android SDK/NDK, and the npm dependencies installed:
 node scripts/build-preview-apk.js
 ```
 
-This runs Android prebuild and creates a release-mode APK with an embedded JavaScript bundle at `dist/apk/LAYP-preview-4.1.2.apk`. It installs as **LAYP Preview** (`com.layp.app.preview`) alongside LAYP and uses the Android template debug signing certificate. It supports ARM64 and ARMv7 Android phones. Import a backup in the preview if you want to test with your existing data. Building an update for the original `com.layp.app` installation requires its original signing key. Set `LAYP_GRADLE_BIN` to use an installed Gradle executable instead of the wrapper.
+This runs Android prebuild and creates a release-mode APK with an embedded JavaScript bundle at `dist/apk/LAYP-preview-4.2.0.apk`. It installs as **LAYP Preview** (`com.layp.app.preview`) alongside LAYP and uses the Android template debug signing certificate. It supports ARM64 and ARMv7 Android phones. Import a backup in the preview if you want to test with your existing data. Building an update for the original `com.layp.app` installation requires its original signing key. Set `LAYP_GRADLE_BIN` to use an installed Gradle executable instead of the wrapper.
 
 If JitPack is unavailable, install Python 3 and run `node scripts/build-preview-apk.js --source-deps`. This builds BlurView 2.0.6 and Android Image Cropper 4.3.1 from official tagged GitHub source archives, checks their pinned SHA-256 hashes, and includes their license texts in the APK. The source adapter updates build metadata for the current toolchain, declares the cropper's nullable bitmap result explicitly, and handles unavailable output streams. Generated native configuration stays under the ignored `android/` directory.
