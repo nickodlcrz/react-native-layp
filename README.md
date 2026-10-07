@@ -18,3 +18,11 @@ Validation: Android assembleRelease and release lint checks passed. APK v1/v2 si
 JitPack is unavailable in this cloud environment. BlurView 2.0.6 and Android Image Cropper 4.3.1 are built from official tagged source archives with pinned SHA-256 checks. Their original licenses are included. The source adapter updates build metadata, declares the nullable bitmap result explicitly, and handles unavailable output streams.
 
 Build instructions are in the [source README](https://github.com/nickodlcrz/react-native-layp/blob/50bd8fc994309486d4406a86cefa56a92a386215/README.md#standalone-preview-apk). This branch holds the APK and its metadata; source is on main.
+
+## Updated app source ZIP
+
+[Download the source ZIP](https://github.com/nickodlcrz/react-native-layp/blob/apk-preview-4.1.2-50bd8fc/LAYP-updated-source-4.1.2.zip?raw=true) (660,836 bytes).
+
+Contains all 251 app source, asset, configuration, test, widget/alarm module, and build-script files from source commit `50bd8fc994309486d4406a86cefa56a92a386215`. Dependency folders and generated build outputs are excluded. Extract it and run `npm ci` in the `react-native-layp` folder to install the locked dependencies. See its README for development and APK build instructions.
+
+Source ZIP SHA-256: `8e5c7daec1d45e3035ddd717387a4b4fcd3bc7c2101ac45c2ecf2e48c9a891e4`
