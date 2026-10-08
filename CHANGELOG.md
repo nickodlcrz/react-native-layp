@@ -2,6 +2,16 @@
 
 All notable changes to LAYP are documented here. Newest entries first.
 
+## [4.2.1] — 2026-10-09
+
+### Fixed
+- Spending widget search results now open a prefilled expense form. Save creates a new expense for the current local date, preserving account/category choices and balance checks; Cancel leaves history unchanged.
+- Keep budget categories in native search history, including expenses waiting for the app to sync.
+
+### Added
+- Total budget across all accounts in the account widget, including pending widget income/spending. The Hide/Show control masks the total and each account. Unknown balances show “Sync needed”.
+- Native regression tests for search selection, save/cancel, overspending prevention, and account totals before/after queue absorption.
+
 ## [4.2.0] — 2026-10-07
 
 ### Added

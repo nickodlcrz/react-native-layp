@@ -13,6 +13,7 @@ export default function WidgetCustomization({ prefs, onChange, accounts = [], su
   const selectedSubjects = subjects.filter((s) => p.subjectIds === null || p.subjectIds.includes(s.id));
   const tasks = todos.filter((t) => !t.completed && (!t.subjectId || p.subjectIds === null || p.subjectIds.includes(t.subjectId)));
   const visibleAccounts = accounts.filter((a) => p.accountIds === null || p.accountIds.includes(a.id));
+  const totalBudget = accounts.length && accounts.every((a) => Number.isFinite(a.balance)) ? accounts.reduce((sum, a) => sum + a.balance, 0) : null;
   const text = { color: "#FFF", fontSize: 14 * p.fontScale, fontWeight: "600" };
   function filter(key, choices) {
     const selected = p[key];
@@ -30,11 +31,12 @@ export default function WidgetCustomization({ prefs, onChange, accounts = [], su
           <Text style={[text, { fontSize: 12 * p.fontScale, marginBottom: 14 }]}>{preview === "classes" ? "Classes today" : preview === "tasks" ? "Tasks" : "Account budget"}</Text>
           {preview === "classes" && <><Text style={[text, { fontSize: 22 * p.fontScale }]}>{selectedSubjects[0]?.code || (subjects.length ? "No subjects selected" : "EE12")}</Text><Text style={[text, { fontSize: 11 * p.fontScale, color: "#FFFFFFCC", marginTop: 10 }]}>{selectedSubjects.length || !subjects.length ? "Sample class · 9:00 AM – 10:30 AM" : "Choose a subject to show its classes"}</Text></>}
           {preview === "tasks" && (tasks.length ? tasks.slice(0, 2) : [{ id: "sample", title: "Sample assignment", subtasks: [{ done: true }, { done: false }] }]).map((t) => <View key={t.id} style={{ marginBottom: 12 }}><Text style={text}>{t.title}</Text>{t.subtasks?.length > 0 && <Text style={[text, { fontSize: 11 * p.fontScale, marginTop: 4, color: "#9CE8CC" }]}>{t.subtasks.filter((s) => s.done).length}/{t.subtasks.length} steps completed</Text>}</View>)}
+          {preview === "budget" && <View style={{ marginBottom: 12 }}><Text style={[text, { fontSize: 11 * p.fontScale }]}>Total budget · all accounts</Text><Text style={[text, { fontSize: 20 * p.fontScale, marginTop: 4 }]}>{hidden ? "••••" : totalBudget != null ? peso(totalBudget) : accounts.length ? "Sync needed" : "₱1,250.00"}</Text></View>}
           {preview === "budget" && (visibleAccounts.length ? visibleAccounts.slice(0, 2) : accounts.length ? [] : [{ id: "sample", label: "Sample account" }]).map((a) => <View key={a.id} style={{ marginBottom: 12 }}><Text style={[text, { fontSize: 11 * p.fontScale }]}>{a.label}</Text><Text style={[text, { fontSize: 20 * p.fontScale, marginTop: 4 }]}>{hidden ? "••••" : a.balance != null ? peso(a.balance) : "₱1,250.00"}</Text></View>)}
           {preview === "budget" && accounts.length > 0 && !visibleAccounts.length && <Text style={text}>No accounts selected</Text>}
         </View></View><Text style={[fs.caption, { color: theme.textMuted, marginTop: 8 }]}>Appearance preview. Class times and sample balances are illustrative; your launcher controls the final size.</Text></View>
     </SurfaceCard>
-    <SurfaceCard><Text style={[fs.title, { color: theme.text }]}>Visible accounts</Text><Text style={[fs.caption, { color: theme.textMuted }]}>Choose accounts for the budget widget. Quick logging still offers every account.</Text>{filter("accountIds", accounts)}</SurfaceCard>
+    <SurfaceCard><Text style={[fs.title, { color: theme.text }]}>Visible accounts</Text><Text style={[fs.caption, { color: theme.textMuted }]}>Choose account cards for the budget widget. Total budget and quick logging include every account.</Text>{filter("accountIds", accounts)}</SurfaceCard>
     <SurfaceCard><Text style={[fs.title, { color: theme.text }]}>Visible subjects</Text><Text style={[fs.caption, { color: theme.textMuted }]}>Choose subjects for class and school-task widgets. Other tasks and class alarms stay active.</Text>{filter("subjectIds", subjects)}</SurfaceCard>
     <Pressable accessibilityRole="button" onPress={() => onChange({ ...p, fontScale: DEFAULT_WIDGET_PREFS.fontScale, opacity: DEFAULT_WIDGET_PREFS.opacity, accountIds: null, subjectIds: null })} style={{ paddingVertical: 12, marginBottom: 10 }}><Text style={{ color: ACCENT.sky, textAlign: "center", fontWeight: "700" }}>Reset appearance and visibility</Text></Pressable>
   </>;

@@ -12,7 +12,7 @@ import java.util.UUID
 // source ("Allowance") or an account ("Cash"). balance is only known for accounts.
 data class Choice(val id: String, val label: String, val balance: Double?)
 
-data class RecentExpense(val id: String, val name: String, val label: String, val amount: Double, val date: String, val account: String)
+data class RecentExpense(val id: String, val name: String, val label: String, val amount: Double, val date: String, val account: String, val splitId: String = "")
 
 // categoryLabel ("School") and subject (the subject code, e.g. "EE 301") are
 // what the Tasks widget shows under the title.
@@ -221,7 +221,7 @@ object WidgetStore {
     recent = objects(o.optJSONArray("recent")).map {
       RecentExpense(
         it.optString("id", ""), it.optString("name", ""), it.optString("label", ""),
-        it.optDouble("amount", 0.0), it.optString("date", ""), it.optString("account", "")
+        it.optDouble("amount", 0.0), it.optString("date", ""), it.optString("account", ""), it.optString("splitId", "")
       )
     },
     tasks = objects(o.optJSONArray("tasks")).mapNotNull {
@@ -492,6 +492,17 @@ object WidgetStore {
     return base + added - spent
   }
 
+  // The total includes every account, even when some account cards are hidden.
+  // Pending widget entries are reflected until the app absorbs them.
+  fun totalAvailableBalance(context: Context): Double? {
+    val summary = readSummary(context)
+    val expenses = pending(context).filter { it.id !in summary.appliedWidgetIds }
+    val income = pendingMoney(context).filter { it.id !in summary.appliedWidgetIds }
+    return totalAccountBudget(summary.accounts.map { account ->
+      account.balance?.let { base -> base + income.filter { it.account == account.id }.sumOf { it.amount } - expenses.filter { it.account == account.id }.sumOf { it.amount } }
+    })
+  }
+
   // Past expenses for search: what the app pushed plus anything just logged
   // from the widget (skipping ones the app already absorbed), newest first.
   fun searchableExpenses(context: Context): List<RecentExpense> {
@@ -499,7 +510,7 @@ object WidgetStore {
     val known = summary.recent.map { it.id }.toSet()
     val fresh = pending(context).filter { it.id !in known }
       .sortedByDescending { it.createdAt }
-      .map { RecentExpense(it.id, it.name, it.label, it.amount, it.date, it.account) }
+      .map { RecentExpense(it.id, it.name, it.label, it.amount, it.date, it.account, it.splitId) }
     return (fresh + summary.recent).sortedByDescending { it.date }
   }
 

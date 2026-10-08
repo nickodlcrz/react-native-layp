@@ -4,6 +4,14 @@ A personal productivity + budgeting app: tasks with real reminders, a
 budget split across E-cash/Physical accounts, spending tracking, a
 lend/borrow tracker, and a plain-text summary export.
 
+## New in 4.2.1
+
+Spending widget → Search expenses → tap a result to fill a new expense for today. Review or edit its amount, name, label, budget category and account, then tap **Save expense**. Cancel does not record it. Saved widget entries appear immediately in widget totals/search and join the app's Spending log when LAYP next opens or resumes.
+
+The account budget widget now shows **Total budget · all accounts**, including pending widget income and spending. Account visibility settings affect the individual cards; the total always includes all accounts. Hide/Show masks both the total and the cards. Missing balances show “Sync needed” instead of a partial total.
+
+Native regression checks: generate the Android project, then run `./gradlew :layp-widget:testReleaseUnitTest -Pandroid.jetifier.ignorelist=bcprov` in `android/`. Tests use Robolectric for the actual search-tap/form-save path and pending balance updates. The ignore list leaves the test runner’s Bouncy Castle JAR unchanged; it contains no Android support APIs and its newer multi-release classes cannot be rewritten by Expo 51’s Jetifier.
+
 ## New in 4.2.0
 
 - **Home → Plan week:** a shared weekly view of active classes, unfinished task deadlines and scheduled general reminders, with class conflicts and study gaps between 8 AM and 8 PM. Cancelled classes free their study time. Interval reminders appear separately.
@@ -209,6 +217,6 @@ With Java 17, the Android SDK/NDK, and the npm dependencies installed:
 node scripts/build-preview-apk.js
 ```
 
-This runs Android prebuild and creates a release-mode APK with an embedded JavaScript bundle at `dist/apk/LAYP-preview-4.2.0.apk`. It installs as **LAYP Preview** (`com.layp.app.preview`) alongside LAYP and uses the Android template debug signing certificate. It supports ARM64 and ARMv7 Android phones. Import a backup in the preview if you want to test with your existing data. Building an update for the original `com.layp.app` installation requires its original signing key. Set `LAYP_GRADLE_BIN` to use an installed Gradle executable instead of the wrapper.
+This runs Android prebuild and creates a release-mode APK with an embedded JavaScript bundle at `dist/apk/LAYP-preview-4.2.1.apk`. It installs as **LAYP Preview** (`com.layp.app.preview`) alongside LAYP and uses the Android template debug signing certificate. It supports ARM64 and ARMv7 Android phones. Import a backup in the preview if you want to test with your existing data. Building an update for the original `com.layp.app` installation requires its original signing key. Set `LAYP_GRADLE_BIN` to use an installed Gradle executable instead of the wrapper.
 
 If JitPack is unavailable, install Python 3 and run `node scripts/build-preview-apk.js --source-deps`. This builds BlurView 2.0.6 and Android Image Cropper 4.3.1 from official tagged GitHub source archives, checks their pinned SHA-256 hashes, and includes their license texts in the APK. The source adapter updates build metadata for the current toolchain, declares the cropper's nullable bitmap result explicitly, and handles unavailable output streams. Generated native configuration stays under the ignored `android/` directory.

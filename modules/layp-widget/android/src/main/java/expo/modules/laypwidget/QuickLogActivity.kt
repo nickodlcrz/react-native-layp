@@ -1,6 +1,7 @@
 package expo.modules.laypwidget
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -47,8 +48,18 @@ class QuickLogActivity : Activity() {
     const val EXTRA_MODE = "mode"
     const val MODE_EXPENSE = "expense"
     const val MODE_MONEY = "money"
+    private const val EXTRA_REPEAT = "repeatExpense"
+    private const val EXTRA_NAME = "expenseName"
+    private const val EXTRA_AMOUNT = "expenseAmount"
+    private const val EXTRA_ACCOUNT = "expenseAccount"
+    private const val EXTRA_SPLIT = "expenseSplit"
     private val AMOUNT_PATTERN = Regex("^\\d{0,9}([.]\\d{0,2})?$")
     private val QUICK_ADD = listOf(20, 50, 100, 500)
+
+    fun repeatIntent(context: Context, expense: RecentExpense): Intent = Intent(context, QuickLogActivity::class.java)
+      .setAction(ACTION).putExtra(EXTRA_MODE, MODE_EXPENSE).putExtra(EXTRA_REPEAT, true)
+      .putExtra(EXTRA_NAME, expense.name).putExtra(EXTRA_LABEL, expense.label).putExtra(EXTRA_AMOUNT, expense.amount)
+      .putExtra(EXTRA_ACCOUNT, expense.account).putExtra(EXTRA_SPLIT, expense.splitId)
   }
 
   private lateinit var summary: WidgetSummary
@@ -71,15 +82,11 @@ class QuickLogActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    summary = WidgetStore.readSummary(this)
-    p = Palette.resolve(this, summary.theme)
-    isMoney = intent.getStringExtra(EXTRA_MODE) == MODE_MONEY
     setFinishOnTouchOutside(true)
     window.setGravity(Gravity.BOTTOM)
-    setContentView(buildContent(intent.getStringExtra(EXTRA_LABEL)))
+    showForm()
     window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-    amountInput.requestFocus()
   }
 
   // singleTask: tapping a different chip while the sheet is already open
@@ -87,7 +94,29 @@ class QuickLogActivity : Activity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
-    if (!isMoney) intent.getStringExtra(EXTRA_LABEL)?.let { labelRow?.select(it, notify = true) }
+    if (intent.getBooleanExtra(EXTRA_REPEAT, false) || (intent.getStringExtra(EXTRA_MODE) == MODE_MONEY) != isMoney) {
+      showForm()
+    } else if (!isMoney) intent.getStringExtra(EXTRA_LABEL)?.let { labelRow?.select(it, notify = true) }
+  }
+
+  private fun showForm() {
+    summary = WidgetStore.readSummary(this)
+    p = Palette.resolve(this, summary.theme)
+    isMoney = intent.getStringExtra(EXTRA_MODE) == MODE_MONEY
+    selectedLabel = null; selectedSplit = null; selectedAccount = null; selectedSource = null
+    labelRow = null; splitRow = null; accountRow = null; sourceRow = null
+    setContentView(buildContent(intent.getStringExtra(EXTRA_LABEL)))
+    if (!isMoney && intent.getBooleanExtra(EXTRA_REPEAT, false)) {
+      val expense = RecentExpense("", intent.getStringExtra(EXTRA_NAME).orEmpty(), intent.getStringExtra(EXTRA_LABEL).orEmpty(), intent.getDoubleExtra(EXTRA_AMOUNT, 0.0), "", intent.getStringExtra(EXTRA_ACCOUNT).orEmpty(), intent.getStringExtra(EXTRA_SPLIT).orEmpty())
+      val preset = expenseRepeatPreset(expense, summary.accounts, summary.splits, WidgetStore.lastAccount(this), WidgetStore.lastSplit(this))
+      accountRow?.select(preset.account, notify = true)
+      splitRow?.select(preset.splitId, notify = true)
+      nameInput.setText(preset.name)
+      amountInput.setText(if (preset.amount > 0) String.format(java.util.Locale.US, "%.2f", preset.amount) else "")
+      amountInput.setSelection(amountInput.text.length)
+      updateBalanceNote()
+    }
+    amountInput.requestFocus()
   }
 
   // ---------------------------------------------------------------- UI

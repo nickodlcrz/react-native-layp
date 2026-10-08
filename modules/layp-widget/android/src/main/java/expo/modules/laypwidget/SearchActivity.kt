@@ -28,6 +28,7 @@ import java.util.Locale
 // match somewhere on the expense (name, label, account, date, month, or
 // amount), so "food oct" or "coffee 85" both narrow it down. The list is the
 // last ~300 expenses LAYP pushed plus anything just logged from the widget.
+// Tapping a result opens a prefilled form to log a new expense for today.
 class SearchActivity : Activity() {
 
   companion object {
@@ -64,6 +65,14 @@ class SearchActivity : Activity() {
   }
 
   private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+  override fun onResume() {
+    super.onResume()
+    summary = WidgetStore.readSummary(this)
+    all = WidgetStore.searchableExpenses(this)
+    haystacks = all.map { haystack(it) }
+    applyFilter()
+  }
 
   private fun accountLabel(id: String): String = summary.accounts.firstOrNull { it.id == id }?.label ?: ""
 
@@ -143,12 +152,23 @@ class SearchActivity : Activity() {
       setTextColor(p.muted)
     }
     column.addView(summaryText, LinearLayout.LayoutParams(match, wrap).apply { topMargin = dp(10); bottomMargin = dp(4) })
+    column.addView(TextView(this).apply {
+      text = "Tap an expense to log it again for today. Review it, then save."
+      textSize = 12f
+      setTextColor(p.muted)
+    }, LinearLayout.LayoutParams(match, wrap).apply { bottomMargin = dp(8) })
 
     val list = ListView(this).apply {
       divider = ColorDrawable(p.line)
       dividerHeight = 1
       isVerticalScrollBarEnabled = false
       this.adapter = this@SearchActivity.adapter
+      setOnItemClickListener { _, _, position, _ ->
+        results.getOrNull(position)?.let { expense ->
+          (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0)
+          startActivity(QuickLogActivity.repeatIntent(this@SearchActivity, expense))
+        }
+      }
       setOnScrollListener(object : android.widget.AbsListView.OnScrollListener {
         override fun onScrollStateChanged(view: android.widget.AbsListView?, scrollState: Int) {
           if (scrollState != android.widget.AbsListView.OnScrollListener.SCROLL_STATE_IDLE) {

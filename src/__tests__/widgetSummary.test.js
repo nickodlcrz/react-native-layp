@@ -71,6 +71,17 @@ describe("pendingToExpenses", () => {
   const accounts = [{ id: "ecash" }, { id: "physical" }];
   const queued = (over) => ({ id: "w1", amount: 85, name: "Lunch", label: "Food", splitId: "s1", account: "physical", date: today, createdAt: 123, ...over });
 
+  test("search history preserves the account and category needed to repeat an expense", () => {
+    const historical = queued({ id: "history", date: "2026-09-30" });
+    const summary = buildWidgetSummary({ expenses: [historical], accounts, splits, today });
+    expect(summary.recent[0]).toMatchObject({ id: "history", name: "Lunch", account: "physical", splitId: "s1", amount: 85 });
+    const repeated = { ...summary.recent[0], id: "repeat-new", date: today, createdAt: 456 };
+    const options = { accounts, splits, today, balances: { physical: 100 }, existingIds: new Set(["history"]) };
+    const result = pendingToExpenses([repeated], options);
+    expect(result.expenses).toEqual([{ ...historical, id: "repeat-new", date: today, createdAt: 456 }]);
+    expect(pendingToExpenses([repeated], { ...options, existingIds: new Set(["history", "repeat-new"]) }).expenses).toEqual([]);
+  });
+
   test("turns a queued entry into an expense", () => {
     const { expenses, ackIds } = pendingToExpenses([queued()], { splits, accounts, today });
     expect(expenses).toEqual([{ id: "w1", name: "Lunch", label: "Food", amount: 85, splitId: "s1", account: "physical", date: today, createdAt: 123 }]);

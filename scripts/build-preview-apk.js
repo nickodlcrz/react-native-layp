@@ -12,8 +12,14 @@ function run(command, args, cwd = root) {
   if (result.status !== 0) process.exit(result.status || 1);
 }
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-run(npx, ['expo', 'prebuild', '--platform', 'android', '--no-install']);
+const prebuildArgs = ['expo', 'prebuild', '--platform', 'android', '--no-install'];
+// A verified local npm template avoids registry fetches in restricted builders.
+if (process.env.LAYP_EXPO_TEMPLATE) prebuildArgs.push('--template', path.resolve(process.env.LAYP_EXPO_TEMPLATE));
+run(npx, prebuildArgs);
 const native = path.join(root, 'android');
+if (!fs.existsSync(path.join(native, 'app', 'build.gradle'))) {
+  throw new Error('Expo prebuild did not create the Android project. Check its output or set LAYP_EXPO_TEMPLATE to a local Expo template archive.');
+}
 const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
 if (sdk && fs.existsSync(path.join(sdk, 'cmake', '3.22.1', 'bin'))) {
   const properties = path.join(native, 'local.properties');
