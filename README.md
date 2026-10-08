@@ -10,7 +10,26 @@ Spending widget → Search expenses → tap a result to fill a new expense for t
 
 The account budget widget now shows **Total budget · all accounts**, including pending widget income and spending. Account visibility settings affect the individual cards; the total always includes all accounts. Hide/Show masks both the total and the cards. Missing balances show “Sync needed” instead of a partial total.
 
-Native regression checks: generate the Android project, then run `./gradlew :layp-widget:testReleaseUnitTest -Pandroid.jetifier.ignorelist=bcprov` in `android/`. Tests use Robolectric for the actual search-tap/form-save path and pending balance updates. The ignore list leaves the test runner’s Bouncy Castle JAR unchanged; it contains no Android support APIs and its newer multi-release classes cannot be rewritten by Expo 51’s Jetifier.
+Native regression checks: generate the Android project, then run `./gradlew :layp-widget:testReleaseUnitTest` in `android/`. Tests use Robolectric for the actual search-tap/form-save path and pending balance updates.
+
+## Android release build compatibility
+
+Expo 51's Jetifier cannot rewrite the Java 21 multi-release classes inside Robolectric's Bouncy Castle test dependency. Release lint resolves this dependency too, so an otherwise compiled app can fail at `:layp-widget:generateReleaseLintModel` with `Unsupported class file major version 65`.
+
+The Android config plugin now adds `android.jetifier.ignorelist=bcprov` during prebuild. Both release scripts also apply it to existing Android projects, preserving other ignore entries and the existing native configuration. Jetifier stays enabled for other dependencies; Bouncy Castle has no Android support APIs to migrate.
+
+After updating the source, retry `npm run release:android` and choose **5 (Build only)** to keep the version already bumped by your failed build. You do not need to delete `android/`, clear Gradle caches, or regenerate signing files.
+
+If copying files from a source ZIP into an existing project, retain your local version and versionCode in `app.json`, the version in `package.json`, and your existing `android/` folder. Add the new build compatibility plugin entry from the ZIP's `app.json` without replacing your local release metadata.
+
+For an immediate retry in your existing Windows checkout, without updating source first:
+
+```powershell
+cd android
+.\gradlew.bat assembleRelease -Pandroid.jetifier.ignorelist=bcprov
+```
+
+If you already maintain an ignore list, include its entries alongside `bcprov` in that one-time override. Continue using Java 17 for Expo 51 builds; changing Java alone does not fix Jetifier parsing the dependency's newer classes.
 
 ## New in 4.2.0
 

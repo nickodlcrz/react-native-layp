@@ -39,7 +39,8 @@
         }
       ],
       "expo-secure-store",
-      "./plugins/withShowOverLockscreen.js"
+      "./plugins/withShowOverLockscreen.js",
+      "./plugins/withAndroidBuildCompatibility.js"
     ],
     "extra": {
       "eas": {

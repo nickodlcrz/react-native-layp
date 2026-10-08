@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { ensureAndroidBuildCompatibility } = require('./android-build-compatibility');
 const root = path.resolve(__dirname, '..');
 const config = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8')).expo;
 function run(command, args, cwd = root) {
@@ -20,6 +21,7 @@ const native = path.join(root, 'android');
 if (!fs.existsSync(path.join(native, 'app', 'build.gradle'))) {
   throw new Error('Expo prebuild did not create the Android project. Check its output or set LAYP_EXPO_TEMPLATE to a local Expo template archive.');
 }
+ensureAndroidBuildCompatibility(native);
 const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
 if (sdk && fs.existsSync(path.join(sdk, 'cmake', '3.22.1', 'bin'))) {
   const properties = path.join(native, 'local.properties');

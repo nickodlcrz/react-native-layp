@@ -5,6 +5,7 @@ All notable changes to LAYP are documented here. Newest entries first.
 ## [4.2.1] — 2026-10-09
 
 ### Fixed
+- Android release lint no longer tries to Jetify Robolectric's Bouncy Castle JAR, which contains unsupported Java 21 multi-release classes. Fresh prebuilds and release retries add the compatibility setting while preserving other ignore entries and existing native configuration.
 - Spending widget search results now open a prefilled expense form. Save creates a new expense for the current local date, preserving account/category choices and balance checks; Cancel leaves history unchanged.
 - Keep budget categories in native search history, including expenses waiting for the app to sync.
 

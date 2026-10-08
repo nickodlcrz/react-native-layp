@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
+const { ensureAndroidBuildCompatibility } = require('./android-build-compatibility');
 
 const root = path.resolve(__dirname, '..');
 const appJson = JSON.parse(fs.readFileSync(path.join(root, 'app.json'), 'utf8'));
@@ -46,6 +47,7 @@ function run(cmd, args, cwd) {
 }
 
 function build() {
+  ensureAndroidBuildCompatibility(path.join(root, 'android'));
   const gradle = process.platform === 'win32' ? 'gradlew' : './gradlew';
   console.log('\nBuilding release APK...\n');
   run(gradle, ['assembleRelease'], path.join(root, 'android'));
